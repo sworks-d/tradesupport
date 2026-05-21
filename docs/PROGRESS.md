@@ -53,7 +53,10 @@
 - [done] 1.1.2 market_data — `mcp_tools/market_data.py`：メモリ5分TTL + DBキャッシュ
   フォールバック。yfinance を live 主ソース（moomoo 接続は Task 1.2.4）。fetcher 注入で
   ネットワーク非依存テスト 9 件（計 52 件 green）。base のリトライ設定をインスタンス上書き可に変更。
-- [ ] 1.1.3 fundamentals（SEC EDGAR / EDINET）
+- [done] 1.1.3 fundamentals — `mcp_tools/fundamentals.py`：PER/PBR/EPS/増収率/営業利益率を
+  共通フォーマットで取得 + 一次情報 URL（EDGAR/EDINET）。**方針 A 採用**（数値=yfinance 主、
+  EDGAR/EDINET は source_url。設計の「EDGAR/EDINET 主」を実装上反転 ＝ 要確認・差替可）。
+  fetcher 注入 + メモリ6h TTL。テスト 13 件（計 65 件 green）。
 - [ ] 1.1.4 news（NewsAPI / RSS）
 - [ ] 1.1.5 disclosure（TDnet / EDINET）
 - [ ] 1.1.6 technicals（TA-Lib）※要 `brew install ta-lib`
