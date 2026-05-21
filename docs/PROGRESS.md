@@ -76,8 +76,14 @@
 ## Phase 1.2：moomoo 連携
 - [ ] 1.2.1 BrokerConnection / 1.2.2 broker_read / 1.2.3 同期ジョブ / 1.2.4 market_data 切替
 
-## Phase 1.3：エージェント基盤
-- [ ] 1.3.1 基底クラス / 1.3.2 プロンプト管理 / 1.3.3 LangChain 統合 / 1.3.4 HALT・予算 / 1.3.5 実行ログ / 1.3.6 シリアライズ
+## Phase 1.3：エージェント基盤 — ✅ 完了（pytest 139件 green）
+- [done] 1.3.1 基底 — `agents/base.py`：Agent[TIn] / AgentInput / AgentOutput / execute_agent ラッパー
+- [done] 1.3.2 プロンプト管理 — `agents/prompts.py`（XML + Jinja2 + 版数）+ `agents/prompts/`。jinja2 追加
+- [done] 1.3.3 ツールアクセス層 — `agents/context.py`（AgentContext）。**LangChain 自律ループは不採用**
+  ＝決定論・コスト管理・テスト容易性を優先（§A-1 からの逸脱・差替可）。agents は MCP/llm_call を明示呼び出し
+- [done] 1.3.4 HALT・予算チェック — execute_agent 内（HALT ファイル / BudgetGuard）
+- [done] 1.3.5 実行ログ — execute_agent が analysis_logs に start/end 記録（invocation_id トレース）
+- [done] 1.3.6 シリアライズ — `agents/serialization.py`（buy/sell は旧 active を false 化、scenarios は upsert）
 
 ## Phase 1.4：エージェント実装
 - [ ] 1.4.1 topics-collector / 1.4.2 screening / 1.4.3 market-analyst / 1.4.4 sell-recommender / 1.4.5 portfolio-builder / 1.4.6 manual-input-analyst
