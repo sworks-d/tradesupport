@@ -24,6 +24,8 @@ dependencies = [
     "structlog>=24.1",
     "tenacity>=8.0",  # Phase 1.1.1: MCP ツールのリトライ
     "yfinance>=0.2.40",  # Phase 1.1.2: 価格データ（moomoo 接続までの主ソース）
+    "feedparser>=6.0",  # Phase 1.1.4: RSS パース
+    "httpx>=0.27",  # Phase 1.1.4: HTTP クライアント（NewsAPI / EDINET 等）
 ]
 
 [dependency-groups]

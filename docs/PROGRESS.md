@@ -57,7 +57,9 @@
   共通フォーマットで取得 + 一次情報 URL（EDGAR/EDINET）。**方針 A 採用**（数値=yfinance 主、
   EDGAR/EDINET は source_url。設計の「EDGAR/EDINET 主」を実装上反転 ＝ 要確認・差替可）。
   fetcher 注入 + メモリ6h TTL。テスト 13 件（計 65 件 green）。
-- [ ] 1.1.4 news（NewsAPI / RSS）
+- [done] 1.1.4 news — `mcp_tools/news.py`：NewsAPI + RSS(feedparser) 収集、デデュープ
+  （URL/見出しハッシュ/類似度）、言語判別、期間/銘柄フィルタ、Graceful Degradation。
+  fetcher 注入。feedparser/httpx 追加。テスト 12 件（計 77 件 green）。
 - [ ] 1.1.5 disclosure（TDnet / EDINET）
 - [ ] 1.1.6 technicals（TA-Lib）※要 `brew install ta-lib`
 - [ ] 1.1.7 screening（V字 / テーマスコア）
