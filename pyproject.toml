@@ -27,6 +27,8 @@ dependencies = [
     "feedparser>=6.0",  # Phase 1.1.4: RSS パース
     "httpx>=0.27",  # Phase 1.1.4: HTTP クライアント（NewsAPI / EDINET / Ollama 等）
     "anthropic>=0.40",  # Phase 1.1.8: Claude API クライアント
+    "fastapi>=0.115",  # UI 配信 + API
+    "uvicorn[standard]>=0.30",  # ASGI サーバー
 ]
 
 [dependency-groups]

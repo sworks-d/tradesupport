@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Trading Agent — Dashboard</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <aside class="sidebar">
+        <div class="brand">Trading&nbsp;Agent <span class="badge" id="live-badge">preview</span></div>
+        <div class="summary">
+          <div class="total" id="total-assets">—</div>
+          <div class="total-label">総資産 (JPY)</div>
+          <div class="pnl" id="daily-pnl">—</div>
+        </div>
+        <svg id="sparkline" class="sparkline" viewBox="0 0 240 60" preserveAspectRatio="none"></svg>
+        <div class="alloc">
+          <div class="alloc-row"><span>コア</span><span id="core-val">—</span></div>
+          <div class="alloc-row"><span>サテライト</span><span id="sat-val">—</span></div>
+          <div class="alloc-row"><span>現金</span><span id="cash-val">—</span></div>
+          <div class="alloc-row"><span>保有数</span><span id="holding-count">—</span></div>
+        </div>
+        <nav class="nav">
+          <a href="#sell">売り推奨</a>
+          <a href="#buy">買い推奨</a>
+          <a href="#holdings">保有銘柄</a>
+          <a href="#topics">トピックス</a>
+        </nav>
+        <div class="updated" id="updated">—</div>
+      </aside>
+
+      <main class="main">
+        <section class="actions">
+          <div class="zone zone-sell" id="sell">
+            <h2>売り推奨 <span class="zone-sub">利確 / 損切り</span></h2>
+            <div class="cards" id="sell-cards"></div>
+          </div>
+          <div class="zone zone-buy" id="buy">
+            <h2>買い推奨 <span class="zone-sub">新規エントリー候補</span></h2>
+            <div class="cards" id="buy-cards"></div>
+          </div>
+        </section>
+
+        <section class="holdings" id="holdings">
+          <h2>保有銘柄</h2>
+          <div class="grid" id="holdings-grid"></div>
+        </section>
+
+        <section class="topics" id="topics">
+          <h2>収集トピックス <span class="zone-sub">AI 判断の根拠</span></h2>
+          <div class="topic-list" id="topic-list"></div>
+        </section>
+      </main>
+    </div>
+    <script src="/app.js"></script>
+  </body>
+</html>

@@ -85,8 +85,17 @@
 ## Phase 1.5：オーケストレーター
 - [ ] 1.5.1 DAG / 1.5.2 朝バッチ定義 / 1.5.3 エラー処理 / 1.5.4 APScheduler / 1.5.5 健康チェック
 
+## UI プレビュー（前倒し・確認用） — ✅ 稼働
+- [done] FastAPI 配信 + `/api/dashboard`（DB集約）+ `/api/health`：`trading_agent/main.py` /
+  `trading_agent/api/routes_dashboard.py`
+- [done] 静的ダッシュボード `ui/static/`（サマリ+30日推移 / 売り左・買い右 / 保有 / トピックス）
+- [done] `scripts/seed_sample_data.py`（¥10万サンプル投入で全パネル描画）
+- 起動：`uv run uvicorn trading_agent.main:app --port 8000` → http://localhost:8000
+- 位置づけ：エージェント実装前の**確認用プレビュー**。API層は本番再利用、UIは Phase 1.6 で
+  Next.js 本実装へ発展。実データはエージェント（1.4/1.5）稼働後に置き換わる。
+
 ## Phase 1.6：UI（Next.js）
-- [ ] 1.6.1〜1.6.10
+- [ ] 1.6.1〜1.6.10（上記プレビューを正式 Next.js 化）
 
 ## Phase 1.7：常駐化と運用
 - [ ] 1.7.1 launchd / 1.7.2 backup / 1.7.3 通知 / 1.7.4 E2E / 1.7.5 ドキュメント

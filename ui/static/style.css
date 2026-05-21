@@ -1,0 +1,114 @@
+:root {
+  --bg: #0b0e14;
+  --panel: #131822;
+  --panel-2: #1a2030;
+  --border: #232a3a;
+  --text: #d7dcea;
+  --muted: #7b8499;
+  --sell: #e0a23c;
+  --sell-strong: #e5484d;
+  --buy: #2fb3a3;
+  --green: #3fb950;
+  --red: #e5484d;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, "Segoe UI", "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;
+  font-size: 14px;
+}
+#app { display: grid; grid-template-columns: 260px 1fr; min-height: 100vh; }
+
+/* ---- Sidebar ---- */
+.sidebar {
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  padding: 20px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+}
+.brand { font-weight: 700; letter-spacing: 0.02em; }
+.badge {
+  font-size: 10px; color: #0b0e14; background: var(--muted);
+  padding: 1px 6px; border-radius: 4px; vertical-align: middle;
+}
+.summary .total { font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.summary .total-label { color: var(--muted); font-size: 12px; }
+.summary .pnl { margin-top: 6px; font-variant-numeric: tabular-nums; }
+.sparkline { width: 100%; height: 60px; }
+.alloc { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.alloc-row { display: flex; justify-content: space-between; color: var(--muted); }
+.alloc-row span:last-child { color: var(--text); font-variant-numeric: tabular-nums; }
+.nav { display: flex; flex-direction: column; gap: 4px; margin-top: auto; }
+.nav a { color: var(--muted); text-decoration: none; padding: 6px 8px; border-radius: 6px; }
+.nav a:hover { background: var(--panel-2); color: var(--text); }
+.updated { color: var(--muted); font-size: 11px; }
+
+/* ---- Main ---- */
+.main { padding: 24px 28px; display: flex; flex-direction: column; gap: 28px; }
+h2 { font-size: 15px; margin: 0 0 12px; font-weight: 600; }
+.zone-sub { color: var(--muted); font-size: 12px; font-weight: 400; margin-left: 6px; }
+
+.actions { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.cards { display: flex; flex-direction: column; gap: 10px; }
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  border-left-width: 3px;
+}
+.zone-sell .card { border-left-color: var(--sell); }
+.zone-buy .card { border-left-color: var(--buy); }
+.card .row1 { display: flex; justify-content: space-between; align-items: baseline; }
+.card .ticker { font-weight: 700; font-size: 16px; }
+.card .score { font-variant-numeric: tabular-nums; font-weight: 700; }
+.card .tag { font-size: 11px; color: var(--muted); }
+.card .meta { color: var(--muted); font-size: 12px; margin-top: 6px; }
+.card ul { margin: 8px 0 0; padding-left: 18px; color: var(--text); font-size: 13px; }
+
+/* ---- Holdings ---- */
+.grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.hcard {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+  border-top: 2px solid var(--muted);
+}
+.hcard.up { border-top-color: var(--green); }
+.hcard.down { border-top-color: var(--red); }
+.hcard .ht { display: flex; justify-content: space-between; }
+.hcard .ticker { font-weight: 700; }
+.hcard .pnl { font-variant-numeric: tabular-nums; font-weight: 700; }
+.hcard .sub { color: var(--muted); font-size: 12px; margin-top: 6px; }
+
+/* ---- Topics ---- */
+.topic-list { display: flex; flex-direction: column; gap: 8px; }
+.topic {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+.topic .th { display: flex; gap: 8px; align-items: center; }
+.imp { font-size: 10px; padding: 1px 6px; border-radius: 4px; text-transform: uppercase; }
+.imp.high { background: var(--sell-strong); color: #fff; }
+.imp.medium { background: var(--sell); color: #0b0e14; }
+.imp.low { background: var(--muted); color: #0b0e14; }
+.topic .cat { color: var(--muted); font-size: 11px; }
+.topic .headline { font-weight: 600; }
+.topic .summary { color: var(--muted); font-size: 13px; margin-top: 4px; }
+.topic a { color: var(--buy); font-size: 12px; }
+
+.pos { color: var(--green); }
+.neg { color: var(--red); }
+.empty { color: var(--muted); font-size: 13px; padding: 8px 0; }

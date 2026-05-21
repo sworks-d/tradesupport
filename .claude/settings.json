@@ -36,7 +36,8 @@
       "Bash(true)",
       "Bash(sqlite3:*)",
       "Bash(/opt/homebrew/bin/uv sync *)",
-      "Bash(/opt/homebrew/bin/uv run *)"
+      "Bash(/opt/homebrew/bin/uv run *)",
+      "Bash(xargs -n1 basename)"
     ]
   }
 }
