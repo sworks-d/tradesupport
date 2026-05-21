@@ -1,0 +1,766 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Trading Agent — Architecture</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+  background: #fafaf8;
+  color: #222;
+  font-size: 13px;
+  line-height: 1.55;
+  padding: 32px 24px;
+}
+
+.wrap { max-width: 1400px; margin: 0 auto; }
+
+h1 { font-size: 22px; font-weight: 600; margin-bottom: 6px; }
+.subtitle { color: #666; font-size: 13px; margin-bottom: 32px; padding-bottom: 16px; border-bottom: 1px solid #ddd; }
+h2 { font-size: 16px; font-weight: 600; margin: 40px 0 16px; padding-bottom: 6px; border-bottom: 2px solid #333; }
+h3 { font-size: 14px; font-weight: 600; margin: 20px 0 10px; color: #444; }
+
+.status-bar {
+  background: #fff;
+  border: 1px solid #ccc;
+  border-left: 4px solid #2980b9;
+  padding: 12px 16px;
+  margin-bottom: 24px;
+  font-size: 12.5px;
+}
+.status-bar strong { color: #2980b9; }
+
+.diagram { background: #fff; border: 1px solid #ccc; padding: 24px; overflow-x: auto; }
+svg.diagram-svg { width: 100%; min-width: 1200px; height: auto; display: block; }
+
+table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid #ccc; font-size: 12.5px; margin-bottom: 12px; }
+th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid #e5e5e5; vertical-align: top; }
+th { background: #333; color: #fff; font-weight: 600; border-bottom: none; font-size: 11px; letter-spacing: 0.05em; }
+tr:last-child td { border-bottom: none; }
+tr:nth-child(even) td { background: #f8f8f5; }
+td code, .code { font-family: ui-monospace, "SF Mono", Menlo, monospace; background: #eee; padding: 1px 5px; border-radius: 2px; font-size: 11.5px; color: #c0392b; }
+
+.proto { display: inline-block; font-family: ui-monospace, monospace; font-size: 10.5px; padding: 1px 5px; background: #444; color: #fff; border-radius: 2px; margin-right: 4px; }
+.proto-rest { background: #2980b9; }
+.proto-mcp { background: #8e44ad; }
+.proto-api { background: #16a085; }
+.proto-file { background: #7f8c8d; }
+.proto-rss { background: #d35400; }
+.proto-llm { background: #c0392b; }
+.proto-broker { background: #e67e22; }
+
+.phase {
+  display: inline-block;
+  font-family: ui-monospace, monospace;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  margin-left: 4px;
+  font-weight: 700;
+}
+.phase-1 { background: #27ae60; color: #fff; }
+.phase-2 { background: #f39c12; color: #fff; }
+.phase-3 { background: #95a5a6; color: #fff; }
+
+.note { background: #fffbe6; border-left: 4px solid #f1c40f; padding: 10px 14px; margin: 12px 0; font-size: 12.5px; line-height: 1.6; }
+.note-update { background: #e8f5e9; border-left-color: #4caf50; }
+.note-update strong { color: #2e7d32; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+<h1>Trading Agent — アーキテクチャ接続図</h1>
+<div class="subtitle">
+最終更新 2026-05-21 / STEP B 完了反映済み / 関連：STEP_A_FINAL.md, STEP_B_FINAL.md, dashboard.html
+</div>
+
+<div class="status-bar">
+  <strong>STEP B 完了による更新点：</strong>
+  ①  moomoo を実運用データの単一ソースに位置づけ（株価・残高・約定の一元化） /
+  ②  broker MCP を <code>broker_read</code>（Phase 1）と <code>broker_order</code>（Phase 2-）に分離 /
+  ③  <code>sell-recommender</code> エージェント追加（利確・損切り、買いと同等の主役） /
+  ④  <code>topics</code> テーブル追加（収集ニュースをUIに表示、AI判断の透明性） /
+  ⑤  <code>manual-input-analyst</code> エージェント追加（X発言・記事URLの即時解釈）
+</div>
+
+<!-- =============================================================== -->
+<h2>1. システム全体図</h2>
+<!-- =============================================================== -->
+
+<div class="diagram">
+<svg class="diagram-svg" viewBox="0 0 1300 1180" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#444"/>
+    </marker>
+    <marker id="arr-orange" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#e67e22"/>
+    </marker>
+    <marker id="arr-purple" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#8e44ad"/>
+    </marker>
+  </defs>
+
+  <!-- ============================= -->
+  <!-- 外部リソース層（左サイド）       -->
+  <!-- ============================= -->
+  <text x="40" y="30" font-size="13" font-weight="700" fill="#666" letter-spacing="0.05em">EXTERNAL DATA SOURCES</text>
+
+  <!-- moomoo (key broker) -->
+  <rect x="40" y="50" width="220" height="90" rx="6" fill="#fff3e0" stroke="#e67e22" stroke-width="2"/>
+  <text x="50" y="72" font-size="13" font-weight="700" fill="#222">moomoo OpenAPI</text>
+  <text x="50" y="92" font-size="10.5" fill="#666">米国株 + 日本株</text>
+  <text x="50" y="107" font-size="10.5" fill="#666">株価・出来高・残高・約定</text>
+  <text x="50" y="124" font-size="10" fill="#e67e22" font-weight="700">実運用データの単一ソース</text>
+
+  <!-- SEC EDGAR -->
+  <rect x="40" y="160" width="220" height="55" rx="6" fill="#fff" stroke="#aaa"/>
+  <text x="50" y="180" font-size="12" font-weight="600" fill="#222">SEC EDGAR</text>
+  <text x="50" y="198" font-size="10.5" fill="#666">米国IR一次情報 (10-K, 10-Q)</text>
+
+  <!-- EDINET -->
+  <rect x="40" y="225" width="220" height="55" rx="6" fill="#fff" stroke="#aaa"/>
+  <text x="50" y="245" font-size="12" font-weight="600" fill="#222">EDINET API</text>
+  <text x="50" y="263" font-size="10.5" fill="#666">日本IR一次情報 (有報・四報)</text>
+
+  <!-- TDnet RSS -->
+  <rect x="40" y="290" width="220" height="55" rx="6" fill="#fff" stroke="#aaa"/>
+  <text x="50" y="310" font-size="12" font-weight="600" fill="#222">TDnet RSS</text>
+  <text x="50" y="328" font-size="10.5" fill="#666">日本適時開示（速報）</text>
+
+  <!-- News -->
+  <rect x="40" y="355" width="220" height="65" rx="6" fill="#fff" stroke="#aaa"/>
+  <text x="50" y="375" font-size="12" font-weight="600" fill="#222">NewsAPI / RSS</text>
+  <text x="50" y="392" font-size="10.5" fill="#666">Bloomberg, Reuters, 日経,</text>
+  <text x="50" y="408" font-size="10.5" fill="#666">9to5Mac, TechCrunch...</text>
+
+  <!-- J-Quants -->
+  <rect x="40" y="430" width="220" height="55" rx="6" fill="#fff" stroke="#aaa"/>
+  <text x="50" y="450" font-size="12" font-weight="600" fill="#222">J-Quants / yfinance</text>
+  <text x="50" y="468" font-size="10.5" fill="#666">過去価格・財務（補助・BT用）</text>
+
+  <!-- Manual input -->
+  <rect x="40" y="495" width="220" height="55" rx="6" fill="#f0f8ff" stroke="#2980b9" stroke-dasharray="4,3"/>
+  <text x="50" y="515" font-size="12" font-weight="600" fill="#222">手動投入（人間）</text>
+  <text x="50" y="533" font-size="10.5" fill="#666">X発言・URL貼り付け</text>
+
+  <!-- ============================= -->
+  <!-- Mac (Local) 全体ボックス        -->
+  <!-- ============================= -->
+  <rect x="300" y="50" width="960" height="900" rx="8" fill="none" stroke="#333" stroke-width="2" stroke-dasharray="6,3"/>
+  <text x="310" y="40" font-size="13" font-weight="700" fill="#333">macOS (launchd 常駐、ローカル完結)</text>
+
+  <!-- ============================= -->
+  <!-- FastAPI / Scheduler            -->
+  <!-- ============================= -->
+  <rect x="320" y="80" width="430" height="100" rx="6" fill="#e8f4f8" stroke="#2980b9" stroke-width="1.5"/>
+  <text x="335" y="103" font-size="13" font-weight="700" fill="#1f5582">FastAPI Server</text>
+  <text x="335" y="123" font-size="11" fill="#444">・Next.js UI（localhost）の配信</text>
+  <text x="335" y="140" font-size="11" fill="#444">・APScheduler（朝バッチ・定期処理）</text>
+  <text x="335" y="157" font-size="11" fill="#444">・MCP ホスト</text>
+  <text x="335" y="174" font-size="11" fill="#444">・価格更新ボタンの受け口（手動 refresh）</text>
+
+  <!-- ============================= -->
+  <!-- moomoo OpenD (right)           -->
+  <!-- ============================= -->
+  <rect x="780" y="80" width="460" height="100" rx="6" fill="#fff3e0" stroke="#e67e22" stroke-width="1.5"/>
+  <text x="795" y="103" font-size="13" font-weight="700" fill="#a04a00">moomoo OpenD（常時起動）</text>
+  <text x="795" y="123" font-size="11" fill="#444">・株価・出来高（リアルタイム）</text>
+  <text x="795" y="140" font-size="11" fill="#444">・保有銘柄・残高 同期</text>
+  <text x="795" y="157" font-size="11" fill="#444">・約定履歴 自動取り込み</text>
+  <text x="795" y="174" font-size="10" fill="#666" font-style="italic">※moomooのAI機能（チャート予測等）はAPIで取れないため使わない</text>
+
+  <!-- ============================= -->
+  <!-- Multi-Agent Orchestrator       -->
+  <!-- ============================= -->
+  <rect x="320" y="200" width="920" height="220" rx="6" fill="#f5e6f7" stroke="#8e44ad" stroke-width="1.5"/>
+  <text x="335" y="222" font-size="13" font-weight="700" fill="#5b2c6f">Multi-Agent Orchestrator (LangChain)</text>
+
+  <!-- agents row 1 (Phase 1) -->
+  <text x="335" y="245" font-size="10" font-weight="700" fill="#666" letter-spacing="0.05em">PHASE 1 エージェント</text>
+
+  <rect x="335" y="252" width="170" height="62" rx="4" fill="#fff" stroke="#8e44ad"/>
+  <text x="345" y="270" font-size="11.5" font-weight="600" fill="#222">screening-agent</text>
+  <text x="345" y="287" font-size="10" fill="#666">V字/テーマで287銘柄</text>
+  <text x="345" y="302" font-size="10" fill="#666">→ 候補10-20件抽出</text>
+
+  <rect x="515" y="252" width="170" height="62" rx="4" fill="#fff" stroke="#8e44ad"/>
+  <text x="525" y="270" font-size="11.5" font-weight="600" fill="#222">market-analyst × N</text>
+  <text x="525" y="287" font-size="10" fill="#666">候補銘柄を並列分析</text>
+  <text x="525" y="302" font-size="10" fill="#666">→ スコアリング・要約</text>
+
+  <rect x="695" y="252" width="170" height="62" rx="4" fill="#fff" stroke="#8e44ad"/>
+  <text x="705" y="270" font-size="11.5" font-weight="600" fill="#222">portfolio-builder</text>
+  <text x="705" y="287" font-size="10" fill="#666">初回構築・配分</text>
+  <text x="705" y="302" font-size="10" fill="#666">Core-Satellite管理</text>
+
+  <rect x="875" y="252" width="170" height="62" rx="4" fill="#fff" stroke="#16a085" stroke-width="2"/>
+  <text x="885" y="270" font-size="11.5" font-weight="600" fill="#222">sell-recommender</text>
+  <text x="885" y="287" font-size="10" fill="#16a085">【NEW】売り推奨</text>
+  <text x="885" y="302" font-size="10" fill="#666">利確 / 損切り判定</text>
+
+  <rect x="1055" y="252" width="170" height="62" rx="4" fill="#fff" stroke="#16a085" stroke-width="2"/>
+  <text x="1065" y="270" font-size="11.5" font-weight="600" fill="#222">manual-input-analyst</text>
+  <text x="1065" y="287" font-size="10" fill="#16a085">【NEW】即時解釈</text>
+  <text x="1065" y="302" font-size="10" fill="#666">X発言・URL → 影響先</text>
+
+  <!-- agents row 2 (Phase 2+) -->
+  <text x="335" y="338" font-size="10" font-weight="700" fill="#666" letter-spacing="0.05em">PHASE 2+ エージェント</text>
+
+  <rect x="335" y="345" width="220" height="62" rx="4" fill="#fafafa" stroke="#bbb" stroke-dasharray="3,3"/>
+  <text x="345" y="363" font-size="11.5" font-weight="600" fill="#888">position-monitor</text>
+  <text x="345" y="380" font-size="10" fill="#888">保有銘柄の継続監視</text>
+  <text x="345" y="395" font-size="10" fill="#888">（Phase 1 では sell-recommender が代替）</text>
+
+  <rect x="565" y="345" width="220" height="62" rx="4" fill="#fafafa" stroke="#bbb" stroke-dasharray="3,3"/>
+  <text x="575" y="363" font-size="11.5" font-weight="600" fill="#888">strategy-coordinator</text>
+  <text x="575" y="380" font-size="10" fill="#888">統合判断・複数エージェント調整</text>
+
+  <rect x="795" y="345" width="220" height="62" rx="4" fill="#fafafa" stroke="#bbb" stroke-dasharray="3,3"/>
+  <text x="805" y="363" font-size="11.5" font-weight="600" fill="#888">backtest-runner</text>
+  <text x="805" y="380" font-size="10" fill="#888">過去データで戦略検証</text>
+
+  <!-- ============================= -->
+  <!-- MCP Tool Layer                 -->
+  <!-- ============================= -->
+  <rect x="320" y="440" width="920" height="220" rx="6" fill="#f0f8ff" stroke="#2980b9" stroke-width="1.5"/>
+  <text x="335" y="462" font-size="13" font-weight="700" fill="#1f5582">MCP Tool Layer（自作）</text>
+
+  <rect x="335" y="475" width="180" height="60" rx="4" fill="#fff" stroke="#2980b9"/>
+  <text x="345" y="493" font-size="11.5" font-weight="600">market_data</text>
+  <text x="345" y="510" font-size="10" fill="#666">moomoo中心、補助yf/JQ</text>
+  <text x="345" y="525" font-size="10" fill="#27ae60" font-weight="700">Phase 1</text>
+
+  <rect x="525" y="475" width="180" height="60" rx="4" fill="#fff" stroke="#2980b9"/>
+  <text x="535" y="493" font-size="11.5" font-weight="600">fundamentals</text>
+  <text x="535" y="510" font-size="10" fill="#666">EDGAR / EDINET</text>
+  <text x="535" y="525" font-size="10" fill="#27ae60" font-weight="700">Phase 1</text>
+
+  <rect x="715" y="475" width="180" height="60" rx="4" fill="#fff" stroke="#2980b9"/>
+  <text x="725" y="493" font-size="11.5" font-weight="600">disclosure</text>
+  <text x="725" y="510" font-size="10" fill="#666">TDnet RSS</text>
+  <text x="725" y="525" font-size="10" fill="#27ae60" font-weight="700">Phase 1</text>
+
+  <rect x="905" y="475" width="180" height="60" rx="4" fill="#fff" stroke="#2980b9"/>
+  <text x="915" y="493" font-size="11.5" font-weight="600">news</text>
+  <text x="915" y="510" font-size="10" fill="#666">NewsAPI / RSS</text>
+  <text x="915" y="525" font-size="10" fill="#27ae60" font-weight="700">Phase 1</text>
+
+  <!-- row 2 -->
+  <rect x="335" y="545" width="180" height="60" rx="4" fill="#fff" stroke="#2980b9"/>
+  <text x="345" y="563" font-size="11.5" font-weight="600">technicals</text>
+  <text x="345" y="580" font-size="10" fill="#666">TA-Lib計算</text>
+  <text x="345" y="595" font-size="10" fill="#27ae60" font-weight="700">Phase 1</text>
+
+  <rect x="525" y="545" width="180" height="60" rx="4" fill="#fff" stroke="#2980b9"/>
+  <text x="535" y="563" font-size="11.5" font-weight="600">screening</text>
+  <text x="535" y="580" font-size="10" fill="#666">V字 / テーマロジック</text>
+  <text x="535" y="595" font-size="10" fill="#27ae60" font-weight="700">Phase 1</text>
+
+  <rect x="715" y="545" width="180" height="60" rx="4" fill="#fff3e0" stroke="#e67e22" stroke-width="2"/>
+  <text x="725" y="563" font-size="11.5" font-weight="600">broker_read</text>
+  <text x="725" y="580" font-size="10" fill="#666">残高・約定の読み取り</text>
+  <text x="725" y="595" font-size="10" fill="#27ae60" font-weight="700">Phase 1【NEW前倒し】</text>
+
+  <rect x="905" y="545" width="180" height="60" rx="4" fill="#fff" stroke="#2980b9"/>
+  <text x="915" y="563" font-size="11.5" font-weight="600">llm_call</text>
+  <text x="915" y="580" font-size="10" fill="#666">Anthropic / Ollama 呼分け</text>
+  <text x="915" y="595" font-size="10" fill="#27ae60" font-weight="700">Phase 1</text>
+
+  <!-- row 3 -->
+  <rect x="335" y="615" width="180" height="35" rx="4" fill="#fafafa" stroke="#bbb" stroke-dasharray="3,3"/>
+  <text x="345" y="635" font-size="11.5" font-weight="600" fill="#888">broker_order</text>
+  <text x="465" y="635" font-size="10" fill="#f39c12" font-weight="700" text-anchor="end">Phase 2-</text>
+
+  <rect x="525" y="615" width="180" height="35" rx="4" fill="#fafafa" stroke="#bbb" stroke-dasharray="3,3"/>
+  <text x="535" y="635" font-size="11.5" font-weight="600" fill="#888">backtester</text>
+  <text x="655" y="635" font-size="10" fill="#95a5a6" font-weight="700" text-anchor="end">Phase 2-3</text>
+
+  <!-- ============================= -->
+  <!-- Persistence: SQLite            -->
+  <!-- ============================= -->
+  <rect x="320" y="680" width="600" height="130" rx="6" fill="#fff" stroke="#7f8c8d" stroke-width="1.5"/>
+  <text x="335" y="702" font-size="13" font-weight="700" fill="#34495e">Persistence : SQLite</text>
+
+  <rect x="335" y="715" width="130" height="85" rx="4" fill="#f8f8f5"/>
+  <text x="345" y="732" font-size="11" font-weight="600">decisions</text>
+  <text x="345" y="748" font-size="9.5" fill="#666">レコメンド履歴</text>
+  <text x="345" y="762" font-size="9.5" fill="#666">（買い/売り/利確/損切）</text>
+  <text x="345" y="780" font-size="9" fill="#16a085" font-weight="700">的中率算出に使用</text>
+
+  <rect x="475" y="715" width="130" height="85" rx="4" fill="#f8f8f5"/>
+  <text x="485" y="732" font-size="11" font-weight="600">portfolio</text>
+  <text x="485" y="748" font-size="9.5" fill="#666">保有銘柄、取得情報</text>
+  <text x="485" y="762" font-size="9.5" fill="#666">目標期間、進捗</text>
+  <text x="485" y="780" font-size="9" fill="#e67e22" font-weight="700">moomooと同期</text>
+
+  <rect x="615" y="715" width="130" height="85" rx="4" fill="#fff3e0" stroke="#16a085" stroke-width="2"/>
+  <text x="625" y="732" font-size="11" font-weight="600">topics</text>
+  <text x="625" y="748" font-size="9" fill="#16a085">【NEW】収集ニュース</text>
+  <text x="625" y="762" font-size="9.5" fill="#666">重要度、影響先銘柄</text>
+  <text x="625" y="780" font-size="9.5" fill="#666">ソースURL</text>
+
+  <rect x="755" y="715" width="155" height="85" rx="4" fill="#f8f8f5"/>
+  <text x="765" y="732" font-size="11" font-weight="600">analysis_logs, cost_logs</text>
+  <text x="765" y="748" font-size="9.5" fill="#666">エージェント実行ログ</text>
+  <text x="765" y="762" font-size="9.5" fill="#666">API消費追跡</text>
+  <text x="765" y="780" font-size="9" fill="#16a085" font-weight="700">月¥5,000予算管理</text>
+
+  <!-- ============================= -->
+  <!-- LLM Layer                      -->
+  <!-- ============================= -->
+  <rect x="940" y="680" width="300" height="130" rx="6" fill="#fdf2f2" stroke="#c0392b" stroke-width="1.5"/>
+  <text x="955" y="702" font-size="13" font-weight="700" fill="#922b21">LLM Layer</text>
+
+  <rect x="955" y="715" width="130" height="85" rx="4" fill="#fff"/>
+  <text x="965" y="732" font-size="11" font-weight="600">Claude</text>
+  <text x="965" y="748" font-size="9.5" fill="#666">Sonnet 4.6（Hot Path）</text>
+  <text x="965" y="762" font-size="9.5" fill="#666">Opus 4.7（Critical）</text>
+  <text x="965" y="780" font-size="9" fill="#c0392b" font-weight="700">投資判断・深掘り</text>
+
+  <rect x="1095" y="715" width="130" height="85" rx="4" fill="#fff"/>
+  <text x="1105" y="732" font-size="11" font-weight="600">Ollama</text>
+  <text x="1105" y="748" font-size="9.5" fill="#666">Cold Path</text>
+  <text x="1105" y="762" font-size="9.5" fill="#666">要約・整形</text>
+  <text x="1105" y="780" font-size="9" fill="#c0392b" font-weight="700">ローカル無料</text>
+
+  <!-- ============================= -->
+  <!-- UI Layer                       -->
+  <!-- ============================= -->
+  <rect x="320" y="830" width="920" height="105" rx="6" fill="#fffbe6" stroke="#f1c40f" stroke-width="1.5"/>
+  <text x="335" y="852" font-size="13" font-weight="700" fill="#7d6608">Next.js UI（ブラウザ localhost）</text>
+
+  <rect x="335" y="865" width="160" height="55" rx="4" fill="#fff"/>
+  <text x="345" y="883" font-size="11" font-weight="600">ダッシュボード</text>
+  <text x="345" y="900" font-size="9.5" fill="#666">売り買い × 保有 ×</text>
+  <text x="345" y="912" font-size="9.5" fill="#666">トピックス × Track</text>
+
+  <rect x="505" y="865" width="160" height="55" rx="4" fill="#fafafa" stroke="#bbb"/>
+  <text x="515" y="883" font-size="11" font-weight="600" fill="#888">スクリーニング</text>
+  <text x="515" y="900" font-size="9.5" fill="#888">STEP B 続編</text>
+
+  <rect x="675" y="865" width="160" height="55" rx="4" fill="#fafafa" stroke="#bbb"/>
+  <text x="685" y="883" font-size="11" font-weight="600" fill="#888">銘柄詳細</text>
+  <text x="685" y="900" font-size="9.5" fill="#888">STEP B 続編</text>
+
+  <rect x="845" y="865" width="160" height="55" rx="4" fill="#fafafa" stroke="#bbb"/>
+  <text x="855" y="883" font-size="11" font-weight="600" fill="#888">ポートフォリオ</text>
+  <text x="855" y="900" font-size="9.5" fill="#888">STEP B 続編</text>
+
+  <rect x="1015" y="865" width="210" height="55" rx="4" fill="#fafafa" stroke="#bbb"/>
+  <text x="1025" y="883" font-size="11" font-weight="600" fill="#888">設定 / 週次 / 過去レコメンド</text>
+  <text x="1025" y="900" font-size="9.5" fill="#888">STEP B 続編</text>
+
+  <!-- ============================= -->
+  <!-- HUMAN ZONE                     -->
+  <!-- ============================= -->
+  <rect x="320" y="965" width="920" height="170" rx="6" fill="#eef" stroke="#2980b9" stroke-width="1.5"/>
+  <text x="335" y="988" font-size="13" font-weight="700" fill="#1f5582">YOU（あなた）</text>
+
+  <rect x="335" y="1000" width="270" height="60" rx="4" fill="#fff"/>
+  <text x="345" y="1018" font-size="11" font-weight="600">朝5分ダッシュボード確認</text>
+  <text x="345" y="1035" font-size="10" fill="#666">売り買いレコメンド → 採用判断</text>
+  <text x="345" y="1050" font-size="10" fill="#666">深掘りは詳細パネル</text>
+
+  <rect x="615" y="1000" width="270" height="60" rx="4" fill="#fff"/>
+  <text x="625" y="1018" font-size="11" font-weight="600">moomooアプリで手動発注</text>
+  <text x="625" y="1035" font-size="10" fill="#666">指値・数量はツールがコピー可能</text>
+  <text x="625" y="1050" font-size="10" fill="#666">約定は自動同期</text>
+
+  <rect x="895" y="1000" width="335" height="60" rx="4" fill="#fff"/>
+  <text x="905" y="1018" font-size="11" font-weight="600">セットアップ作業（Phase 0-1）</text>
+  <text x="905" y="1035" font-size="10" fill="#666">moomoo口座開設、各APIキー取得、</text>
+  <text x="905" y="1050" font-size="10" fill="#666">.env設定、緊急停止ファイル管理</text>
+
+  <rect x="335" y="1070" width="895" height="55" rx="4" fill="#fff" stroke="#e67e22" stroke-dasharray="4,3"/>
+  <text x="345" y="1088" font-size="11" font-weight="600" fill="#a04a00">緊急時の介入</text>
+  <text x="345" y="1105" font-size="10" fill="#666">~/.trading-agent/HALT ファイル作成で全停止 / .env のPAPER/LIVE切替 / 月次予算超過時の停止承認</text>
+
+
+  <!-- ============================= -->
+  <!-- 矢印（外部→MCP）                -->
+  <!-- ============================= -->
+  <!-- moomoo → OpenD（同じmoomooなので直接） -->
+  <path d="M 260 95 L 778 130" stroke="#e67e22" stroke-width="2" fill="none" marker-end="url(#arr-orange)"/>
+  <text x="490" y="100" font-size="9.5" fill="#a04a00" font-weight="700">OpenAPI（株価/残高/約定）</text>
+
+  <!-- 各データソース → MCP Tool Layer -->
+  <path d="M 260 188 L 333 495" stroke="#444" stroke-width="1" fill="none" marker-end="url(#arr)"/>
+  <text x="270" y="370" font-size="9" fill="#666">REST/API</text>
+
+  <path d="M 260 253 L 333 495" stroke="#444" stroke-width="1" fill="none" marker-end="url(#arr)"/>
+  <path d="M 260 318 L 720 545" stroke="#444" stroke-width="1" fill="none" marker-end="url(#arr)"/>
+  <path d="M 260 388 L 910 495" stroke="#444" stroke-width="1" fill="none" marker-end="url(#arr)"/>
+  <path d="M 260 458 L 340 565" stroke="#444" stroke-width="1" fill="none" marker-end="url(#arr)"/>
+
+  <!-- moomoo OpenD → broker_read -->
+  <path d="M 800 180 L 800 543" stroke="#e67e22" stroke-width="2" fill="none" marker-end="url(#arr-orange)"/>
+
+  <!-- 手動投入 → manual-input-analyst -->
+  <path d="M 260 523 L 1060 282" stroke="#2980b9" stroke-width="1" fill="none" stroke-dasharray="4,3" marker-end="url(#arr)"/>
+
+  <!-- Scheduler → Orchestrator -->
+  <path d="M 535 180 L 535 252" stroke="#2980b9" stroke-width="1.5" fill="none" marker-end="url(#arr)"/>
+  <text x="545" y="218" font-size="9" fill="#1f5582">朝バッチ起動</text>
+
+  <!-- Orchestrator ↔ MCP Tool Layer -->
+  <path d="M 470 420 L 470 460" stroke="#8e44ad" stroke-width="1.5" fill="none" marker-end="url(#arr-purple)"/>
+  <path d="M 770 460 L 770 420" stroke="#8e44ad" stroke-width="1.5" fill="none" marker-end="url(#arr-purple)"/>
+  <text x="600" y="438" font-size="9.5" fill="#5b2c6f" font-weight="700">MCP</text>
+
+  <!-- MCP → Persistence -->
+  <path d="M 460 660 L 460 685" stroke="#444" stroke-width="1" fill="none" marker-end="url(#arr)"/>
+
+  <!-- MCP → LLM -->
+  <path d="M 950 605 L 1015 680" stroke="#c0392b" stroke-width="1.5" fill="none" marker-end="url(#arr)"/>
+  <text x="990" y="650" font-size="9.5" fill="#922b21" font-weight="700">LLM call</text>
+
+  <!-- Persistence → UI (read) -->
+  <path d="M 620 810 L 620 862" stroke="#444" stroke-width="1" fill="none" marker-end="url(#arr)"/>
+
+  <!-- UI ↔ Human -->
+  <path d="M 415 920 L 415 1000" stroke="#2980b9" stroke-width="1.5" fill="none" marker-end="url(#arr)"/>
+  <path d="M 475 1000 L 475 920" stroke="#2980b9" stroke-width="1.5" fill="none" marker-end="url(#arr)"/>
+  <text x="430" y="965" font-size="9.5" fill="#1f5582">↕ レビュー</text>
+
+  <!-- Human → moomoo (発注) -->
+  <path d="M 745 1000 L 745 188" stroke="#e67e22" stroke-width="1.5" fill="none" stroke-dasharray="4,3" marker-end="url(#arr-orange)"/>
+  <text x="755" y="600" font-size="9" fill="#a04a00" transform="rotate(-90 755 600)">手動発注</text>
+
+</svg>
+</div>
+
+<div class="note note-update">
+  <strong>図の読み方：</strong>
+  オレンジ実線 = moomoo関連のデータフロー（一元化方針）。
+  紫 = MCP（エージェント↔ツール）。
+  赤 = LLM呼び出し。
+  灰色破線枠 = Phase 2 以降の追加要素。
+  <strong>緑枠</strong>付き = STEP B で確定した新規／前倒し要素。
+</div>
+
+
+<!-- =============================================================== -->
+<h2>2. データフロー：朝バッチの典型シナリオ</h2>
+<!-- =============================================================== -->
+
+<table>
+  <thead>
+    <tr>
+      <th style="width:60px">時刻</th>
+      <th>処理</th>
+      <th>担当</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>05:00</td>
+      <td>APScheduler が朝バッチを起動</td>
+      <td>FastAPI / Scheduler</td>
+    </tr>
+    <tr>
+      <td>05:01</td>
+      <td>moomoo OpenD から保有銘柄・残高・約定を取得 → portfolio テーブル更新</td>
+      <td><span class="proto proto-broker">broker_read</span></td>
+    </tr>
+    <tr>
+      <td>05:02</td>
+      <td>NewsAPI / RSS から過去24時間のニュース取得、AIで分類・重要度判定 → topics テーブル</td>
+      <td><span class="proto proto-mcp">news</span> + <span class="proto proto-llm">Ollama</span></td>
+    </tr>
+    <tr>
+      <td>05:05</td>
+      <td>screening-agent が V字+テーマで287銘柄から候補10-20件抽出</td>
+      <td><span class="proto proto-mcp">screening</span> + <span class="proto proto-llm">Sonnet</span></td>
+    </tr>
+    <tr>
+      <td>05:10</td>
+      <td>market-analyst × N が候補銘柄を並列で詳細分析（ファンダ・テクニカル・ニュース）</td>
+      <td><span class="proto proto-mcp">fundamentals/technicals/news</span> + <span class="proto proto-llm">Sonnet</span></td>
+    </tr>
+    <tr>
+      <td>05:20</td>
+      <td>sell-recommender が保有銘柄を分析、利確スコアと損切りスコアを算出</td>
+      <td><span class="proto proto-mcp">market_data/news</span> + <span class="proto proto-llm">Sonnet</span></td>
+    </tr>
+    <tr>
+      <td>05:25</td>
+      <td>レコメンドを decisions テーブルに保存、トピックスの影響先を紐付け</td>
+      <td>SQLite</td>
+    </tr>
+    <tr>
+      <td>05:30</td>
+      <td>朝バッチ完了。ユーザーが起きたタイミングでダッシュボードを開けば最新表示</td>
+      <td>UI</td>
+    </tr>
+    <tr>
+      <td>06:30</td>
+      <td><strong>あなたが起床、ダッシュボードを開く</strong>。売り買いレコメンドを確認、moomooで手動発注</td>
+      <td>YOU</td>
+    </tr>
+    <tr>
+      <td>06:45</td>
+      <td>発注後、moomoo OpenD 経由で約定が自動同期、portfolio テーブルが最新化</td>
+      <td><span class="proto proto-broker">broker_read</span></td>
+    </tr>
+    <tr>
+      <td>任意</td>
+      <td>X発言・記事URLを「手動投入」に投げ込み、即時解釈（manual-input-analyst）</td>
+      <td><span class="proto proto-llm">Sonnet</span></td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="note">
+  朝バッチは LLM 呼び出しが集中するタイミング。<strong>Hot Path（Sonnet）と Cold Path（Ollama）の振り分け</strong>が月¥5,000の予算遵守の鍵。
+  ニュース要約・トピックス分類は Ollama、判断系のみ Sonnet/Opus を使う。
+</div>
+
+
+<!-- =============================================================== -->
+<h2>3. 外部リソース接続の詳細</h2>
+<!-- =============================================================== -->
+
+<table>
+  <thead>
+    <tr>
+      <th style="width:160px">リソース</th>
+      <th style="width:90px">プロトコル</th>
+      <th>用途</th>
+      <th style="width:80px">Phase</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>moomoo OpenAPI</strong></td>
+      <td><span class="proto proto-broker">OpenAPI</span></td>
+      <td>株価・出来高（リアルタイム）、保有銘柄・残高、約定履歴。<strong>実運用データの単一ソース</strong>として扱う</td>
+      <td><span class="phase phase-1">Phase 1</span></td>
+    </tr>
+    <tr>
+      <td>SEC EDGAR</td>
+      <td><span class="proto proto-api">REST</span></td>
+      <td>米国上場企業の10-K・10-Q・8-K等の一次情報。深掘り分析（F6）に使用</td>
+      <td><span class="phase phase-1">Phase 1</span></td>
+    </tr>
+    <tr>
+      <td>EDINET API</td>
+      <td><span class="proto proto-api">REST</span></td>
+      <td>日本企業の有報・四報・大量保有報告書。深掘り分析・トピックス影響判定に使用</td>
+      <td><span class="phase phase-1">Phase 1</span></td>
+    </tr>
+    <tr>
+      <td>TDnet RSS</td>
+      <td><span class="proto proto-rss">RSS</span></td>
+      <td>日本適時開示の速報。トピックス収集の入力</td>
+      <td><span class="phase phase-1">Phase 1</span></td>
+    </tr>
+    <tr>
+      <td>NewsAPI</td>
+      <td><span class="proto proto-api">REST</span></td>
+      <td>Bloomberg, Reuters, WSJ 等のニュース集約。トピックス収集の主要ソース</td>
+      <td><span class="phase phase-1">Phase 1</span></td>
+    </tr>
+    <tr>
+      <td>各種RSS</td>
+      <td><span class="proto proto-rss">RSS</span></td>
+      <td>9to5Mac, TechCrunch, 日経電子版, 政府公式（ホワイトハウス/財務省/FRB）等</td>
+      <td><span class="phase phase-1">Phase 1</span></td>
+    </tr>
+    <tr>
+      <td>J-Quants</td>
+      <td><span class="proto proto-api">REST</span></td>
+      <td>日本株の過去価格・財務（補助）。バックテスト用</td>
+      <td><span class="phase phase-1">Phase 1</span></td>
+    </tr>
+    <tr>
+      <td>yfinance</td>
+      <td><span class="proto proto-api">SDK</span></td>
+      <td>米国株の過去価格・財務（補助）。バックテスト用</td>
+      <td><span class="phase phase-1">Phase 1</span></td>
+    </tr>
+    <tr>
+      <td>Anthropic API</td>
+      <td><span class="proto proto-llm">LLM</span></td>
+      <td>Claude Sonnet 4.6（Hot Path）、Opus 4.7（Critical）</td>
+      <td><span class="phase phase-1">Phase 1</span></td>
+    </tr>
+    <tr>
+      <td>Ollama (local)</td>
+      <td><span class="proto proto-llm">LLM</span></td>
+      <td>Cold Path（要約・整形・分類）。コスト¥0</td>
+      <td><span class="phase phase-1">Phase 1</span></td>
+    </tr>
+  </tbody>
+</table>
+
+
+<!-- =============================================================== -->
+<h2>4. MCP ツール定義（Phase 1 ）</h2>
+<!-- =============================================================== -->
+
+<table>
+  <thead>
+    <tr>
+      <th style="width:160px">ツール名</th>
+      <th>機能</th>
+      <th style="width:240px">主な利用エージェント</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>market_data</code></td>
+      <td>株価・出来高の取得。moomoo中心、補助で yfinance/J-Quants</td>
+      <td>screening-agent, market-analyst, sell-recommender</td>
+    </tr>
+    <tr>
+      <td><code>fundamentals</code></td>
+      <td>財務データ取得（EDGAR / EDINET）</td>
+      <td>market-analyst, sell-recommender</td>
+    </tr>
+    <tr>
+      <td><code>disclosure</code></td>
+      <td>適時開示の取得（TDnet RSS）</td>
+      <td>market-analyst, manual-input-analyst</td>
+    </tr>
+    <tr>
+      <td><code>news</code></td>
+      <td>ニュース取得（NewsAPI/RSS）、AI分類でトピックス化</td>
+      <td>screening-agent, market-analyst, manual-input-analyst</td>
+    </tr>
+    <tr>
+      <td><code>technicals</code></td>
+      <td>テクニカル指標計算（TA-Lib：RSI, MACD, ボリンジャー等）</td>
+      <td>screening-agent, market-analyst, sell-recommender</td>
+    </tr>
+    <tr>
+      <td><code>screening</code></td>
+      <td>V字回復ロジック、テーマロジックの実行</td>
+      <td>screening-agent</td>
+    </tr>
+    <tr>
+      <td><code>broker_read</code> 【NEW】</td>
+      <td>moomoo の残高・約定・保有銘柄の読み取り。Phase 1 で先行実装</td>
+      <td>portfolio-builder, sell-recommender</td>
+    </tr>
+    <tr>
+      <td><code>llm_call</code></td>
+      <td>LangChain経由で Anthropic / Ollama を呼び分け、コスト記録</td>
+      <td>全エージェント</td>
+    </tr>
+  </tbody>
+</table>
+
+
+<!-- =============================================================== -->
+<h2>5. データモデル（Phase 1 主要テーブル）</h2>
+<!-- =============================================================== -->
+
+<table>
+  <thead>
+    <tr>
+      <th style="width:130px">テーブル</th>
+      <th>役割</th>
+      <th style="width:300px">主要カラム（抜粋）</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>decisions</code></td>
+      <td>レコメンド履歴（買い/売り/利確/損切り）。的中率算出に使用</td>
+      <td>id, date, ticker, action, score, scenario, expected_return, actual_return, hit_or_miss</td>
+    </tr>
+    <tr>
+      <td><code>portfolio</code></td>
+      <td>保有銘柄。moomoo と同期</td>
+      <td>ticker, buy_date, buy_price, qty, target_date, target_pct, strategy_category, status</td>
+    </tr>
+    <tr>
+      <td><code>topics</code> 【NEW】</td>
+      <td>収集ニュース・IR・X発言。AI分類済み</td>
+      <td>id, time, category, importance, headline, summary, source_url, affected_tickers, impact_text</td>
+    </tr>
+    <tr>
+      <td><code>scenarios</code></td>
+      <td>各レコメンドのシナリオ（強気/ベース/弱気）と進捗</td>
+      <td>decision_id, scenario_type, target, prob, current_progress</td>
+    </tr>
+    <tr>
+      <td><code>analysis_logs</code></td>
+      <td>エージェント実行ログ（trace）</td>
+      <td>id, agent, started_at, ended_at, input, output, tokens, cost</td>
+    </tr>
+    <tr>
+      <td><code>cost_logs</code></td>
+      <td>API消費追跡（日次・月次予算管理）</td>
+      <td>date, model, tokens_in, tokens_out, cost_usd, cost_jpy</td>
+    </tr>
+  </tbody>
+</table>
+
+
+<!-- =============================================================== -->
+<h2>6. ユーザーの関与ポイント</h2>
+<!-- =============================================================== -->
+
+<table>
+  <thead>
+    <tr>
+      <th style="width:200px">場面</th>
+      <th>あなたがやること</th>
+      <th style="width:90px">頻度</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>初期セットアップ</td>
+      <td>moomoo口座開設、各APIキー取得、Anthropic/J-Quants/EDINET/NewsAPI登録、 .env 設定、Ollama インストール</td>
+      <td>初回のみ</td>
+    </tr>
+    <tr>
+      <td>朝のレビュー</td>
+      <td>ダッシュボードを開き、売り買いレコメンドを確認 → 採用判断</td>
+      <td>毎朝 3-5分</td>
+    </tr>
+    <tr>
+      <td>moomoo発注</td>
+      <td>採用したレコメンドの指値・数量をmoomooアプリでコピペ入力</td>
+      <td>取引日のみ</td>
+    </tr>
+    <tr>
+      <td>深掘り</td>
+      <td>気になる銘柄の詳細パネルを開いて読み込む / トピックスのソースを開く</td>
+      <td>任意</td>
+    </tr>
+    <tr>
+      <td>手動投入</td>
+      <td>X発言・記事URLを「手動投入」に貼り付け、即時解釈をリクエスト</td>
+      <td>速報時</td>
+    </tr>
+    <tr>
+      <td>緊急停止</td>
+      <td>~/.trading-agent/HALT ファイル作成で全停止</td>
+      <td>緊急時のみ</td>
+    </tr>
+    <tr>
+      <td>週次振り返り</td>
+      <td>週次レポート画面（STEP B 続編）で1週間の振り返り</td>
+      <td>週1回</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="note note-update">
+  <strong>Phase 1 の重要設計判断：</strong>
+  「手動発注 + 自動同期」という中間形態を採用した。完全自動売買は Phase 3、完全手動入力は実運用で必ず破綻する。
+  「moomooアプリで発注 → 約定は自動でツールに反映」のハイブリッドが、ユーザーの最終チェックを担保しつつ、ツールが常に最新データを持てる落とし所。
+</div>
+
+</div>
+
+</body>
+</html>

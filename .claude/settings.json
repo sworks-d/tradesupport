@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(uv --version)",
+      "Bash(git -C /Users/a05/tradesupport log --oneline -5)",
+      "Bash(ollama --version)",
+      "Bash(brew install *)"
+    ]
+  }
+}
