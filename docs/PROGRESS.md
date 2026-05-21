@@ -60,7 +60,8 @@
 - [done] 1.1.4 news — `mcp_tools/news.py`：NewsAPI + RSS(feedparser) 収集、デデュープ
   （URL/見出しハッシュ/類似度）、言語判別、期間/銘柄フィルタ、Graceful Degradation。
   fetcher 注入。feedparser/httpx 追加。テスト 12 件（計 77 件 green）。
-- [ ] 1.1.5 disclosure（TDnet / EDINET）
+- [done] 1.1.5 disclosure — `mcp_tools/disclosure.py`：TDnet RSS(feedparser) + EDINET API(httpx)。
+  期間/銘柄フィルタ・URL デデュープ・縮退。fetcher 注入。米 8-K は将来。テスト 7 件（計 84 件 green）。
 - [ ] 1.1.6 technicals（TA-Lib）※要 `brew install ta-lib`
 - [ ] 1.1.7 screening（V字 / テーマスコア）
 - [ ] 1.1.8 llm_call（router / anthropic / ollama / budget）※要 `ollama` 導入
