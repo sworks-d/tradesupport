@@ -62,7 +62,9 @@
   fetcher 注入。feedparser/httpx 追加。テスト 12 件（計 77 件 green）。
 - [done] 1.1.5 disclosure — `mcp_tools/disclosure.py`：TDnet RSS(feedparser) + EDINET API(httpx)。
   期間/銘柄フィルタ・URL デデュープ・縮退。fetcher 注入。米 8-K は将来。テスト 7 件（計 84 件 green）。
-- [ ] 1.1.6 technicals（TA-Lib）※要 `brew install ta-lib`
+- [done] 1.1.6 technicals — `mcp_tools/technicals.py`：RSI/MACD/SMA/ボリンジャーを
+  **numpy/pandas で自前計算**（TA-Lib 不使用＝C依存回避。設計は「TA-Lib または pandas_ta」許容）。
+  シグナル名（overbought_rsi/golden_cross 等）、history_provider 注入。テスト 16 件（計 100 件 green）。
 - [ ] 1.1.7 screening（V字 / テーマスコア）
 - [ ] 1.1.8 llm_call（router / anthropic / ollama / budget）※要 `ollama` 導入
 
