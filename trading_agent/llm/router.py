@@ -1,0 +1,58 @@
+"""LLM ルーティングとコスト見積り（SYSTEM_DESIGN.md §5.1〜5.4）。
+
+routing_hint / purpose からモデルを選び、トークン数からコスト（JPY）を見積もる。
+純粋関数なので単体テストしやすい。
+"""
+
+from __future__ import annotations
+
+# モデル ID（環境のモデル一覧に準拠）
+MODEL_SONNET = "claude-sonnet-4-6"  # Hot Path
+MODEL_OPUS = "claude-opus-4-7"  # Critical
+MODEL_OLLAMA = "ollama"  # Cold Path（実モデル名は settings.ollama_model）
+
+# purpose ベースの分類（SYSTEM_DESIGN §5.2/5.3）
+COLD_PURPOSES = frozenset({"summarization", "classification", "ner"})
+CRITICAL_PURPOSES = frozenset({"deep_dive"})
+
+# Cold を Hot に格上げするトークン閾値
+_COLD_ESCALATION_TOKENS = 4000
+
+# 【たたき台】per-1K トークンの円単価（SYSTEM_DESIGN §5.4、2026-05 時点）
+PRICING_JPY: dict[str, tuple[float, float]] = {
+    MODEL_SONNET: (0.45, 2.25),
+    MODEL_OPUS: (2.25, 11.25),
+    MODEL_OLLAMA: (0.0, 0.0),
+}
+
+
+def estimate_tokens(text: str) -> int:
+    """ざっくりしたトークン数見積り（約4文字=1トークン）。"""
+    return max(1, len(text) // 4)
+
+
+def route_llm_call(routing_hint: str | None, purpose: str, prompt: str) -> str:
+    """使用モデルを決定する（SYSTEM_DESIGN §5.3）。
+
+    明示の routing_hint を最優先。なければ purpose ベース。Cold でも入力が長大なら Hot に格上げ。
+    """
+    if routing_hint:
+        if routing_hint == "cold":
+            return MODEL_OLLAMA
+        if routing_hint == "critical":
+            return MODEL_OPUS
+        return MODEL_SONNET  # "hot" など
+
+    if purpose in COLD_PURPOSES:
+        if estimate_tokens(prompt) > _COLD_ESCALATION_TOKENS:
+            return MODEL_SONNET
+        return MODEL_OLLAMA
+    if purpose in CRITICAL_PURPOSES:
+        return MODEL_OPUS
+    return MODEL_SONNET
+
+
+def estimate_cost_jpy(model: str, tokens_in: int, tokens_out: int) -> float:
+    """トークン数からコスト（円）を見積もる。未知モデルは Sonnet 単価で代替。"""
+    rate_in, rate_out = PRICING_JPY.get(model, PRICING_JPY[MODEL_SONNET])
+    return tokens_in / 1000 * rate_in + tokens_out / 1000 * rate_out

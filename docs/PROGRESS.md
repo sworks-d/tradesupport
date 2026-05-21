@@ -46,7 +46,7 @@
 
 ---
 
-## Phase 1.1：MCP ツール基盤
+## Phase 1.1：MCP ツール基盤 — ✅ 完了（8ツール / pytest 125件 green）
 - [done] 1.1.1 基底クラス — `mcp_tools/base.py`：MCPTool（リトライ/フォールバック/エラー分類）
   + MCPHost（登録・取得・health_check_all）+ 型付き例外 + MCPErrorType。tenacity 採用。
   単体テスト 13 件（計 43 件 green）。
@@ -68,7 +68,10 @@
 - [done] 1.1.7 screening — `mcp_tools/screening.py`：V字回復/テーマスコア（各4軸、AGENT_SPECS
   §1.5/1.6 準拠の純粋関数）+ composite=max + ランク/フィルタ + screening_results 保存。
   データ収集・universe 選定は agent(1.4.2) 側。テスト 15 件（計 112 件 green、固定データで期待値検証）。
-- [ ] 1.1.8 llm_call（router / anthropic / ollama / budget）※要 `ollama` 導入
+- [done] 1.1.8 llm_call — `llm/{types,router,budget,anthropic_client,ollama_client}.py` +
+  `mcp_tools/llm_call.py`：routing_hint/purpose でモデル選択（Sonnet/Opus/Ollama）、予算ガード
+  （cost_logs 集計 + settings 上限、critical はバイパス）、全呼び出しを cost_logs 記録。
+  client 注入でモック。anthropic 追加。テスト 13 件（計 125 件 green）。実 Ollama は未導入（テストはモック）。
 
 ## Phase 1.2：moomoo 連携
 - [ ] 1.2.1 BrokerConnection / 1.2.2 broker_read / 1.2.3 同期ジョブ / 1.2.4 market_data 切替
