@@ -47,7 +47,9 @@
 ---
 
 ## Phase 1.1：MCP ツール基盤
-- [ ] 1.1.1 基底クラス（base.py / MCPHost）
+- [done] 1.1.1 基底クラス — `mcp_tools/base.py`：MCPTool（リトライ/フォールバック/エラー分類）
+  + MCPHost（登録・取得・health_check_all）+ 型付き例外 + MCPErrorType。tenacity 採用。
+  単体テスト 13 件（計 43 件 green）。
 - [ ] 1.1.2 market_data（yfinance フォールバック主）
 - [ ] 1.1.3 fundamentals（SEC EDGAR / EDINET）
 - [ ] 1.1.4 news（NewsAPI / RSS）
