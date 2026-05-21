@@ -117,10 +117,10 @@ class MCPTool[TInput: MCPToolInput](ABC):
     input_schema: type[MCPToolInput] = MCPToolInput
     output_schema: type[MCPToolOutput] = MCPToolOutput
 
-    # リトライ設定（【たたき台】。settings 化は後続フェーズで検討）
-    max_attempts: ClassVar[int] = 3
-    backoff_base: ClassVar[float] = 0.5
-    backoff_max: ClassVar[float] = 8.0
+    # リトライ設定（【たたき台】。インスタンスごとに上書き可。settings 化は後続フェーズ）
+    max_attempts: int = 3
+    backoff_base: float = 0.5
+    backoff_max: float = 8.0
 
     @abstractmethod
     async def _execute(self, tool_input: TInput) -> MCPToolOutput:

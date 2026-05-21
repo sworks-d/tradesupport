@@ -50,7 +50,9 @@
 - [done] 1.1.1 基底クラス — `mcp_tools/base.py`：MCPTool（リトライ/フォールバック/エラー分類）
   + MCPHost（登録・取得・health_check_all）+ 型付き例外 + MCPErrorType。tenacity 採用。
   単体テスト 13 件（計 43 件 green）。
-- [ ] 1.1.2 market_data（yfinance フォールバック主）
+- [done] 1.1.2 market_data — `mcp_tools/market_data.py`：メモリ5分TTL + DBキャッシュ
+  フォールバック。yfinance を live 主ソース（moomoo 接続は Task 1.2.4）。fetcher 注入で
+  ネットワーク非依存テスト 9 件（計 52 件 green）。base のリトライ設定をインスタンス上書き可に変更。
 - [ ] 1.1.3 fundamentals（SEC EDGAR / EDINET）
 - [ ] 1.1.4 news（NewsAPI / RSS）
 - [ ] 1.1.5 disclosure（TDnet / EDINET）
