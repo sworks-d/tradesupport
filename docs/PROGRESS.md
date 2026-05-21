@@ -65,7 +65,9 @@
 - [done] 1.1.6 technicals — `mcp_tools/technicals.py`：RSI/MACD/SMA/ボリンジャーを
   **numpy/pandas で自前計算**（TA-Lib 不使用＝C依存回避。設計は「TA-Lib または pandas_ta」許容）。
   シグナル名（overbought_rsi/golden_cross 等）、history_provider 注入。テスト 16 件（計 100 件 green）。
-- [ ] 1.1.7 screening（V字 / テーマスコア）
+- [done] 1.1.7 screening — `mcp_tools/screening.py`：V字回復/テーマスコア（各4軸、AGENT_SPECS
+  §1.5/1.6 準拠の純粋関数）+ composite=max + ランク/フィルタ + screening_results 保存。
+  データ収集・universe 選定は agent(1.4.2) 側。テスト 15 件（計 112 件 green、固定データで期待値検証）。
 - [ ] 1.1.8 llm_call（router / anthropic / ollama / budget）※要 `ollama` 導入
 
 ## Phase 1.2：moomoo 連携
