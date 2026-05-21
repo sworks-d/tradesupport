@@ -1,10 +1,42 @@
 {
   "permissions": {
     "allow": [
-      "Bash(uv --version)",
-      "Bash(git -C /Users/a05/tradesupport log --oneline -5)",
-      "Bash(ollama --version)",
-      "Bash(brew install *)"
+      "Bash(uv:*)",
+      "Bash(uvx:*)",
+      "Bash(git:*)",
+      "Bash(python:*)",
+      "Bash(python3:*)",
+      "Bash(pytest:*)",
+      "Bash(ruff:*)",
+      "Bash(black:*)",
+      "Bash(mypy:*)",
+      "Bash(alembic:*)",
+      "Bash(brew install *)",
+      "Bash(ollama:*)",
+      "Bash(mkdir:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(grep:*)",
+      "Bash(rg:*)",
+      "Bash(find:*)",
+      "Bash(echo:*)",
+      "Bash(touch:*)",
+      "Bash(chmod:*)",
+      "Bash(cp:*)",
+      "Bash(mv:*)",
+      "Bash(rm:*)",
+      "Bash(wc:*)",
+      "Bash(tree:*)",
+      "Bash(sed:*)",
+      "Bash(awk:*)",
+      "Bash(which:*)",
+      "Bash(test:*)",
+      "Bash(true)",
+      "Bash(sqlite3:*)",
+      "Bash(/opt/homebrew/bin/uv sync *)",
+      "Bash(/opt/homebrew/bin/uv run *)"
     ]
   }
 }

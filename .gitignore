@@ -1,0 +1,40 @@
+# === Python ===
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# === 仮想環境 / uv ===
+.venv/
+# uv.lock は追跡する（再現性・ロールバック性。4週間運用とコスト管理に有利）
+
+# === 環境変数・シークレット ===
+.env
+.env.local
+
+# === データ / DB / ログ（~/.trading-agent/ 配下が本番。リポジトリ内に出た場合の保険）===
+*.sqlite
+*.sqlite3
+*.db
+logs/
+data/
+
+# === テスト・カバレッジ ===
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# === エディタ / OS ===
+.DS_Store
+.idea/
+*.swp
+
+# === Next.js（Phase 1.6）===
+ui/node_modules/
+ui/.next/
+ui/out/

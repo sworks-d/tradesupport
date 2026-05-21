@@ -1,0 +1,101 @@
+# Trading Agent 実装進捗
+
+最終更新：2026-05-22
+
+状態凡例：`[ ]` 未着手 / `[wip]` 着手中 / `[done]` 完了 / `[blocked]` 待ち / `[skip]` スキップ
+
+> ✅ **Phase 1.0 は実機検証まで完了**。`uv sync` / `pytest`（30件）/ `init_db.py` /
+> ロガー / ruff・black・mypy --strict をすべて green で確認済み。
+> （途中、許可プロンプトの扱いで一時停滞したが解消。`.claude/settings.json` に
+> 開発コマンドの allow を登録済み。）
+
+---
+
+## Phase 1.0：環境構築 — ✅ 完了（検証済み）
+
+- [done] 1.0.1 プロジェクト初期化
+  - pyproject.toml（Phase 1.0 必要依存に絞る）/ .python-version(3.12) / .gitignore / README.md
+  - パッケージ骨格：`trading_agent/{models,mcp_tools,agents,orchestrator,brokers,llm,api,utils}/`
+  - `tests/{unit,integration,fixtures}/` / `scripts/` / `ui/`
+- [done] 1.0.2 設定モジュール config.py
+  - `trading_agent/config.py`（pydantic-settings v2、必須欠落で ConfigError、~/.trading-agent 自動作成、validate_default=True）
+  - `.env.example`（全項目・プレースホルダで検証通過）/ `tests/unit/test_config.py`
+- [done] 1.0.3 ロギング基盤
+  - `trading_agent/utils/logger.py`（structlog、stdout+日次ファイル、JSON、APIキーマスキング、JST）
+  - `trading_agent/utils/time_utils.py`（JST/UTC 変換）/ `tests/unit/test_logger.py`
+- [done] 1.0.4 データベース初期化
+  - `trading_agent/models/` 全17テーブル（SYSTEM_DESIGN 16 + ORCHESTRATION の batch_states）
+  - `trading_agent/db.py`（engine/create_all/seed_default_settings/init_database）/ `scripts/init_db.py`
+  - Alembic 導入（alembic.ini / alembic/env.py / script.py.mako / versions/）※初期スキーマは create_all
+  - `tests/unit/test_models.py`
+
+### Phase 1.0 完了基準（実機検証済み）
+- [done] `uv sync` 成功（33パッケージ / editable `trading-agent==0.1.0`）
+- [done] `uv run python -c "import trading_agent"` → `import OK 0.1.0`（Python 3.12.13）
+- [done] `cp .env.example .env` でバリデーション通過
+- [done] `uv run pytest` 緑（30件 passed：test_config / test_logger / test_models）
+- [done] `uv run python scripts/init_db.py` → 17 テーブル + settings 11 件、2回目は追加0（冪等）
+- [done] ロガーが `~/.trading-agent/logs/2026-05-22.log` を作成（JSON / JST / 機微値マスキング）
+- [done] 品質：ruff All checks passed / black 整形済 / mypy --strict no issues
+
+### 朝の確認待ち（ユーザー判断が要る項目）
+1. **必須設定フィールドの扱い**：`anthropic_api_key` / `moomoo_trading_pwd` / `moomoo_account_id`
+   を「必須（欠落で起動失敗）」にしている（SYSTEM_DESIGN §6.3 準拠。`.env.example` の
+   プレースホルダで検証は通る）。完全 degraded 起動を優先するなら「任意＋警告」に変える余地あり。
+   **推奨：当面は必須のまま**、moomoo 接続実装（Phase 1.2）で再検討。
+
+---
+
+## Phase 1.1：MCP ツール基盤
+- [ ] 1.1.1 基底クラス（base.py / MCPHost）
+- [ ] 1.1.2 market_data（yfinance フォールバック主）
+- [ ] 1.1.3 fundamentals（SEC EDGAR / EDINET）
+- [ ] 1.1.4 news（NewsAPI / RSS）
+- [ ] 1.1.5 disclosure（TDnet / EDINET）
+- [ ] 1.1.6 technicals（TA-Lib）※要 `brew install ta-lib`
+- [ ] 1.1.7 screening（V字 / テーマスコア）
+- [ ] 1.1.8 llm_call（router / anthropic / ollama / budget）※要 `ollama` 導入
+
+## Phase 1.2：moomoo 連携
+- [ ] 1.2.1 BrokerConnection / 1.2.2 broker_read / 1.2.3 同期ジョブ / 1.2.4 market_data 切替
+
+## Phase 1.3：エージェント基盤
+- [ ] 1.3.1 基底クラス / 1.3.2 プロンプト管理 / 1.3.3 LangChain 統合 / 1.3.4 HALT・予算 / 1.3.5 実行ログ / 1.3.6 シリアライズ
+
+## Phase 1.4：エージェント実装
+- [ ] 1.4.1 topics-collector / 1.4.2 screening / 1.4.3 market-analyst / 1.4.4 sell-recommender / 1.4.5 portfolio-builder / 1.4.6 manual-input-analyst
+
+## Phase 1.5：オーケストレーター
+- [ ] 1.5.1 DAG / 1.5.2 朝バッチ定義 / 1.5.3 エラー処理 / 1.5.4 APScheduler / 1.5.5 健康チェック
+
+## Phase 1.6：UI（Next.js）
+- [ ] 1.6.1〜1.6.10
+
+## Phase 1.7：常駐化と運用
+- [ ] 1.7.1 launchd / 1.7.2 backup / 1.7.3 通知 / 1.7.4 E2E / 1.7.5 ドキュメント
+
+## Phase 1.8：4週間運用 + 調整
+- [ ] 運用フェーズ
+
+---
+
+## 実装メモ（判断ログ）
+
+- **依存スコープ**：pyproject の `dependencies` は Phase 1.0 で実際に使う5つ
+  （pydantic, pydantic-settings, sqlmodel, alembic, structlog）に限定。完全リスト（ta-lib 等）を
+  入れると `uv sync` が C ライブラリ不足で失敗し完了基準を壊すため（原則4）。将来依存は
+  pyproject 内コメントに明記。
+- **uv.lock を追跡**：再現性・ロールバック性が 4週間運用とコスト管理に有利なため `.gitignore` から除外。
+- **Python 3.12 ピン**：システムは 3.14.3。ta-lib/moomoo-api のホイール未整備リスクを避け
+  `.python-version=3.12`（実体は 3.12.13）。OPERATIONS §B-1 とも整合。
+- **SQLModel × future annotations**：linter が table モデルから `from __future__ import annotations`
+  を除去。フィールド名 `date` と型の衝突を避けるため型は `import datetime as dt`（`dt.date`）で
+  統一しており、eager 評価（3.12）でも動作影響なし。
+- **config validate_default=True**：pydantic v2 は既定でデフォルト値に validator を効かせないため設定。
+  これがないと env 未指定時の `~` 展開・log_level 正規化が走らない。
+- **batch_states**：SYSTEM_DESIGN の16表に未定義だが Task 1.0.4 が要求 → ORCHESTRATION §9.1 の
+  定義を採用（計17テーブル）。
+- **FK→portfolio.ticker（非ユニーク）**：SYSTEM_DESIGN の定義どおり実装。Phase 1 は SQLite の
+  FK 非強制のため create/insert は通る。
+- **partial index**：SYSTEM_DESIGN §2.4 の `WHERE` 付き部分インデックスは通常インデックスで代替
+  （Phase 1 の割り切り、最適化は後日）。
