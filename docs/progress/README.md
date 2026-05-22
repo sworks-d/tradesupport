@@ -10,3 +10,4 @@
 - `0002-progress-system-and-pipeline-flow.md` — 進捗記録システム導入＋pipeline.htmlをフロー図化
 - `0003-pipeline-collection-detail.md` — データ収集をarchitecture粒度で詳細化（A-1〜A-5）
 - `0004-detailed-implementation-plan.md` — 詳細実装計画(IMPLEMENTATION_PLAN.md)を作成
+- `0005-spec-canonical-pipeline-plan.md` — パイプライン全網羅の正典実装計画(spec群)
