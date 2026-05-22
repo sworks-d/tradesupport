@@ -147,6 +147,7 @@ def _serialize_candidate(verdicts: list, sizing: dict[str, object]) -> dict[str,
                 "judge": v.judge,
                 "role": _ROLE.get(v.judge, ""),
                 "dot": _DOT.get(v.judge, "#888888"),
+                "verdict": v.verdict,  # 生の可否（詳細パネルの行マッピング用）
                 "verdict_word": word,
                 "color": color,
                 "dim": v.verdict == "na",

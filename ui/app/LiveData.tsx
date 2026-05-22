@@ -19,6 +19,7 @@ type JudgeMini = {
   judge: string;
   role: string;
   dot: string;
+  verdict: string;
   verdict_word: string;
   color: string;
   dim: boolean;
@@ -66,6 +67,15 @@ type Snapshot = {
   account?: Account;
   holdings: Record<string, Holding>;
   candidates?: Record<string, Candidate>; // {card_id: MAGI3審判}
+};
+
+// 詳細パネルの判定表示（.magi-jverdict）への可否マッピング
+const JV: Record<string, { word: string; cls: string }> = {
+  buy: { word: "買い", cls: "buy" },
+  warn: { word: "慎重", cls: "warn" },
+  hold: { word: "中立", cls: "warn" },
+  sell: { word: "売り", cls: "no" },
+  na: { word: "判定不能", cls: "no" },
 };
 
 const BADGE: Record<string, { text: string; cls: string }> = {
@@ -213,6 +223,45 @@ export default function LiveData() {
               const hold = cand.verification.default_decision === "保留";
               vEl.textContent = `決裁既定：${cand.verification.default_decision} ｜ ${flags}`;
               vEl.classList.toggle("vl-hold", hold);
+            }
+          }
+
+          // 詳細パネル（決裁画面）にも反映。役割名で行を対応づけ、要素が無ければスキップ
+          const panel = document.querySelector(`[data-panel="${cardId}"]`);
+          if (panel) {
+            const byRole: Record<string, JudgeMini> = {};
+            cand.judges.forEach((j) => (byRole[j.role] = j));
+            panel.querySelectorAll(".magi-jrow").forEach((row) => {
+              const name = row.querySelector(".magi-jname")?.textContent?.trim();
+              const j = name ? byRole[name] : undefined;
+              if (!j) return;
+              const m = JV[j.verdict] ?? JV.na;
+              const vd = row.querySelector(".magi-jverdict");
+              if (vd) {
+                vd.textContent = m.word;
+                vd.className = `magi-jverdict ${m.cls}`;
+              }
+              const reason = row.querySelector(".magi-jreason");
+              if (reason) reason.textContent = j.reason;
+            });
+            const mfState = panel.querySelector(".mf-state");
+            if (mfState) mfState.textContent = cand.split;
+            if (cand.commander) {
+              const rec = panel.querySelector(".cmd-rec");
+              if (rec) rec.textContent = cand.commander.recommendation;
+              const cnt = panel.querySelector(".cmd-counter");
+              if (cnt)
+                cnt.innerHTML = `<b>反対するなら：</b>${cand.commander.counter.replace(/^反対するなら：/, "")}`;
+              const src = panel.querySelector(".cmd-src");
+              if (src) src.textContent = cand.commander.src_note;
+            }
+            if (cand.verification) {
+              const flagEls = panel.querySelectorAll(".magi-flag");
+              cand.verification.flags.forEach((f, i) => {
+                const el = flagEls[i];
+                if (el)
+                  el.textContent = `${f.label} ${f.status === "ok" ? "✓" : "⚠"}`;
+              });
             }
           }
         });
