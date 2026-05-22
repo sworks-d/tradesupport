@@ -13,6 +13,31 @@ from sqlmodel import Field, SQLModel
 from trading_agent.models._common import utcnow
 
 
+class Verification(SQLModel, table=True):
+    """防御層の結果（B3）。決裁直前の機械照合（数値・出典・時点）と決裁前ゲート。
+
+    figures_checked=全数値が出典・時点付きで照合できたか。unverified_claims=未照合の列挙。
+    credibility_flag=信用性フィルタ(D-14)の結果（未実装は ok）。
+    gendo_compliant=碇発言のMAGI準拠(B5、未実装は None)。default_hold=決裁既定を保留に寄せるか。
+    """
+
+    __tablename__ = "verification"
+
+    id: int | None = Field(default=None, primary_key=True)
+    decision_id: int | None = Field(default=None, foreign_key="decisions.id", index=True)
+    ticker: str = Field(index=True)
+
+    figures_checked: bool = False
+    unverified_claims: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    credibility_flag: str = "ok"  # ok / warn
+    time_ok: bool = True
+    gendo_compliant: bool | None = None
+    default_hold: bool = True  # 赤/割れ/na なら決裁既定を「保留」に
+
+    data_asof: dt.datetime | None = None
+    created_at: dt.datetime = Field(default_factory=utcnow)
+
+
 class JudgeVerdict(SQLModel, table=True):
     """審判1人の独立検証結果（MELCHIOR / BALTHASAR / CASPER）。
 

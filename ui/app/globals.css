@@ -2443,3 +2443,13 @@ svg[preserveAspectRatio="none"] :is(line, path, polyline, polygon, rect, circle)
   color: var(--sub);
   font-family: var(--mono);
 }
+/* 防御層フラグ＋決裁前ゲート行 */
+.verify-line {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--ink-3);
+  font-family: var(--mono);
+}
+.verify-line.vl-hold {
+  color: var(--warn);
+}

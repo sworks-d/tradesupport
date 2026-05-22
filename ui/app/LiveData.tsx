@@ -31,11 +31,17 @@ type Sizing = {
   price_jpy: number;
   note: string;
 };
+type Verification = {
+  default_decision: string; // 保留 / 可
+  flags: { label: string; status: string }[];
+  unverified: string[];
+};
 type Candidate = {
   judges: JudgeMini[];
   split: string;
   gendo: string;
   sizing?: Sizing;
+  verification?: Verification;
 };
 type Account = {
   cash: number;
@@ -164,6 +170,24 @@ export default function LiveData() {
             }
             if (sizeEl)
               sizeEl.textContent = `推奨：${cand.sizing.amount_display}・${cand.sizing.shares}株（資産${cand.sizing.weight_pct}%）`;
+          }
+
+          // 防御層（B3）：機械照合フラグ＋決裁前ゲート（既定保留）を表示
+          if (cand.verification) {
+            let vEl = card.querySelector<HTMLElement>(".verify-line");
+            if (!vEl && mini.parentElement) {
+              vEl = document.createElement("div");
+              vEl.className = "verify-line";
+              mini.parentElement.appendChild(vEl);
+            }
+            if (vEl) {
+              const flags = cand.verification.flags
+                .map((f) => `${f.label} ${f.status === "ok" ? "✓" : "⚠"}`)
+                .join(" ｜ ");
+              const hold = cand.verification.default_decision === "保留";
+              vEl.textContent = `決裁既定：${cand.verification.default_decision} ｜ ${flags}`;
+              vEl.classList.toggle("vl-hold", hold);
+            }
           }
         });
 

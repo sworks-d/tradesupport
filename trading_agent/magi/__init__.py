@@ -5,6 +5,14 @@
 B2 ではまず3審判（judges）を実装する。
 """
 
+from trading_agent.magi.defense import VerificationResult, verify
 from trading_agent.magi.judges import balthasar, casper, melchior, run_judges
 
-__all__ = ["balthasar", "casper", "melchior", "run_judges"]
+__all__ = [
+    "VerificationResult",
+    "balthasar",
+    "casper",
+    "melchior",
+    "run_judges",
+    "verify",
+]

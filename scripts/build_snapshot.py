@@ -22,7 +22,7 @@ from pathlib import Path
 
 from trading_agent.brokers import StandInBroker, load_positions
 from trading_agent.db import create_all, get_engine
-from trading_agent.magi import run_judges
+from trading_agent.magi import run_judges, verify
 from trading_agent.magi.judges import split_label
 from trading_agent.mcp_tools.fundamentals import (
     FundamentalsInput,
@@ -156,7 +156,25 @@ def _serialize_candidate(verdicts: list, sizing: dict[str, object]) -> dict[str,
         )
     buys = sum(1 for v in verdicts if v.verdict == "buy")
     gendo = "推し" if buys == len(verdicts) else ("要検討" if buys >= 1 else "静観")
-    return {"judges": judges, "split": split_label(verdicts), "gendo": gendo, "sizing": sizing}
+
+    # 防御層（B3）：機械照合＋決裁前ゲート
+    vr = verify(verdicts)
+    verification = {
+        "default_decision": "保留" if vr.default_hold else "可",
+        "flags": [
+            {"label": "数値照合", "status": "ok" if vr.figures_checked else "warn"},
+            {"label": "時点", "status": "ok" if vr.time_ok else "warn"},
+            {"label": "信用性", "status": vr.credibility_flag},
+        ],
+        "unverified": vr.unverified_claims,
+    }
+    return {
+        "judges": judges,
+        "split": split_label(verdicts),
+        "gendo": gendo,
+        "sizing": sizing,
+        "verification": verification,
+    }
 
 
 async def _build_candidates(live: bool, total_assets: float, cash: float, usdjpy: float) -> dict:
