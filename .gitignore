@@ -38,3 +38,5 @@ htmlcov/
 ui/node_modules/
 ui/.next/
 ui/out/
+# 生成物（バックエンドが build_snapshot.py で出力。コミットしない）
+ui/public/data/

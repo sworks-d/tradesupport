@@ -1,0 +1,4831 @@
+
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Trading Agent — Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;600;700&family=Noto+Serif+JP:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #0d0d11;
+  --bg-1: #14141a;
+  --bg-2: #1c1c24;
+  --bg-3: #25252f;
+  --border: #2a2a35;
+  --border-2: #3a3a48;
+  --border-hi: #4a4a5a;
+  --ink: #ece9de;
+  --ink-2: #a09d92;
+  --ink-3: #6b6962;
+  --ink-4: #46443f;
+  --key: #ff8c42;
+  --key-2: #ff7322;
+  --key-bg: rgba(255, 140, 66, 0.1);
+  --key-bg-2: rgba(255, 140, 66, 0.18);
+  --key-glow: rgba(255, 140, 66, 0.4);
+  --sub: #4ecdc4;
+  --sub-2: #36b8af;
+  --sub-bg: rgba(78, 205, 196, 0.1);
+  --up: #4ade80;
+  --up-bg: rgba(74, 222, 128, 0.1);
+  --down: #f87171;
+  --down-bg: rgba(248, 113, 113, 0.1);
+  --warn: #fbbf24;
+  --warn-bg: rgba(251, 191, 36, 0.1);
+  --sans: 'Inter', 'Noto Sans JP', -apple-system, sans-serif;
+  --serif: 'Noto Serif JP', serif;
+  --mono: 'JetBrains Mono', ui-monospace, monospace;
+  --r: 10px;
+  --r-lg: 14px;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(circle at 15% 20%, rgba(255, 140, 66, 0.04) 0%, transparent 40%),
+    radial-gradient(circle at 85% 80%, rgba(78, 205, 196, 0.03) 0%, transparent 40%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.app {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  min-height: 100vh;
+  position: relative;
+  z-index: 1;
+}
+
+/* ============ SIDEBAR (now: summary panel) ============ */
+.sidebar {
+  background: rgba(20, 20, 26, 0.6);
+  backdrop-filter: blur(20px);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+}
+
+.sb-section {
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.sb-section:last-child { border-bottom: none; }
+
+.sb-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 0;
+}
+
+.sb-logo-mark {
+  width: 24px;
+  height: 24px;
+  background: var(--key);
+  border-radius: 6px;
+  position: relative;
+  box-shadow: 0 0 16px var(--key-glow);
+}
+
+.sb-logo-mark::after {
+  content: '';
+  position: absolute;
+  inset: 6px;
+  background: var(--bg);
+  border-radius: 2px;
+}
+
+.sb-logo-text {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  color: var(--ink);
+  text-transform: uppercase;
+}
+
+.sb-live {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--up);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.sb-live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--up);
+  box-shadow: 0 0 8px var(--up);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* === Total Equity card === */
+.sb-equity-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-3);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 6px;
+}
+
+.sb-equity-value {
+  font-family: var(--mono);
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+.sb-equity-today {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  margin-top: 6px;
+}
+
+.sb-equity-today.up { color: var(--up); }
+
+/* Mini sparkline */
+.sb-spark {
+  margin-top: 14px;
+  margin-bottom: 6px;
+}
+
+.sb-equity-cumulative {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+  font-family: var(--mono);
+  font-size: 10.5px;
+}
+
+.sb-equity-cumulative .lbl { color: var(--ink-3); }
+.sb-equity-cumulative .val.up { color: var(--up); font-weight: 600; }
+
+/* === Allocation bars === */
+.sb-section-title {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-3);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sb-section-title .sub {
+  color: var(--ink-2);
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  font-family: var(--sans);
+  font-size: 11px;
+}
+
+.alloc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.alloc-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.alloc-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+}
+
+.alloc-name {
+  color: var(--ink-2);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.alloc-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+}
+
+.alloc-amount {
+  font-family: var(--mono);
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.alloc-pct {
+  font-family: var(--mono);
+  color: var(--ink-3);
+  font-size: 10px;
+  margin-left: 8px;
+}
+
+.alloc-bar {
+  height: 4px;
+  background: var(--bg-3);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.alloc-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+}
+
+/* === Today summary === */
+.sb-today-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sb-today-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11.5px;
+}
+
+.sb-today-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--ink-2);
+}
+
+.sb-today-icon {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.sb-today-icon.key { background: var(--key); }
+.sb-today-icon.sub { background: var(--sub); }
+.sb-today-icon.warn { background: var(--warn); }
+.sb-today-icon.ink { background: var(--ink-3); }
+
+.sb-today-value {
+  font-family: var(--mono);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.sb-today-value.key { color: var(--key); }
+.sb-today-value.sub { color: var(--sub); }
+.sb-today-value.warn { color: var(--warn); }
+.sb-today-value.up { color: var(--up); }
+
+.sb-cost-bar {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+}
+
+.sb-cost-head {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  margin-bottom: 5px;
+}
+
+.sb-cost-head .lbl { color: var(--ink-3); }
+.sb-cost-head .val { color: var(--ink); font-weight: 600; }
+
+.sb-cost-track {
+  height: 3px;
+  background: var(--bg-3);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.sb-cost-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--sub), var(--sub-2));
+  border-radius: 2px;
+}
+
+.sb-cost-sub {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--ink-3);
+  margin-top: 4px;
+}
+
+/* === Navigation === */
+.sb-nav {
+  padding: 14px 12px;
+  flex-shrink: 0;
+}
+
+.nav-title {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--ink-3);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  padding: 0 10px 6px;
+  margin-top: 10px;
+}
+
+.nav-title:first-child { margin-top: 0; }
+
+.nav-item {
+  padding: 6px 10px;
+  border-radius: 5px;
+  color: var(--ink-2);
+  cursor: pointer;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  transition: all 0.15s ease;
+  position: relative;
+}
+
+.nav-item::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2px;
+  height: 0;
+  background: var(--key);
+  border-radius: 0 2px 2px 0;
+  transition: height 0.2s ease;
+}
+
+.nav-item:hover { background: var(--bg-2); color: var(--ink); }
+.nav-item.active { background: var(--bg-2); color: var(--ink); font-weight: 500; }
+.nav-item.active::before { height: 60%; }
+
+.nav-badge {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  background: var(--key-bg-2);
+  color: var(--key);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-weight: 600;
+}
+
+.up { color: var(--up); }
+.down { color: var(--down); }
+.warn { color: var(--warn); }
+
+/* ============ MAIN ============ */
+.main { overflow-y: auto; padding: 28px 32px 48px; }
+
+.main-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+
+.main-title {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+
+.main-meta {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-3);
+}
+
+/* Section label */
+.section-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-3);
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.section-label::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.section-label .priority {
+  background: var(--key);
+  color: #1a0f00;
+  padding: 2px 7px;
+  border-radius: 3px;
+  font-weight: 700;
+}
+
+/* ============ Action zone (sell × buy) ============ */
+.action-zone {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-bottom: 32px;
+}
+
+.action-card {
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 20px 22px;
+  position: relative;
+  overflow: hidden;
+}
+
+.action-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+}
+
+.action-card.sell-zone::before {
+  background: linear-gradient(90deg, var(--sub), var(--down));
+}
+
+.action-card.buy-zone::before {
+  background: linear-gradient(90deg, var(--key), var(--key-2));
+}
+
+.zone-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.zone-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.zone-title .en {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-3);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-weight: 500;
+}
+
+.zone-count {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-3);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.zone-count strong {
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 700;
+  margin-right: 4px;
+}
+
+.zone-subtitle {
+  font-size: 12px;
+  color: var(--ink-3);
+  margin-bottom: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.zone-subtitle.sell-sub strong { color: var(--down); font-weight: 600; }
+.zone-subtitle.buy-sub strong { color: var(--key); font-weight: 600; }
+
+.zone-items { display: flex; flex-direction: column; gap: 12px; }
+
+/* === Action card item (with forecast graph) === */
+.act {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 14px;
+  cursor: pointer;
+  transition: all 0.15s;
+  position: relative;
+  overflow: hidden;
+}
+
+.act::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+}
+
+.act.buy::before { background: var(--key); }
+.act.sell-profit::before { background: var(--sub); }
+.act.sell-loss::before { background: var(--down); }
+
+.act:hover {
+  background: var(--bg-3);
+  border-color: var(--border-2);
+  transform: translateX(2px);
+}
+
+.act-top {
+  display: grid;
+  grid-template-columns: 48px 1fr auto;
+  gap: 14px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.act-score {
+  text-align: center;
+}
+
+.act-score .num {
+  font-family: var(--mono);
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.act.buy .act-score .num { color: var(--key); }
+.act.sell-profit .act-score .num { color: var(--sub); }
+.act.sell-loss .act-score .num { color: var(--down); }
+
+.act-score .max {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--ink-3);
+  letter-spacing: 0.05em;
+  margin-top: 2px;
+}
+
+.act-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  flex-wrap: wrap;
+}
+
+.act-badge {
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 3px;
+  letter-spacing: 0.05em;
+}
+
+.act-badge.profit { background: var(--sub-bg); color: var(--sub); }
+.act-badge.loss { background: var(--down-bg); color: var(--down); }
+
+.act-ticker {
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--ink);
+}
+
+.act-market {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--ink-3);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+
+.act-name { font-size: 11px; color: var(--ink-3); }
+
+.act-summary {
+  font-size: 12px;
+  color: var(--ink-2);
+  line-height: 1.5;
+}
+
+.act-summary strong { color: var(--ink); font-weight: 600; }
+
+.act-arrow {
+  color: var(--ink-3);
+  font-family: var(--mono);
+  font-size: 18px;
+  transition: all 0.15s;
+}
+
+.act:hover .act-arrow { transform: translateX(3px); }
+.act.buy:hover .act-arrow { color: var(--key); }
+.act.sell-profit:hover .act-arrow { color: var(--sub); }
+.act.sell-loss:hover .act-arrow { color: var(--down); }
+
+/* === Forecast graph (in card) === */
+.forecast {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 7px;
+  padding: 10px 12px;
+  margin-top: 4px;
+}
+
+.forecast-meta {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--ink-3);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 6px;
+}
+
+.forecast-meta .lbl { color: var(--ink-3); }
+.forecast-meta .val.now { color: var(--ink); font-weight: 700; }
+
+.forecast-svg {
+  width: 100%;
+  height: 84px;
+}
+
+.forecast-legend {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+}
+
+.fc-leg {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.fc-leg .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.fc-leg .pct { font-weight: 700; }
+
+/* ============ Secondary row: Alerts + Info ============ */
+.secondary-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-bottom: 32px;
+}
+
+.mini-card {
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 16px 18px;
+}
+
+.mini-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.mini-card-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mini-card-title .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.mini-card-title .dot.warn { background: var(--warn); }
+.mini-card-title .dot.sub { background: var(--sub); }
+
+.mini-card-title .en {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-3);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 500;
+  margin-left: 4px;
+}
+
+.mini-card-count {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-3);
+  text-transform: uppercase;
+}
+
+.alert {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 12px;
+  padding: 12px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  align-items: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.alert::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  background: var(--warn);
+}
+
+.alert-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: var(--warn-bg);
+  color: var(--warn);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.alert-body { min-width: 0; }
+
+.alert-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 3px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.alert-title .ticker {
+  font-family: var(--mono);
+  font-weight: 700;
+  color: var(--key);
+}
+
+.alert-desc {
+  font-size: 11px;
+  color: var(--ink-2);
+  line-height: 1.5;
+}
+
+.info-list { display: flex; flex-direction: column; gap: 8px; }
+
+.info-item {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 12px;
+  padding: 12px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  align-items: center;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.info-item:hover { background: var(--bg-3); border-color: var(--border-2); }
+
+.info-item-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: var(--sub-bg);
+  color: var(--sub);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.info-item-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 3px;
+}
+
+.info-item-desc {
+  font-size: 11px;
+  color: var(--ink-2);
+  line-height: 1.5;
+}
+
+/* ============ Holdings (with prediction vs actual graph) ============ */
+.holdings-wrap {
+  margin-bottom: 32px;
+}
+
+.holdings-list {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+@media (max-width: 1400px) {
+  .holdings-list {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 1000px) {
+  .holdings-list {
+    grid-template-columns: 1fr;
+  }
+}
+
+.hold {
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 12px 14px;
+  position: relative;
+  overflow: hidden;
+}
+
+.hold::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+}
+
+.hold.status-good::before { background: var(--up); }
+.hold.status-warn::before { background: var(--warn); }
+.hold.status-danger::before { background: var(--down); }
+.hold.status-profit::before { background: var(--sub); }
+
+.hold-labels {
+  display: flex;
+  gap: 5px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+
+.hold-label {
+  font-family: var(--mono);
+  font-size: 8.5px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 3px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.hold-label.status-good {
+  background: var(--up-bg);
+  color: var(--up);
+}
+
+.hold-label.status-warn {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+
+.hold-label.status-danger {
+  background: var(--down-bg);
+  color: var(--down);
+}
+
+.hold-label.status-profit {
+  background: var(--sub-bg);
+  color: var(--sub);
+}
+
+.hold-label.term {
+  background: var(--bg-3);
+  color: var(--ink-2);
+  border: 1px solid var(--border);
+}
+
+.hold-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 3px;
+}
+
+.hold-left {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.hold-ticker {
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--ink);
+}
+
+.hold-name {
+  font-size: 10.5px;
+  color: var(--ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hold-right {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.hold-price {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-2);
+}
+
+.hold-pnl {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.hold-pnl.up { color: var(--up); }
+.hold-pnl.down { color: var(--down); }
+
+.hold-thesis {
+  font-size: 10.5px;
+  color: var(--ink-2);
+  line-height: 1.4;
+  padding: 6px 0;
+  border-bottom: 1px dashed var(--border);
+  margin-bottom: 8px;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.hold-status-bar {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+}
+
+.hold-status-bar .lbl { color: var(--ink-3); }
+.hold-status-bar .val { font-weight: 700; }
+.hold-status-bar .val.good { color: var(--sub); }
+.hold-status-bar .val.warn { color: var(--warn); }
+.hold-status-bar .val.danger { color: var(--down); }
+
+.hold-graph {
+  width: 100%;
+  height: 80px;
+  margin-top: 2px;
+}
+
+.hold-graph-legend {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--ink-3);
+}
+
+.hold-graph-legend .leg {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.hold-graph-legend .swatch {
+  width: 12px;
+  height: 2px;
+  background: currentColor;
+}
+
+.hold-graph-legend .swatch.dashed {
+  border: 1px dashed currentColor;
+  background: transparent;
+  height: 0;
+}
+
+/* ============ Topics section ============ */
+.topics-wrap {
+  margin-bottom: 32px;
+}
+
+.topics-tabs {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.topics-tab {
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 8px 14px;
+  color: var(--ink-3);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  position: relative;
+  transition: color 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.topics-tab:hover { color: var(--ink-2); }
+.topics-tab.active { color: var(--ink); }
+
+.topics-tab.active::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 0; right: 0;
+  height: 2px;
+  background: var(--key);
+  border-radius: 2px 2px 0 0;
+}
+
+.topics-tab .count {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  background: var(--bg-3);
+  color: var(--ink-2);
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-weight: 600;
+}
+
+.topics-tab.active .count {
+  background: var(--key-bg-2);
+  color: var(--key);
+}
+
+.topics-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.topic {
+  display: grid;
+  grid-template-columns: 56px 1fr auto;
+  gap: 14px;
+  padding: 12px 14px;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  align-items: center;
+  cursor: pointer;
+  transition: all 0.15s;
+  position: relative;
+  overflow: hidden;
+}
+
+.topic::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+}
+
+.topic.imp-high::before { background: var(--down); }
+.topic.imp-med::before { background: var(--warn); }
+.topic.imp-low::before { background: var(--ink-3); }
+
+.topic:hover {
+  background: var(--bg-2);
+  border-color: var(--border-2);
+}
+
+.topic-imp {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+
+.topic-imp-badge {
+  font-family: var(--mono);
+  font-size: 8.5px;
+  font-weight: 700;
+  padding: 2px 5px;
+  border-radius: 3px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.topic.imp-high .topic-imp-badge {
+  background: var(--down-bg);
+  color: var(--down);
+}
+
+.topic.imp-med .topic-imp-badge {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+
+.topic.imp-low .topic-imp-badge {
+  background: var(--bg-3);
+  color: var(--ink-3);
+}
+
+.topic-time {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--ink-3);
+}
+
+.topic-body {
+  min-width: 0;
+}
+
+.topic-headline {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1.4;
+  margin-bottom: 4px;
+}
+
+.topic-summary {
+  font-size: 11px;
+  color: var(--ink-2);
+  line-height: 1.45;
+  margin-bottom: 5px;
+}
+
+.topic-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--ink-3);
+  flex-wrap: wrap;
+}
+
+.topic-source {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--sub);
+  text-decoration: none;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: var(--sub-bg);
+  transition: all 0.12s;
+}
+
+.topic-source:hover {
+  background: var(--sub);
+  color: var(--bg);
+}
+
+.topic-source .ext-icon {
+  font-size: 10px;
+  line-height: 1;
+}
+
+.topic-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--ink-2);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.topic-tag.ticker {
+  color: var(--key);
+  border-color: var(--key);
+  background: var(--key-bg);
+}
+
+.topic-impact {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 5px;
+  padding-top: 5px;
+  border-top: 1px dashed var(--border);
+  font-size: 10.5px;
+  color: var(--ink-2);
+}
+
+.topic-impact-label {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--ink-3);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.topic-impact-text strong { color: var(--ink); font-weight: 600; }
+.topic-impact-text .key { color: var(--key); font-weight: 600; }
+.topic-impact-text .sub { color: var(--sub); font-weight: 600; }
+.topic-impact-text .down { color: var(--down); font-weight: 600; }
+
+.topic-arrow {
+  color: var(--ink-3);
+  font-family: var(--mono);
+  font-size: 16px;
+}
+
+/* ============ Track record + Quick analyze ============ */
+.lower-row {
+  display: grid;
+  grid-template-columns: 7fr 5fr;
+  gap: 14px;
+}
+
+.card {
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 16px 18px;
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.card-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.card-title .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.card-title .dot.key { background: var(--key); }
+.card-title .dot.sub { background: var(--sub); }
+
+.card-title .en {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-3);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 500;
+  margin-left: 4px;
+}
+
+.card-meta {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-3);
+  text-transform: uppercase;
+}
+
+.track-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.track-stat {
+  padding: 10px 12px;
+  background: var(--bg-2);
+  border-radius: 7px;
+  border-left: 2px solid var(--key);
+}
+
+.track-stat.sub { border-left-color: var(--sub); }
+
+.track-stat-label {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--ink-3);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 4px;
+}
+
+.track-stat-value {
+  font-family: var(--mono);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.track-stat-value.up { color: var(--up); }
+
+.track-stat-sub {
+  font-size: 10px;
+  color: var(--ink-3);
+  margin-top: 2px;
+}
+
+.chart-container {
+  background: var(--bg-2);
+  border-radius: var(--r);
+  padding: 14px;
+}
+
+.chart-title {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ink-2);
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.chart-legend {
+  display: flex;
+  gap: 12px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--ink-3);
+}
+
+.chart-legend-item { display: flex; align-items: center; gap: 5px; }
+.chart-legend-dot { width: 8px; height: 2px; border-radius: 1px; }
+.chart-legend-dot.dashed {
+  border: 1px dashed currentColor;
+  background: transparent;
+  height: 0;
+}
+
+/* Manual */
+.manual-input {
+  width: 100%;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 12px 14px;
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 12.5px;
+  resize: vertical;
+  min-height: 80px;
+}
+
+.manual-input::placeholder { color: var(--ink-3); }
+
+.manual-input:focus {
+  outline: none;
+  border-color: var(--key);
+  box-shadow: 0 0 0 3px var(--key-bg);
+}
+
+.manual-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 10px;
+}
+
+.manual-hint {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-3);
+}
+
+.history-section {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.history-title {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--ink-3);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 8px;
+}
+
+.history-item {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 10px;
+  margin-bottom: 6px;
+}
+
+.history-item:last-child { margin-bottom: 0; }
+
+.history-source {
+  font-size: 10px;
+  color: var(--ink-3);
+  margin-bottom: 3px;
+  font-family: var(--mono);
+}
+
+.history-text {
+  font-size: 11.5px;
+  color: var(--ink-2);
+  margin-bottom: 5px;
+  line-height: 1.45;
+}
+
+.history-result {
+  font-size: 11px;
+  color: var(--ink);
+  line-height: 1.45;
+  padding-top: 5px;
+  border-top: 1px solid var(--border);
+}
+
+.history-result .ticker {
+  font-family: var(--mono);
+  color: var(--key);
+  font-weight: 600;
+}
+
+/* ============ Refresh button & last-updated ============ */
+.refresh-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+}
+
+.last-updated {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--ink-3);
+}
+
+.last-updated .dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--sub);
+}
+
+.last-updated .stale .dot { background: var(--warn); }
+
+.refresh-btn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--ink-2);
+  font-family: var(--sans);
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.refresh-btn:hover {
+  background: var(--bg-3);
+  border-color: var(--key);
+  color: var(--key);
+}
+
+.refresh-btn .icon {
+  font-family: var(--mono);
+  font-size: 13px;
+  display: inline-block;
+  transition: transform 0.4s ease;
+}
+
+.refresh-btn.spinning .icon {
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Flash animation on prices when updated */
+@keyframes flash-up {
+  0% { background: transparent; }
+  30% { background: var(--up-bg); }
+  100% { background: transparent; }
+}
+
+@keyframes flash-down {
+  0% { background: transparent; }
+  30% { background: var(--down-bg); }
+  100% { background: transparent; }
+}
+
+.flash-up { animation: flash-up 0.8s ease-out; border-radius: 4px; }
+.flash-down { animation: flash-down 0.8s ease-out; border-radius: 4px; }
+
+/* ============ Current position marker on graphs ============ */
+@keyframes pulse-ring {
+  0% {
+    r: 4;
+    opacity: 0.5;
+  }
+  100% {
+    r: 10;
+    opacity: 0;
+  }
+}
+
+.now-marker {
+  pointer-events: none;
+}
+
+.now-pulse {
+  animation: pulse-ring 1.8s ease-out infinite;
+}
+
+.now-label {
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 9px;
+}
+
+.now-label-bg {
+  fill: var(--bg-1);
+  stroke: var(--ink-2);
+  stroke-width: 0.5;
+}
+
+/* Sidebar last-updated small */
+.sb-last-updated {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-3);
+}
+
+.sb-refresh-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--ink-2);
+  font-family: var(--mono);
+  font-size: 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.sb-refresh-btn:hover {
+  border-color: var(--key);
+  color: var(--key);
+}
+
+.sb-refresh-btn.spinning .icon {
+  display: inline-block;
+  animation: spin 0.8s linear infinite;
+}
+
+/* ============ Buttons ============ */
+.btn {
+  font-family: var(--sans);
+  font-size: 11.5px;
+  font-weight: 500;
+  padding: 6px 12px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--bg-1);
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: all 0.12s ease;
+  white-space: nowrap;
+  text-align: center;
+}
+
+.btn:hover {
+  border-color: var(--border-hi);
+  color: var(--ink);
+}
+
+.btn-primary {
+  background: var(--key);
+  border-color: var(--key);
+  color: #1a0f00;
+  font-weight: 600;
+}
+
+.btn-primary:hover { background: var(--key-2); color: #1a0f00; }
+
+.btn-sub {
+  background: var(--bg-1);
+  border-color: var(--sub);
+  color: var(--sub);
+}
+
+.btn-sub:hover { background: var(--sub-bg); }
+
+.btn-ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--ink-3);
+}
+
+.btn-ghost:hover { color: var(--ink-2); border-color: var(--border); }
+
+.btn-lg { padding: 10px 16px; font-size: 13px; }
+
+/* ============ Expandable list (more candidates) ============ */
+.more-section {
+  margin-top: 14px;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
+.more-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  width: 100%;
+  color: var(--ink-2);
+  font-family: var(--sans);
+  font-size: 11.5px;
+  font-weight: 500;
+  transition: all 0.15s;
+}
+
+.more-toggle:hover {
+  background: var(--bg-2);
+  border-color: var(--border);
+  color: var(--ink);
+}
+
+.more-toggle-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.more-toggle-icon {
+  font-family: var(--mono);
+  font-size: 14px;
+  color: var(--ink-3);
+  transition: transform 0.2s ease;
+  display: inline-block;
+  width: 12px;
+}
+
+.more-toggle.open .more-toggle-icon {
+  transform: rotate(90deg);
+}
+
+.more-toggle-count {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-3);
+  background: var(--bg-2);
+  padding: 1px 7px;
+  border-radius: 3px;
+  font-weight: 600;
+}
+
+.more-list {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease;
+}
+
+.more-list.open {
+  max-height: 800px;
+  margin-top: 8px;
+}
+
+.more-list-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 0;
+}
+
+.mini-act {
+  display: grid;
+  grid-template-columns: 36px 70px 1fr 60px 60px 24px;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 12px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.12s;
+  font-size: 11.5px;
+}
+
+.mini-act:hover {
+  background: var(--bg-3);
+  border-color: var(--border-2);
+}
+
+.mini-act-score {
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.mini-act.buy .mini-act-score { color: var(--key); }
+.mini-act.sell-profit .mini-act-score { color: var(--sub); }
+.mini-act.sell-loss .mini-act-score { color: var(--down); }
+
+.mini-act-ticker {
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--ink);
+}
+
+.mini-act-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.mini-act-name {
+  font-size: 11px;
+  color: var(--ink-2);
+}
+
+.mini-act-tags {
+  display: flex;
+  gap: 5px;
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--ink-3);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.mini-act-return {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: right;
+}
+
+.mini-act-return.up { color: var(--up); }
+.mini-act-return.down { color: var(--down); }
+
+.mini-act-prob {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-2);
+  text-align: right;
+}
+
+.mini-act-prob .pct {
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--ink);
+}
+
+.mini-act-arrow {
+  color: var(--ink-3);
+  font-family: var(--mono);
+  font-size: 14px;
+  text-align: center;
+  transition: all 0.12s;
+}
+
+.mini-act:hover .mini-act-arrow {
+  transform: translateX(2px);
+}
+
+.mini-act.buy:hover .mini-act-arrow { color: var(--key); }
+.mini-act.sell-profit:hover .mini-act-arrow { color: var(--sub); }
+.mini-act.sell-loss:hover .mini-act-arrow { color: var(--down); }
+
+.more-footer {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+  text-align: center;
+}
+
+.more-footer-link {
+  font-family: var(--sans);
+  font-size: 11px;
+  color: var(--ink-3);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 4px 8px;
+  transition: color 0.12s;
+}
+
+.more-footer-link:hover { color: var(--key); }
+
+/* ============ Tooltip ============ */
+.tooltip {
+  position: fixed;
+  background: var(--bg-3);
+  border: 1px solid var(--border-2);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink);
+  pointer-events: none;
+  z-index: 100;
+  opacity: 0;
+  transition: opacity 0.15s;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+  white-space: nowrap;
+}
+
+.tooltip.show { opacity: 1; }
+
+.tooltip-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.tooltip-row .lbl {
+  color: var(--ink-3);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.tooltip-row .val {
+  font-weight: 600;
+}
+
+.tooltip-row .val.up { color: var(--up); }
+.tooltip-row .val.down { color: var(--down); }
+.tooltip-row .val.key { color: var(--key); }
+
+/* Interactive points on hold-graph */
+.hold-graph .hover-point {
+  cursor: pointer;
+  transition: r 0.15s;
+}
+
+.hold-graph .hover-point:hover {
+  r: 5;
+}
+
+/* Track record points */
+.track-point {
+  cursor: pointer;
+  transition: r 0.15s, stroke-width 0.15s;
+}
+
+.track-point:hover {
+  r: 6;
+  stroke-width: 2;
+}
+
+/* ============ Detail panel ============ */
+.detail-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(13, 13, 17, 0.7);
+  backdrop-filter: blur(6px);
+  z-index: 90;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+
+.detail-backdrop.show { opacity: 1; pointer-events: auto; }
+
+.detail-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: min(820px, 95vw);
+  height: 100vh;
+  background: var(--bg);
+  border-left: 1px solid var(--border);
+  z-index: 91;
+  transform: translateX(100%);
+  transition: transform 0.35s cubic-bezier(0.32, 0.72, 0.34, 1);
+  overflow-y: auto;
+  box-shadow: -20px 0 60px rgba(0, 0, 0, 0.5);
+}
+
+.detail-panel.show { transform: translateX(0); }
+
+.detail-header {
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  padding: 18px 28px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  z-index: 1;
+}
+
+.detail-header-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.detail-ticker {
+  font-family: var(--mono);
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.detail-name { display: flex; flex-direction: column; }
+.detail-name .full { font-size: 14px; font-weight: 500; color: var(--ink); }
+.detail-name .meta {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-3);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 2px;
+}
+
+.detail-close {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  background: var(--bg-2);
+  color: var(--ink-2);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.detail-close:hover { background: var(--bg-3); color: var(--ink); }
+
+.detail-body { padding: 24px 28px 48px; }
+
+.dt-section { margin-bottom: 28px; }
+
+.dt-section-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.dt-section-num {
+  width: 24px;
+  height: 24px;
+  background: var(--key-bg);
+  color: var(--key);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.dt-section-title { font-size: 15px; font-weight: 600; color: var(--ink); }
+
+.dt-section-sub {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-3);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-left: auto;
+}
+
+.dt-summary {
+  background: linear-gradient(135deg, var(--key-bg) 0%, transparent 70%);
+  border: 1px solid var(--key);
+  border-radius: var(--r);
+  padding: 18px 20px;
+}
+
+.dt-summary-eyebrow {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--key);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+.dt-summary-text {
+  font-size: 14px;
+  color: var(--ink);
+  line-height: 1.7;
+}
+
+.dt-summary-text strong { color: var(--key); font-weight: 600; }
+
+.dt-reasons { display: flex; flex-direction: column; gap: 10px; }
+
+.dt-reason {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--bg-2);
+  border-radius: 7px;
+  border-left: 2px solid var(--up);
+}
+
+.dt-reason.risk { border-left-color: var(--down); }
+
+.dt-reason-icon {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--up-bg);
+  color: var(--up);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 13px;
+  font-family: var(--mono);
+}
+
+.dt-reason.risk .dt-reason-icon { background: var(--down-bg); color: var(--down); }
+
+.dt-reason-body { font-size: 12.5px; color: var(--ink); line-height: 1.6; }
+.dt-reason-body strong { font-weight: 600; }
+
+.dt-scenarios { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+
+.dt-scenario {
+  padding: 16px;
+  background: var(--bg-2);
+  border-radius: 8px;
+  border-top: 3px solid var(--ink-4);
+}
+
+.dt-scenario.bull { border-top-color: var(--up); }
+.dt-scenario.base { border-top-color: var(--key); }
+.dt-scenario.bear { border-top-color: var(--down); }
+
+.dt-scenario-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-3);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 6px;
+}
+
+.dt-scenario.bull .dt-scenario-label { color: var(--up); }
+.dt-scenario.base .dt-scenario-label { color: var(--key); }
+.dt-scenario.bear .dt-scenario-label { color: var(--down); }
+
+.dt-scenario-target {
+  font-family: var(--mono);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--ink);
+  margin-bottom: 2px;
+}
+
+.dt-scenario-return {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+.dt-scenario-return.up { color: var(--up); }
+.dt-scenario-return.down { color: var(--down); }
+.dt-scenario-return.key { color: var(--key); }
+
+.dt-scenario-prob {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-2);
+  margin-bottom: 8px;
+}
+
+.dt-scenario-prob-bar {
+  flex: 1;
+  height: 4px;
+  background: var(--bg-3);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.dt-scenario-prob-fill { height: 100%; }
+.dt-scenario.bull .dt-scenario-prob-fill { background: var(--up); }
+.dt-scenario.base .dt-scenario-prob-fill { background: var(--key); }
+.dt-scenario.bear .dt-scenario-prob-fill { background: var(--down); }
+
+.dt-scenario-desc { font-size: 11px; color: var(--ink-2); line-height: 1.5; }
+
+.dt-expected {
+  margin-top: 12px;
+  padding: 12px 14px;
+  background: var(--key-bg);
+  border-radius: 7px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.dt-expected-label {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--key);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.dt-expected-value {
+  font-family: var(--mono);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--key);
+}
+
+.dt-order {
+  background: var(--key-bg);
+  border: 1px solid var(--key);
+  border-radius: var(--r);
+  padding: 20px;
+}
+
+.dt-order-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.dt-order-title-text { font-size: 14px; font-weight: 600; color: var(--key); }
+
+.dt-order-fields {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+.dt-order-field {
+  display: grid;
+  grid-template-columns: 70px 1fr auto;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--bg-2);
+  border-radius: 5px;
+  align-items: center;
+}
+
+.dt-order-field-label {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--ink-3);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.dt-order-field-value {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.copy-btn {
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 3px 8px;
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: all 0.12s;
+}
+
+.copy-btn:hover {
+  border-color: var(--key);
+  color: var(--key);
+  background: var(--key-bg);
+}
+
+.detail-footer {
+  position: sticky;
+  bottom: 0;
+  background: var(--bg);
+  border-top: 1px solid var(--border);
+  padding: 14px 28px;
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+/* ===== MAGI 決裁ブロック（追加） ===== */
+.magi-block { border:1px solid var(--border); border-radius:var(--r-lg); overflow:hidden; background:var(--bg-1); }
+.magi-block-head { display:flex; align-items:center; gap:10px; padding:11px 14px; border-bottom:1px solid var(--border); }
+.magi-block-head .mb-tk { font-size:14px; font-weight:600; }
+.magi-block-head .mb-mkt { font-size:11px; color:var(--ink-2); background:var(--bg-3); padding:2px 8px; border-radius:6px; }
+.magi-block-head .mb-tag { margin-left:auto; font-family:var(--mono); font-size:10px; letter-spacing:2px; color:var(--key); border:1px solid var(--key); padding:2px 8px; border-radius:5px; }
+.magi-body { padding:14px; display:flex; gap:16px; align-items:center; }
+.magi-fig { width:108px; flex-shrink:0; display:flex; flex-direction:column; align-items:center; gap:6px; }
+.magi-fig-cap { font-size:10px; color:var(--ink-2); text-align:center; line-height:1.5; }
+.magi-jlist { flex:1; min-width:0; }
+.magi-jrow { display:flex; align-items:center; gap:11px; padding:7px 0; border-bottom:1px solid var(--border); }
+.magi-jrow:last-child { border-bottom:none; }
+.magi-jtag { width:6px; height:30px; border-radius:3px; flex-shrink:0; }
+.magi-jmeta { min-width:128px; flex-shrink:0; }
+.magi-jname { font-size:14px; font-weight:500; letter-spacing:0.5px; }
+.magi-jsub { font-size:10px; color:var(--ink-3); font-family:var(--serif); letter-spacing:0.5px; }
+.magi-jverdict { font-size:13px; font-weight:600; min-width:40px; flex-shrink:0; }
+.magi-jverdict.buy { color:var(--up); }
+.magi-jverdict.warn { color:var(--warn); }
+.magi-jverdict.no { color:var(--down); }
+.magi-jreason { font-size:11px; line-height:1.5; color:var(--ink-2); }
+.magi-foot { display:flex; align-items:center; gap:10px; padding:9px 14px; background:var(--bg-2); font-size:11px; }
+.magi-foot .mf-state { color:var(--warn); font-weight:500; }
+.magi-foot .mf-note { color:var(--ink-3); margin-left:auto; font-family:var(--mono); font-size:10px; }
+.cmd-zone { padding:14px; border-top:1px solid var(--border); }
+.cmd-zone-head { display:flex; align-items:center; gap:10px; margin-bottom:9px; }
+.cmd-avatar { width:32px; height:32px; border-radius:50%; background:var(--key-bg); color:var(--key); display:flex; align-items:center; justify-content:center; font-weight:600; font-size:13px; flex-shrink:0; border:1px solid var(--key); font-family:var(--serif); }
+.cmd-name { font-size:14px; font-weight:500; font-family:var(--serif); letter-spacing:0.5px; }
+.cmd-role { font-size:11px; color:var(--ink-2); }
+.cmd-rec { font-size:14px; line-height:1.85; margin:0 0 9px; color:var(--ink); font-family:var(--serif); }
+.cmd-rec .verdict { font-weight:600; color:var(--up); font-family:var(--serif); }
+.cmd-counter { font-size:13px; line-height:1.8; color:var(--ink); background:var(--bg-2); border-left:2px solid var(--warn); border-radius:6px; padding:10px 12px; margin:0; font-family:var(--serif); }
+.cmd-counter b { color:var(--warn); font-weight:600; font-family:var(--serif); }
+.cmd-src { font-size:10px; color:var(--ink-3); margin-top:8px; }
+.magi-decide { padding:12px 14px; border-top:1px solid var(--border); }
+.magi-flags { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+.magi-flag { font-size:11px; padding:3px 9px; border-radius:6px; display:inline-flex; align-items:center; gap:4px; font-weight:500; background:var(--sub-bg); color:var(--sub); }
+.magi-acts { display:flex; gap:8px; }
+.magi-btn { flex:1; padding:10px; border-radius:var(--r); border:1px solid var(--border-2); background:var(--bg-2); font-size:13px; font-weight:600; cursor:pointer; color:var(--ink); }
+.magi-btn.primary { background:var(--key); color:#1a0d04; border-color:var(--key); }
+/* ===== 一覧カード GENDO インジケーター（追加） ===== */
+.gendo-ind { width:88px; flex-shrink:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px; align-self:stretch; margin-right:18px; padding-right:18px; border-right:1px solid var(--border); }
+.gendo-ind .g-face { width:26px; height:26px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:600; font-family:var(--serif); }
+.gendo-ind .g-word { font-size:16px; font-weight:600; line-height:1; font-family:var(--serif); }
+.gendo-ind .g-lbl { font-size:8px; color:var(--ink-3); font-family:var(--mono); letter-spacing:1px; }
+.act.buy .gendo-ind .g-face { background:var(--up-bg); color:var(--up); border:1px solid var(--up); }
+.act.buy .gendo-ind .g-word { color:var(--up); }
+.act.sell-profit .gendo-ind .g-face { background:var(--sub-bg); color:var(--sub); border:1px solid var(--sub); }
+.act.sell-profit .gendo-ind .g-word { color:var(--sub); }
+.act.sell-loss .gendo-ind .g-face { background:var(--down-bg); color:var(--down); border:1px solid var(--down); }
+.act.sell-loss .gendo-ind .g-word { color:var(--down); }
+.magi-mini { display:flex; align-items:center; gap:14px; margin-top:8px; flex-wrap:wrap; }
+.magi-mini-dots { display:flex; gap:14px; align-items:center; flex-wrap:wrap; }
+.mmd { display:flex; align-items:center; gap:5px; }
+.mmd .dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+.mmd .jn { font-size:11px; font-weight:500; font-family:var(--serif); letter-spacing:0.3px; }
+.mmd .jr { font-size:10px; color:var(--ink-3); }
+.mmd .vd { font-size:11px; font-weight:600; }
+.magi-mini-state { font-size:10px; color:var(--ink-3); font-family:var(--mono); margin-left:auto; }
+
+/* ============================================================ */
+/* 修正(D-20)：幅可変時のチャート歪み対策                          */
+/* preserveAspectRatio="none" のSVGは描画ボックス比≠viewBox比で   */
+/* 非均等スケールされ、線(stroke)と文字(text)が長体/平体に歪む。   */
+/* height:auto で viewBox からの内在アスペクト比を採用させると、   */
+/* 描画ボックス比＝viewBox比 となり実質均等スケールになって歪み消失。*/
+/* チャートは左右フル幅・高さ固定。線/点線は non-scaling-stroke で  */
+/* 太さ一定。文字とマーカーは末尾の逆スケールJSでサイズ一定に保つ。 */
+/* ============================================================ */
+svg[preserveAspectRatio="none"] :is(line, path, polyline, polygon, rect, circle) {
+  vector-effect: non-scaling-stroke;
+}
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- =========================================================== -->
+  <!-- SIDEBAR (now: summary panel + nav)                            -->
+  <!-- =========================================================== -->
+  <aside class="sidebar">
+
+    <!-- Logo + live indicator -->
+    <div class="sb-section sb-logo">
+      <div class="sb-logo-mark"></div>
+      <div class="sb-logo-text">Trading · Agent</div>
+      <div class="sb-live">
+        <span class="sb-live-dot"></span>
+        Live
+      </div>
+    </div>
+
+    <!-- Total Equity with sparkline -->
+    <div class="sb-section">
+      <div class="sb-equity-label">総資産</div>
+      <div class="sb-equity-value">¥108,420</div>
+      <div class="sb-equity-today up">+¥1,240 (+1.2%) 今日</div>
+
+      <div class="sb-spark">
+        <svg width="100%" height="48" viewBox="0 0 240 48" preserveAspectRatio="none">
+          <defs>
+            <linearGradient id="sparkGrad" x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stop-color="#ff8c42" stop-opacity="0.3"/>
+              <stop offset="100%" stop-color="#ff8c42" stop-opacity="0"/>
+            </linearGradient>
+          </defs>
+          <!-- Area fill -->
+          <path d="M0,40 L8,38 L16,36 L24,37 L32,35 L40,32 L48,33 L56,30 L64,28 L72,29 L80,26 L88,24 L96,25 L104,22 L112,20 L120,21 L128,18 L136,19 L144,16 L152,15 L160,12 L168,14 L176,11 L184,9 L192,10 L200,8 L208,7 L216,6 L224,5 L232,4 L240,3 L240,48 L0,48 Z" fill="url(#sparkGrad)"/>
+          <!-- Line -->
+          <polyline fill="none" stroke="#ff8c42" stroke-width="1.5"
+            points="0,40 8,38 16,36 24,37 32,35 40,32 48,33 56,30 64,28 72,29 80,26 88,24 96,25 104,22 112,20 120,21 128,18 136,19 144,16 152,15 160,12 168,14 176,11 184,9 192,10 200,8 208,7 216,6 224,5 232,4 240,3"/>
+          <!-- Current point -->
+          <g class="now-marker">
+            <circle cx="240" cy="3" r="5" fill="#ff8c42" opacity="0.3" class="now-pulse"/>
+            <circle cx="240" cy="3" r="3" fill="#ff8c42" stroke="#ece9de" stroke-width="1.2"/>
+          </g>
+        </svg>
+      </div>
+
+      <div class="sb-equity-cumulative">
+        <span class="lbl">累計 30日</span>
+        <span class="val up">+¥8,420 (+8.4%)</span>
+      </div>
+
+      <div class="sb-last-updated">
+        <span>30秒前 取得</span>
+        <button class="sb-refresh-btn" id="sb-refresh-btn">
+          <span class="icon">↻</span>
+          <span>更新</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Allocation -->
+    <div class="sb-section">
+      <div class="sb-section-title">
+        <span>配分</span>
+        <span class="sub">¥108k</span>
+      </div>
+      <div class="alloc-list">
+        <div class="alloc-row">
+          <div class="alloc-head">
+            <span class="alloc-name">
+              <span class="alloc-dot" style="background:#ff8c42"></span>
+              米国株
+            </span>
+            <span>
+              <span class="alloc-amount">¥31.0k</span>
+              <span class="alloc-pct">29%</span>
+            </span>
+          </div>
+          <div class="alloc-bar"><div class="alloc-bar-fill" style="width:29%; background:#ff8c42"></div></div>
+        </div>
+
+        <div class="alloc-row">
+          <div class="alloc-head">
+            <span class="alloc-name">
+              <span class="alloc-dot" style="background:#4ecdc4"></span>
+              日本株
+            </span>
+            <span>
+              <span class="alloc-amount">¥18.5k</span>
+              <span class="alloc-pct">17%</span>
+            </span>
+          </div>
+          <div class="alloc-bar"><div class="alloc-bar-fill" style="width:17%; background:#4ecdc4"></div></div>
+        </div>
+
+        <div class="alloc-row">
+          <div class="alloc-head">
+            <span class="alloc-name">
+              <span class="alloc-dot" style="background:#fbbf24"></span>
+              サテライト
+            </span>
+            <span>
+              <span class="alloc-amount">¥12.0k</span>
+              <span class="alloc-pct">11%</span>
+            </span>
+          </div>
+          <div class="alloc-bar"><div class="alloc-bar-fill" style="width:11%; background:#fbbf24"></div></div>
+        </div>
+
+        <div class="alloc-row">
+          <div class="alloc-head">
+            <span class="alloc-name">
+              <span class="alloc-dot" style="background:#6b6962"></span>
+              現金
+            </span>
+            <span>
+              <span class="alloc-amount">¥46.9k</span>
+              <span class="alloc-pct">43%</span>
+            </span>
+          </div>
+          <div class="alloc-bar"><div class="alloc-bar-fill" style="width:43%; background:#6b6962"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Today summary -->
+    <div class="sb-section">
+      <div class="sb-section-title">
+        <span>今日のサマリー</span>
+      </div>
+      <div class="sb-today-list">
+
+        <div class="sb-today-item">
+          <span class="sb-today-label">
+            <span class="sb-today-icon sub"></span>
+            売り推奨
+          </span>
+          <span class="sb-today-value sub">2 件</span>
+        </div>
+
+        <div class="sb-today-item">
+          <span class="sb-today-label">
+            <span class="sb-today-icon key"></span>
+            買い推奨
+          </span>
+          <span class="sb-today-value key">2 件</span>
+        </div>
+
+        <div class="sb-today-item">
+          <span class="sb-today-label">
+            <span class="sb-today-icon warn"></span>
+            警告
+          </span>
+          <span class="sb-today-value warn">1 件</span>
+        </div>
+
+        <div class="sb-today-item">
+          <span class="sb-today-label">
+            <span class="sb-today-icon ink"></span>
+            的中率 (30日)
+          </span>
+          <span class="sb-today-value">68%</span>
+        </div>
+      </div>
+
+      <div class="sb-cost-bar">
+        <div class="sb-cost-head">
+          <span class="lbl">月次コスト</span>
+          <span class="val">¥2,180 / ¥5,000</span>
+        </div>
+        <div class="sb-cost-track">
+          <div class="sb-cost-fill" style="width:43.6%"></div>
+        </div>
+        <div class="sb-cost-sub">予算の 43.6%</div>
+      </div>
+    </div>
+
+    <!-- Navigation -->
+    <div class="sb-nav">
+      <div class="nav-title">Today</div>
+      <div class="nav-item active">
+        <span>ダッシュボード</span>
+        <span class="nav-badge">4</span>
+      </div>
+      <div class="nav-item"><span>手動投入</span></div>
+
+      <div class="nav-title">分析</div>
+      <div class="nav-item">スクリーニング</div>
+      <div class="nav-item">銘柄詳細</div>
+      <div class="nav-item">ポートフォリオ</div>
+
+      <div class="nav-title">予測の検証</div>
+      <div class="nav-item">過去のレコメンド</div>
+      <div class="nav-item">週次レポート</div>
+
+      <div class="nav-title">設定</div>
+      <div class="nav-item">戦略</div>
+      <div class="nav-item">口座連携</div>
+      <div class="nav-item">エージェント</div>
+    </div>
+
+  </aside>
+
+  <!-- =========================================================== -->
+  <!-- MAIN                                                          -->
+  <!-- =========================================================== -->
+  <main class="main">
+
+    <div class="main-head">
+      <div class="main-title">ダッシュボード</div>
+      <div class="refresh-bar">
+        <div class="last-updated" id="last-updated">
+          <span class="dot"></span>
+          <span>最終更新 <span id="updated-time">たった今</span></span>
+        </div>
+        <button class="refresh-btn" id="refresh-btn">
+          <span class="icon">↻</span>
+          <span>価格を更新</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- =========================================== -->
+    <!-- ★ Action Zone: 売り × 買い                  -->
+    <!-- =========================================== -->
+    <div class="section-label">
+      <span class="priority">最優先</span>
+      <span>今すべきこと</span>
+    </div>
+
+    <div class="action-zone">
+
+      <!-- ========== SELL ZONE ========== -->
+      <div class="action-card sell-zone">
+        <div class="zone-head">
+          <div class="zone-title">売り <span class="en">Sell</span></div>
+          <div class="zone-count"><strong>2</strong>件 推奨 · 1件 注視</div>
+        </div>
+        <div class="zone-subtitle sell-sub">
+          保有銘柄のうち、<strong>利益確定または損切り</strong>のタイミング。先送りで傷が深くなる。
+        </div>
+
+        <div class="zone-items">
+
+          <!-- 7203 利確 -->
+          <div class="act sell-profit" data-detail="sell-7203">
+            <div class="act-top">
+              <div class="gendo-ind">
+                <div class="g-face" aria-hidden="true">碇</div>
+                <div class="g-word">利確</div>
+                <div class="g-lbl">GENDO</div>
+              </div>
+              <div>
+                <div class="act-head">
+                  <span class="act-badge profit">利確</span>
+                  <span class="act-ticker">7203</span>
+                  <span class="act-market">JP 自動車</span>
+                  <span class="act-name">トヨタ</span>
+                </div>
+                <div class="act-summary">
+                  目標株価に <strong>92%到達</strong>、テクニカルも頭打ち。ここで売って利益確定が合理的。
+                </div>
+                <div class="magi-mini">
+                  <div class="magi-mini-dots">
+                    <span class="mmd"><span class="dot" style="background:#ff8c42"></span><span class="jn">MELCHIOR</span><span class="jr">業績</span><span class="vd" style="color:var(--warn)">利確</span></span>
+                    <span class="mmd"><span class="dot" style="background:#4ecdc4"></span><span class="jn">BALTHASAR</span><span class="jr">株価</span><span class="vd" style="color:var(--warn)">利確</span></span>
+                    <span class="mmd"><span class="dot" style="background:#fbbf24"></span><span class="jn">CASPER</span><span class="jr">文脈</span><span class="vd" style="color:var(--warn)">利確</span></span>
+                  </div>
+                  <span class="magi-mini-state">3/3 利確・一致</span>
+                </div>
+              </div>
+              <div class="act-arrow">→</div>
+            </div>
+
+            <!-- Forecast graph: 利確 -->
+            <div class="forecast">
+              <div class="forecast-meta">
+                <span class="lbl">取得 ¥2,535</span>
+                <span class="val now">今 ¥2,840 +12.0%</span>
+                <span class="lbl">目標 ¥2,850</span>
+              </div>
+              <svg class="forecast-svg" viewBox="0 0 320 84" preserveAspectRatio="none" data-graph="7203-sell">
+                <!-- Grid -->
+                <line x1="0" y1="14" x2="320" y2="14" stroke="#3a3a48" stroke-width="0.4" stroke-dasharray="2,2"/>
+                <line x1="0" y1="36" x2="320" y2="36" stroke="#3a3a48" stroke-width="0.4" stroke-dasharray="2,2"/>
+                <line x1="0" y1="58" x2="320" y2="58" stroke="#6b6962" stroke-width="0.7"/>
+                <line x1="0" y1="72" x2="320" y2="72" stroke="#3a3a48" stroke-width="0.4" stroke-dasharray="2,2"/>
+
+                <text x="2" y="16" fill="#6b6962" font-size="7" font-family="JetBrains Mono">+15%</text>
+                <text x="2" y="38" fill="#6b6962" font-size="7" font-family="JetBrains Mono">+5%</text>
+                <text x="2" y="61" fill="#6b6962" font-size="7" font-family="JetBrains Mono">0%</text>
+
+                <!-- Today vertical line (center) -->
+                <line x1="160" y1="5" x2="160" y2="78" stroke="#a09d92" stroke-width="0.6" stroke-dasharray="2,3" opacity="0.5"/>
+
+                <!-- Target line (gray) -->
+                <line x1="30" y1="30" x2="310" y2="30" stroke="#a09d92" stroke-width="0.6" stroke-dasharray="4,3" opacity="0.5"/>
+                <text x="308" y="27" fill="#a09d92" font-size="7" text-anchor="end" font-family="JetBrains Mono">目標 +12%</text>
+
+                <!-- PAST: actual (solid teal, climbing) -->
+                <path d="M 30,58 L 60,55 L 90,49 L 120,42 L 150,35 L 160,32" fill="none" stroke="#4ecdc4" stroke-width="2.2"/>
+
+                <!-- FUTURE: pullback risk (yellow/red band) -->
+                <path d="M 160,32 Q 220,42 310,52 L 310,28 Q 220,32 160,32 Z" fill="#f87171" opacity="0.1"/>
+                <path d="M 160,32 Q 220,42 310,48" fill="none" stroke="#f87171" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.8"/>
+
+                <!-- Buy point (left) -->
+                <circle cx="30" cy="58" r="3" fill="#a09d92"/>
+                <text x="30" y="82" fill="#6b6962" font-size="8" text-anchor="middle" font-family="JetBrains Mono">取得 04-18</text>
+
+                <!-- Today label -->
+                <text x="160" y="82" fill="#ece9de" font-size="8" font-weight="700" text-anchor="middle" font-family="JetBrains Mono">今日</text>
+
+                <!-- Future end -->
+                <text x="310" y="82" fill="#6b6962" font-size="8" text-anchor="end" font-family="JetBrains Mono">30日後</text>
+
+                <!-- NOW MARKER -->
+                <g class="now-marker">
+                  <circle class="now-pulse" cx="160" cy="32" r="4" fill="#4ecdc4"/>
+                  <circle cx="160" cy="32" r="5" fill="#4ecdc4" stroke="#ece9de" stroke-width="1.5"/>
+                </g>
+                <rect class="now-label-bg" x="170" y="24" width="60" height="14" rx="2"/>
+                <text class="now-label" x="200" y="34" fill="#4ecdc4" text-anchor="middle">今 +12.0%</text>
+              </svg>
+              <div class="forecast-legend">
+                <span class="fc-leg" style="color:#4ecdc4"><span class="dot" style="background:#4ecdc4"></span>実績</span>
+                <span class="fc-leg" style="color:#f87171"><span class="dot" style="background:#f87171"></span>持ち続けた場合の下振れ予測</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- TSLA 損切り -->
+          <div class="act sell-loss" data-detail="sell-tsla">
+            <div class="act-top">
+              <div class="gendo-ind">
+                <div class="g-face" aria-hidden="true">碇</div>
+                <div class="g-word">撤退</div>
+                <div class="g-lbl">GENDO</div>
+              </div>
+              <div>
+                <div class="act-head">
+                  <span class="act-badge loss">損切り</span>
+                  <span class="act-ticker">TSLA</span>
+                  <span class="act-market">US EV</span>
+                  <span class="act-name">Tesla</span>
+                </div>
+                <div class="act-summary">
+                  シナリオ崩壊。今切れば <strong>-8%で済む</strong>。放置すると -15〜20%リスク。
+                </div>
+                <div class="magi-mini">
+                  <div class="magi-mini-dots">
+                    <span class="mmd"><span class="dot" style="background:#ff8c42"></span><span class="jn">MELCHIOR</span><span class="jr">業績</span><span class="vd" style="color:var(--down)">撤退</span></span>
+                    <span class="mmd"><span class="dot" style="background:#4ecdc4;opacity:0.45"></span><span class="jn">BALTHASAR</span><span class="jr">株価</span><span class="vd" style="color:var(--warn)">保留</span></span>
+                    <span class="mmd"><span class="dot" style="background:#fbbf24"></span><span class="jn">CASPER</span><span class="jr">文脈</span><span class="vd" style="color:var(--down)">撤退</span></span>
+                  </div>
+                  <span class="magi-mini-state">2/3 撤退・割れ</span>
+                </div>
+              </div>
+              <div class="act-arrow">→</div>
+            </div>
+
+            <!-- Forecast graph: 損切り -->
+            <div class="forecast">
+              <div class="forecast-meta">
+                <span class="lbl">取得 $187</span>
+                <span class="val now">今 $172.30 -7.8%</span>
+                <span class="lbl">損切り $172.04</span>
+              </div>
+              <svg class="forecast-svg" viewBox="0 0 320 84" preserveAspectRatio="none" data-graph="TSLA-sell">
+                <!-- Grid -->
+                <line x1="0" y1="14" x2="320" y2="14" stroke="#3a3a48" stroke-width="0.4" stroke-dasharray="2,2"/>
+                <line x1="0" y1="36" x2="320" y2="36" stroke="#3a3a48" stroke-width="0.4" stroke-dasharray="2,2"/>
+                <line x1="0" y1="44" x2="320" y2="44" stroke="#6b6962" stroke-width="0.7"/>
+                <line x1="0" y1="62" x2="320" y2="62" stroke="#3a3a48" stroke-width="0.4" stroke-dasharray="2,2"/>
+
+                <text x="2" y="16" fill="#6b6962" font-size="7" font-family="JetBrains Mono">+10%</text>
+                <text x="2" y="38" fill="#6b6962" font-size="7" font-family="JetBrains Mono">+5%</text>
+                <text x="2" y="47" fill="#6b6962" font-size="7" font-family="JetBrains Mono">0%</text>
+                <text x="2" y="65" fill="#6b6962" font-size="7" font-family="JetBrains Mono">-10%</text>
+
+                <!-- Today vertical line (center) -->
+                <line x1="160" y1="5" x2="160" y2="78" stroke="#a09d92" stroke-width="0.6" stroke-dasharray="2,3" opacity="0.5"/>
+
+                <!-- Loss cut line at -8% -->
+                <line x1="30" y1="60" x2="310" y2="60" stroke="#f87171" stroke-width="0.7" stroke-dasharray="3,3" opacity="0.6"/>
+                <text x="308" y="70" fill="#f87171" font-size="7" text-anchor="end" font-family="JetBrains Mono">損切 -8%</text>
+
+                <!-- PAST: declining (solid red) -->
+                <path d="M 30,44 L 60,48 L 90,52 L 120,55 L 150,58 L 160,59" fill="none" stroke="#f87171" stroke-width="2.2"/>
+
+                <!-- FUTURE: continued downside (red band) -->
+                <path d="M 160,59 Q 220,66 310,72 L 310,80 Q 220,72 160,59 Z" fill="#f87171" opacity="0.15"/>
+                <path d="M 160,59 Q 220,66 310,72" fill="none" stroke="#f87171" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.8"/>
+
+                <!-- Buy point -->
+                <circle cx="30" cy="44" r="3" fill="#a09d92"/>
+                <text x="30" y="82" fill="#6b6962" font-size="8" text-anchor="middle" font-family="JetBrains Mono">取得 04-15</text>
+                <text x="160" y="82" fill="#ece9de" font-size="8" font-weight="700" text-anchor="middle" font-family="JetBrains Mono">今日</text>
+                <text x="310" y="82" fill="#6b6962" font-size="8" text-anchor="end" font-family="JetBrains Mono">30日後</text>
+
+                <!-- NOW MARKER -->
+                <g class="now-marker">
+                  <circle class="now-pulse" cx="160" cy="59" r="4" fill="#f87171"/>
+                  <circle cx="160" cy="59" r="5" fill="#f87171" stroke="#ece9de" stroke-width="1.5"/>
+                </g>
+                <rect class="now-label-bg" x="170" y="51" width="58" height="14" rx="2"/>
+                <text class="now-label" x="199" y="61" fill="#f87171" text-anchor="middle">今 -7.8%</text>
+              </svg>
+              <div class="forecast-legend">
+                <span class="fc-leg" style="color:#f87171"><span class="dot" style="background:#f87171"></span>実績（下落）</span>
+                <span class="fc-leg" style="color:#a09d92"><span class="dot" style="background:#a09d92"></span>当初の予測（実現せず）</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- 売り：他の注視銘柄（常時表示） -->
+        <div class="more-section">
+          <div class="more-toggle" style="cursor: default;">
+            <span class="more-toggle-left">
+              <span>他の注視銘柄</span>
+            </span>
+            <span class="more-toggle-count">1 件</span>
+          </div>
+          <div class="more-list open" data-list="sell-more">
+            <div class="more-list-inner">
+
+              <div class="mini-act sell-loss" data-detail="sell-tsla">
+                <div class="mini-act-score">62</div>
+                <div class="mini-act-ticker">MSFT</div>
+                <div class="mini-act-info">
+                  <div class="mini-act-name">Microsoft</div>
+                  <div class="mini-act-tags">
+                    <span>US</span><span>·</span><span>ソフトウェア</span><span>·</span><span>注視</span>
+                  </div>
+                </div>
+                <div class="mini-act-return down">-2.1%</div>
+                <div class="mini-act-prob"><span class="pct">55%</span><br>進捗</div>
+                <div class="mini-act-arrow">→</div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========== BUY ZONE ========== -->
+      <div class="action-card buy-zone">
+        <div class="zone-head">
+          <div class="zone-title">買い <span class="en">Buy</span></div>
+          <div class="zone-count"><strong>2</strong>件 推奨 · 8件 候補</div>
+        </div>
+        <div class="zone-subtitle buy-sub">
+          新規買いの候補。<strong>勝率と期待リターン</strong>で評価、現金枠の範囲で検討。
+        </div>
+
+        <div class="zone-items">
+
+          <!-- NVDA -->
+          <div class="act buy" data-detail="nvda">
+            <div class="act-top">
+              <div class="gendo-ind">
+                <div class="g-face" aria-hidden="true">碇</div>
+                <div class="g-word">推し</div>
+                <div class="g-lbl">GENDO</div>
+              </div>
+              <div>
+                <div class="act-head">
+                  <span class="act-ticker">NVDA</span>
+                  <span class="act-market">US 半導体</span>
+                  <span class="act-name">NVIDIA</span>
+                </div>
+                <div class="act-summary">
+                  AIインフラの本命。決算後の押し目で <strong>+27%</strong> を狙える局面（勝率 72%）。
+                </div>
+                <div class="magi-mini">
+                  <div class="magi-mini-dots">
+                    <span class="mmd"><span class="dot" style="background:#ff8c42"></span><span class="jn">MELCHIOR</span><span class="jr">業績</span><span class="vd" style="color:var(--up)">買</span></span>
+                    <span class="mmd"><span class="dot" style="background:#4ecdc4"></span><span class="jn">BALTHASAR</span><span class="jr">株価</span><span class="vd" style="color:var(--up)">買</span></span>
+                    <span class="mmd"><span class="dot" style="background:#fbbf24;opacity:0.45"></span><span class="jn">CASPER</span><span class="jr">文脈</span><span class="vd" style="color:var(--warn)">慎重</span></span>
+                  </div>
+                  <span class="magi-mini-state">2/3 買い・割れ</span>
+                </div>
+              </div>
+              <div class="act-arrow">→</div>
+            </div>
+
+            <!-- Forecast graph: 買い -->
+            <div class="forecast">
+              <div class="forecast-meta">
+                <span class="lbl">エントリー $98.50</span>
+                <span class="val now">期待 +27%</span>
+                <span class="lbl">3ヶ月後 目標 $125</span>
+              </div>
+              <svg class="forecast-svg" viewBox="0 0 320 84" preserveAspectRatio="none" data-graph="NVDA-buy">
+                <!-- Grid -->
+                <line x1="0" y1="14" x2="320" y2="14" stroke="#3a3a48" stroke-width="0.4" stroke-dasharray="2,2"/>
+                <line x1="0" y1="36" x2="320" y2="36" stroke="#3a3a48" stroke-width="0.4" stroke-dasharray="2,2"/>
+                <line x1="0" y1="50" x2="320" y2="50" stroke="#6b6962" stroke-width="0.7"/>
+                <line x1="0" y1="66" x2="320" y2="66" stroke="#3a3a48" stroke-width="0.4" stroke-dasharray="2,2"/>
+
+                <text x="2" y="16" fill="#6b6962" font-size="7" font-family="JetBrains Mono">+42%</text>
+                <text x="2" y="38" fill="#6b6962" font-size="7" font-family="JetBrains Mono">+20%</text>
+                <text x="2" y="53" fill="#6b6962" font-size="7" font-family="JetBrains Mono">0%</text>
+                <text x="2" y="69" fill="#6b6962" font-size="7" font-family="JetBrains Mono">-10%</text>
+
+                <!-- 3-scenario fan from entry point (left, Y=50 = 0%) -->
+                <!-- Confidence band (full fan area) -->
+                <path d="M 30,50 Q 130,30 300,14 L 300,68 Q 130,55 30,50 Z" fill="#ff8c42" opacity="0.06"/>
+
+                <!-- Bull line (top) -->
+                <path d="M 30,50 Q 130,30 300,14" fill="none" stroke="#4ade80" stroke-width="1.3" stroke-dasharray="3,2" opacity="0.7"/>
+                <text x="298" y="12" fill="#4ade80" font-size="8" text-anchor="end" font-family="JetBrains Mono" font-weight="700">+42% 強気 30%</text>
+
+                <!-- Base line (middle, prominent) -->
+                <path d="M 30,50 Q 130,38 300,27" fill="none" stroke="#ff8c42" stroke-width="2.2" stroke-dasharray="5,2"/>
+                <text x="298" y="24" fill="#ff8c42" font-size="8" text-anchor="end" font-family="JetBrains Mono" font-weight="700">+27% ベース 50%</text>
+
+                <!-- Bear line (bottom) -->
+                <path d="M 30,50 Q 130,55 300,62" fill="none" stroke="#f87171" stroke-width="1.3" stroke-dasharray="3,2" opacity="0.7"/>
+                <text x="298" y="72" fill="#f87171" font-size="8" text-anchor="end" font-family="JetBrains Mono">-9% 弱気 20%</text>
+
+                <!-- ENTRY = TODAY marker (left, prominent) -->
+                <g class="now-marker">
+                  <circle class="now-pulse" cx="30" cy="50" r="4" fill="#ff8c42"/>
+                  <circle cx="30" cy="50" r="5" fill="#ff8c42" stroke="#ece9de" stroke-width="1.5"/>
+                </g>
+                <rect class="now-label-bg" x="40" y="42" width="72" height="14" rx="2"/>
+                <text class="now-label" x="76" y="52" fill="#ff8c42" text-anchor="middle">エントリー $98.50</text>
+
+                <!-- X-axis labels -->
+                <text x="30" y="82" fill="#ece9de" font-size="8" font-weight="700" text-anchor="middle" font-family="JetBrains Mono">今</text>
+                <text x="160" y="82" fill="#6b6962" font-size="8" text-anchor="middle" font-family="JetBrains Mono">1.5ヶ月後</text>
+                <text x="310" y="82" fill="#6b6962" font-size="8" text-anchor="end" font-family="JetBrains Mono">3ヶ月後</text>
+              </svg>
+              <div class="forecast-legend">
+                <span class="fc-leg" style="color:#4ade80"><span class="dot" style="background:#4ade80"></span>強気 30%</span>
+                <span class="fc-leg" style="color:#ff8c42"><span class="dot" style="background:#ff8c42"></span><span class="pct">ベース 50%</span></span>
+                <span class="fc-leg" style="color:#f87171"><span class="dot" style="background:#f87171"></span>弱気 20%</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 6920 -->
+          <div class="act buy" data-detail="laser">
+            <div class="act-top">
+              <div class="gendo-ind">
+                <div class="g-face" aria-hidden="true">碇</div>
+                <div class="g-word">要検討</div>
+                <div class="g-lbl">GENDO</div>
+              </div>
+              <div>
+                <div class="act-head">
+                  <span class="act-ticker">6920</span>
+                  <span class="act-market">JP 半導体</span>
+                  <span class="act-name">レーザーテック</span>
+                </div>
+                <div class="act-summary">
+                  EUV装置の中期受注増。<strong>+20%</strong> を3〜6ヶ月で狙う中期テーマ（勝率 65%）。
+                </div>
+                <div class="magi-mini">
+                  <div class="magi-mini-dots">
+                    <span class="mmd"><span class="dot" style="background:#ff8c42"></span><span class="jn">MELCHIOR</span><span class="jr">業績</span><span class="vd" style="color:var(--up)">買</span></span>
+                    <span class="mmd"><span class="dot" style="background:#4ecdc4;opacity:0.45"></span><span class="jn">BALTHASAR</span><span class="jr">株価</span><span class="vd" style="color:var(--warn)">慎重</span></span>
+                    <span class="mmd"><span class="dot" style="background:#fbbf24"></span><span class="jn">CASPER</span><span class="jr">文脈</span><span class="vd" style="color:var(--up)">買</span></span>
+                  </div>
+                  <span class="magi-mini-state">2/3 買い・割れ</span>
+                </div>
+              </div>
+              <div class="act-arrow">→</div>
+            </div>
+
+            <!-- Forecast graph -->
+            <div class="forecast">
+              <div class="forecast-meta">
+                <span class="lbl">エントリー ¥21,500</span>
+                <span class="val now">期待 +20%</span>
+                <span class="lbl">3-6ヶ月後 目標 ¥26,000</span>
+              </div>
+              <svg class="forecast-svg" viewBox="0 0 320 84" preserveAspectRatio="none" data-graph="6920-buy">
+                <line x1="0" y1="14" x2="320" y2="14" stroke="#3a3a48" stroke-width="0.4" stroke-dasharray="2,2"/>
+                <line x1="0" y1="36" x2="320" y2="36" stroke="#3a3a48" stroke-width="0.4" stroke-dasharray="2,2"/>
+                <line x1="0" y1="50" x2="320" y2="50" stroke="#6b6962" stroke-width="0.7"/>
+                <line x1="0" y1="66" x2="320" y2="66" stroke="#3a3a48" stroke-width="0.4" stroke-dasharray="2,2"/>
+
+                <text x="2" y="16" fill="#6b6962" font-size="7" font-family="JetBrains Mono">+32%</text>
+                <text x="2" y="38" fill="#6b6962" font-size="7" font-family="JetBrains Mono">+15%</text>
+                <text x="2" y="53" fill="#6b6962" font-size="7" font-family="JetBrains Mono">0%</text>
+                <text x="2" y="69" fill="#6b6962" font-size="7" font-family="JetBrains Mono">-12%</text>
+
+                <path d="M 30,50 Q 130,32 300,16 L 300,66 Q 130,55 30,50 Z" fill="#ff8c42" opacity="0.06"/>
+
+                <path d="M 30,50 Q 130,32 300,16" fill="none" stroke="#4ade80" stroke-width="1.3" stroke-dasharray="3,2" opacity="0.7"/>
+                <text x="298" y="14" fill="#4ade80" font-size="8" text-anchor="end" font-family="JetBrains Mono" font-weight="700">+32% 強気 25%</text>
+
+                <path d="M 30,50 Q 130,40 300,28" fill="none" stroke="#ff8c42" stroke-width="2.2" stroke-dasharray="5,2"/>
+                <text x="298" y="25" fill="#ff8c42" font-size="8" text-anchor="end" font-family="JetBrains Mono" font-weight="700">+20% ベース 50%</text>
+
+                <path d="M 30,50 Q 130,55 300,64" fill="none" stroke="#f87171" stroke-width="1.3" stroke-dasharray="3,2" opacity="0.7"/>
+                <text x="298" y="74" fill="#f87171" font-size="8" text-anchor="end" font-family="JetBrains Mono">-12% 弱気 25%</text>
+
+                <g class="now-marker">
+                  <circle class="now-pulse" cx="30" cy="50" r="4" fill="#ff8c42"/>
+                  <circle cx="30" cy="50" r="5" fill="#ff8c42" stroke="#ece9de" stroke-width="1.5"/>
+                </g>
+                <rect class="now-label-bg" x="40" y="42" width="78" height="14" rx="2"/>
+                <text class="now-label" x="79" y="52" fill="#ff8c42" text-anchor="middle">エントリー ¥21,500</text>
+
+                <text x="30" y="82" fill="#ece9de" font-size="8" font-weight="700" text-anchor="middle" font-family="JetBrains Mono">今</text>
+                <text x="160" y="82" fill="#6b6962" font-size="8" text-anchor="middle" font-family="JetBrains Mono">2-3ヶ月</text>
+                <text x="310" y="82" fill="#6b6962" font-size="8" text-anchor="end" font-family="JetBrains Mono">3-6ヶ月後</text>
+              </svg>
+              <div class="forecast-legend">
+                <span class="fc-leg" style="color:#4ade80"><span class="dot" style="background:#4ade80"></span>強気 25%</span>
+                <span class="fc-leg" style="color:#ff8c42"><span class="dot" style="background:#ff8c42"></span><span class="pct">ベース 50%</span></span>
+                <span class="fc-leg" style="color:#f87171"><span class="dot" style="background:#f87171"></span>弱気 25%</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- 買い：他の候補（常時表示） -->
+        <div class="more-section">
+          <div class="more-toggle" style="cursor: default;">
+            <span class="more-toggle-left">
+              <span>他の買い候補</span>
+            </span>
+            <span class="more-toggle-count">8 件</span>
+          </div>
+          <div class="more-list open" data-list="buy-more">
+            <div class="more-list-inner">
+
+              <div class="mini-act buy" data-detail="nvda">
+                <div class="mini-act-score">76</div>
+                <div class="mini-act-ticker">AVGO</div>
+                <div class="mini-act-info">
+                  <div class="mini-act-name">Broadcom</div>
+                  <div class="mini-act-tags">
+                    <span>US</span><span>·</span><span>半導体</span><span>·</span><span>ネットワーク</span>
+                  </div>
+                </div>
+                <div class="mini-act-return up">+18%</div>
+                <div class="mini-act-prob"><span class="pct">63%</span><br>勝率</div>
+                <div class="mini-act-arrow">→</div>
+              </div>
+
+              <div class="mini-act buy" data-detail="nvda">
+                <div class="mini-act-score">73</div>
+                <div class="mini-act-ticker">AMD</div>
+                <div class="mini-act-info">
+                  <div class="mini-act-name">Advanced Micro Devices</div>
+                  <div class="mini-act-tags">
+                    <span>US</span><span>·</span><span>半導体</span><span>·</span><span>GPU</span>
+                  </div>
+                </div>
+                <div class="mini-act-return up">+22%</div>
+                <div class="mini-act-prob"><span class="pct">58%</span><br>勝率</div>
+                <div class="mini-act-arrow">→</div>
+              </div>
+
+              <div class="mini-act buy" data-detail="nvda">
+                <div class="mini-act-score">71</div>
+                <div class="mini-act-ticker">ASML</div>
+                <div class="mini-act-info">
+                  <div class="mini-act-name">ASML Holding</div>
+                  <div class="mini-act-tags">
+                    <span>US</span><span>·</span><span>半導体装置</span>
+                  </div>
+                </div>
+                <div class="mini-act-return up">+15%</div>
+                <div class="mini-act-prob"><span class="pct">61%</span><br>勝率</div>
+                <div class="mini-act-arrow">→</div>
+              </div>
+
+              <div class="mini-act buy" data-detail="laser">
+                <div class="mini-act-score">70</div>
+                <div class="mini-act-ticker">8035</div>
+                <div class="mini-act-info">
+                  <div class="mini-act-name">東京エレクトロン</div>
+                  <div class="mini-act-tags">
+                    <span>JP</span><span>·</span><span>半導体装置</span>
+                  </div>
+                </div>
+                <div class="mini-act-return up">+12%</div>
+                <div class="mini-act-prob"><span class="pct">55%</span><br>勝率</div>
+                <div class="mini-act-arrow">→</div>
+              </div>
+
+              <div class="mini-act buy" data-detail="nvda">
+                <div class="mini-act-score">68</div>
+                <div class="mini-act-ticker">META</div>
+                <div class="mini-act-info">
+                  <div class="mini-act-name">Meta Platforms</div>
+                  <div class="mini-act-tags">
+                    <span>US</span><span>·</span><span>ソフトウェア</span><span>·</span><span>SNS</span>
+                  </div>
+                </div>
+                <div class="mini-act-return up">+14%</div>
+                <div class="mini-act-prob"><span class="pct">60%</span><br>勝率</div>
+                <div class="mini-act-arrow">→</div>
+              </div>
+
+              <div class="mini-act buy" data-detail="laser">
+                <div class="mini-act-score">67</div>
+                <div class="mini-act-ticker">6857</div>
+                <div class="mini-act-info">
+                  <div class="mini-act-name">アドバンテスト</div>
+                  <div class="mini-act-tags">
+                    <span>JP</span><span>·</span><span>半導体測定</span>
+                  </div>
+                </div>
+                <div class="mini-act-return up">+11%</div>
+                <div class="mini-act-prob"><span class="pct">54%</span><br>勝率</div>
+                <div class="mini-act-arrow">→</div>
+              </div>
+
+              <div class="mini-act buy" data-detail="nvda">
+                <div class="mini-act-score">65</div>
+                <div class="mini-act-ticker">GOOGL</div>
+                <div class="mini-act-info">
+                  <div class="mini-act-name">Alphabet</div>
+                  <div class="mini-act-tags">
+                    <span>US</span><span>·</span><span>ソフトウェア</span><span>·</span><span>AI</span>
+                  </div>
+                </div>
+                <div class="mini-act-return up">+10%</div>
+                <div class="mini-act-prob"><span class="pct">58%</span><br>勝率</div>
+                <div class="mini-act-arrow">→</div>
+              </div>
+
+              <div class="mini-act buy" data-detail="laser">
+                <div class="mini-act-score">63</div>
+                <div class="mini-act-ticker">9984</div>
+                <div class="mini-act-info">
+                  <div class="mini-act-name">ソフトバンクグループ</div>
+                  <div class="mini-act-tags">
+                    <span>JP</span><span>·</span><span>投資</span><span>·</span><span>AI</span>
+                  </div>
+                </div>
+                <div class="mini-act-return up">+9%</div>
+                <div class="mini-act-prob"><span class="pct">52%</span><br>勝率</div>
+                <div class="mini-act-arrow">→</div>
+              </div>
+
+            </div>
+            <div class="more-footer">
+              <button class="more-footer-link">スクリーニング画面で全287銘柄を見る →</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- =========================================== -->
+    <!-- Secondary: 警告 + 情報                        -->
+    <!-- =========================================== -->
+    <div class="section-label">
+      <span>注視すべきこと</span>
+    </div>
+
+    <div class="secondary-row">
+
+      <div class="mini-card">
+        <div class="mini-card-head">
+          <div class="mini-card-title">
+            <span class="dot warn"></span>警告 <span class="en">Alerts</span>
+          </div>
+          <div class="mini-card-count">1件</div>
+        </div>
+        <div class="alert">
+          <div class="alert-icon">!</div>
+          <div class="alert-body">
+            <div class="alert-title">
+              <span class="ticker">MSFT</span>
+              <span>シナリオ進捗が鈍化</span>
+            </div>
+            <div class="alert-desc">
+              Azure AI 売上の伸びが想定の55%。次Q決算（5/24）の数字次第で売り推奨に変わる可能性。
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="mini-card">
+        <div class="mini-card-head">
+          <div class="mini-card-title">
+            <span class="dot sub"></span>決算予定 <span class="en">Earnings</span>
+          </div>
+          <div class="mini-card-count">今週 4件</div>
+        </div>
+        <div class="info-list">
+          <div class="info-item">
+            <div class="info-item-icon" style="background:var(--key-bg); color:var(--key)">AA</div>
+            <div>
+              <div class="info-item-title">AAPL · 5/22 (木) 引け後</div>
+              <div class="info-item-desc">保有銘柄 · iPhone販売動向に注目</div>
+            </div>
+          </div>
+          <div class="info-item">
+            <div class="info-item-icon" style="background:var(--key-bg); color:var(--key)">MS</div>
+            <div>
+              <div class="info-item-title">MSFT · 5/24 (土) 6:00 JST</div>
+              <div class="info-item-desc">保有銘柄 · Azure AI売上が焦点、売り推奨判断の分岐点</div>
+            </div>
+          </div>
+          <div class="info-item">
+            <div class="info-item-icon">NV</div>
+            <div>
+              <div class="info-item-title">NVDA · 5/29 (木) 6:00 JST</div>
+              <div class="info-item-desc">買い候補 · データセンター売上ガイダンス</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- =========================================== -->
+    <!-- Holdings (with prediction vs actual graphs)  -->
+    <!-- =========================================== -->
+    <div class="section-label">
+      <span>保有銘柄 · 予測 vs 実績</span>
+    </div>
+
+    <div class="holdings-wrap">
+      <div class="holdings-list">
+
+        <!-- AAPL -->
+        <div class="hold status-good">
+          <div class="hold-labels">
+            <span class="hold-label status-good">順調</span>
+            <span class="hold-label term">長期 · 1年</span>
+            <span class="hold-label term">US ハードウェア</span>
+          </div>
+          <div class="hold-top">
+            <div class="hold-left">
+              <span class="hold-ticker">AAPL</span>
+              <span class="hold-name">Apple Inc.</span>
+            </div>
+            <div class="hold-right">
+              <span class="hold-price">$ 215.30</span>
+              <span class="hold-pnl up">+5.2%</span>
+            </div>
+          </div>
+          <div class="hold-thesis">仮説：Vision Pro と AI機能で買い替え加速、サービス売上+18%</div>
+
+          <svg class="hold-graph" viewBox="0 0 380 90" preserveAspectRatio="none" data-graph="AAPL">
+            <!-- Y-axis grid -->
+            <line x1="0" y1="10" x2="380" y2="10" stroke="#3a3a48" stroke-width="0.4" stroke-dasharray="2,2"/>
+            <line x1="0" y1="35" x2="380" y2="35" stroke="#3a3a48" stroke-width="0.4" stroke-dasharray="2,2"/>
+            <line x1="0" y1="60" x2="380" y2="60" stroke="#6b6962" stroke-width="0.7"/>
+            <line x1="0" y1="75" x2="380" y2="75" stroke="#3a3a48" stroke-width="0.4" stroke-dasharray="2,2"/>
+
+            <text x="2" y="13" fill="#6b6962" font-size="7" font-family="JetBrains Mono">+20%</text>
+            <text x="2" y="38" fill="#6b6962" font-size="7" font-family="JetBrains Mono">+10%</text>
+            <text x="2" y="63" fill="#6b6962" font-size="7" font-family="JetBrains Mono">0%</text>
+            <text x="2" y="78" fill="#6b6962" font-size="7" font-family="JetBrains Mono">-10%</text>
+
+            <!-- Target line +15% -->
+            <line x1="30" y1="25" x2="370" y2="25" stroke="#a09d92" stroke-width="0.6" stroke-dasharray="4,3" opacity="0.5"/>
+            <text x="368" y="22" fill="#a09d92" font-size="7" text-anchor="end" font-family="JetBrains Mono">目標 +15%</text>
+
+            <!-- Progress: 39日 / 365日 = 10% → x position ≈ 30 + (370-30)*0.10 = 64 -->
+            <line x1="64" y1="5" x2="64" y2="85" stroke="#a09d92" stroke-width="0.6" stroke-dasharray="2,3" opacity="0.5"/>
+
+            <!-- PAST (short, just 10% in) -->
+            <path d="M 30,60 L 40,58 L 50,55 L 64,47" fill="none" stroke="#4ade80" stroke-width="2.2"/>
+
+            <!-- FUTURE: long way to go to target -->
+            <path d="M 64,47 Q 200,38 370,28 L 370,38 Q 200,42 64,47 Z" fill="#4ade80" opacity="0.07"/>
+            <path d="M 64,47 Q 200,38 370,30" fill="none" stroke="#4ade80" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.8"/>
+
+            <circle cx="30" cy="60" r="3" fill="#a09d92"/>
+            <text x="30" y="88" fill="#6b6962" font-size="8" text-anchor="middle" font-family="JetBrains Mono">04-12</text>
+            <text x="64" y="88" fill="#ece9de" font-size="8" font-weight="700" text-anchor="middle" font-family="JetBrains Mono">今</text>
+            <text x="370" y="88" fill="#6b6962" font-size="8" text-anchor="end" font-family="JetBrains Mono">04-12 翌年</text>
+
+            <g class="now-marker">
+              <circle class="now-pulse" cx="64" cy="47" r="4" fill="#4ade80"/>
+              <circle cx="64" cy="47" r="5" fill="#4ade80" stroke="#ece9de" stroke-width="1.5"/>
+            </g>
+            <rect class="now-label-bg" x="74" y="39" width="56" height="14" rx="2"/>
+            <text class="now-label" x="102" y="49" fill="#4ade80" text-anchor="middle">今 +5.2%</text>
+          </svg>
+
+          <div class="hold-status-bar">
+            <span class="lbl">進捗</span>
+            <span class="val good">10% · 残り 326日 · 順調</span>
+          </div>
+        </div>
+
+        <!-- MSFT -->
+        <div class="hold status-warn">
+          <div class="hold-labels">
+            <span class="hold-label status-warn">注視</span>
+            <span class="hold-label term">中期 · 6ヶ月</span>
+            <span class="hold-label term">US ソフトウェア</span>
+          </div>
+          <div class="hold-top">
+            <div class="hold-left">
+              <span class="hold-ticker">MSFT</span>
+              <span class="hold-name">Microsoft</span>
+            </div>
+            <div class="hold-right">
+              <span class="hold-price">$ 408.20</span>
+              <span class="hold-pnl down">-2.1%</span>
+            </div>
+          </div>
+          <div class="hold-thesis">仮説：Azure AIワークロード拡大で営業利益 +15%</div>
+
+          <svg class="hold-graph" viewBox="0 0 380 90" preserveAspectRatio="none" data-graph="MSFT">
+            <line x1="0" y1="10" x2="380" y2="10" stroke="#3a3a48" stroke-width="0.4" stroke-dasharray="2,2"/>
+            <line x1="0" y1="35" x2="380" y2="35" stroke="#3a3a48" stroke-width="0.4" stroke-dasharray="2,2"/>
+            <line x1="0" y1="60" x2="380" y2="60" stroke="#6b6962" stroke-width="0.7"/>
+            <line x1="0" y1="75" x2="380" y2="75" stroke="#3a3a48" stroke-width="0.4" stroke-dasharray="2,2"/>
+
+            <text x="2" y="13" fill="#6b6962" font-size="7" font-family="JetBrains Mono">+20%</text>
+            <text x="2" y="38" fill="#6b6962" font-size="7" font-family="JetBrains Mono">+10%</text>
+            <text x="2" y="63" fill="#6b6962" font-size="7" font-family="JetBrains Mono">0%</text>
+            <text x="2" y="78" fill="#6b6962" font-size="7" font-family="JetBrains Mono">-10%</text>
+
+            <!-- Target line +12% -->
+            <line x1="30" y1="30" x2="370" y2="30" stroke="#a09d92" stroke-width="0.6" stroke-dasharray="4,3" opacity="0.5"/>
+            <text x="368" y="27" fill="#a09d92" font-size="7" text-anchor="end" font-family="JetBrains Mono">目標 +12%</text>
+
+            <!-- Progress: 22% → x = 30 + (370-30)*0.22 = 105 -->
+            <line x1="105" y1="5" x2="105" y2="85" stroke="#a09d92" stroke-width="0.6" stroke-dasharray="2,3" opacity="0.5"/>
+
+            <!-- PAST -->
+            <path d="M 30,60 L 50,61 L 70,60 L 90,63 L 105,65" fill="none" stroke="#fbbf24" stroke-width="2.2"/>
+
+            <!-- FUTURE: uncertain, wider band -->
+            <path d="M 105,65 Q 240,52 370,32 L 370,72 Q 240,68 105,65 Z" fill="#fbbf24" opacity="0.08"/>
+            <path d="M 105,65 Q 240,55 370,45" fill="none" stroke="#fbbf24" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.8"/>
+
+            <circle cx="30" cy="60" r="3" fill="#a09d92"/>
+            <text x="30" y="88" fill="#6b6962" font-size="8" text-anchor="middle" font-family="JetBrains Mono">04-12</text>
+            <text x="105" y="88" fill="#ece9de" font-size="8" font-weight="700" text-anchor="middle" font-family="JetBrains Mono">今</text>
+            <text x="370" y="88" fill="#6b6962" font-size="8" text-anchor="end" font-family="JetBrains Mono">10-12</text>
+
+            <g class="now-marker">
+              <circle class="now-pulse" cx="105" cy="65" r="4" fill="#fbbf24"/>
+              <circle cx="105" cy="65" r="5" fill="#fbbf24" stroke="#ece9de" stroke-width="1.5"/>
+            </g>
+            <rect class="now-label-bg" x="115" y="57" width="56" height="14" rx="2"/>
+            <text class="now-label" x="143" y="67" fill="#fbbf24" text-anchor="middle">今 -2.1%</text>
+          </svg>
+
+          <div class="hold-status-bar">
+            <span class="lbl">進捗</span>
+            <span class="val warn">22% · 残り 141日 · 注視（予測から下方乖離）</span>
+          </div>
+        </div>
+
+        <!-- TSLA -->
+        <div class="hold status-danger">
+          <div class="hold-labels">
+            <span class="hold-label status-danger">危険 · 売り推奨</span>
+            <span class="hold-label term">中期 · 3ヶ月</span>
+            <span class="hold-label term">US EV</span>
+          </div>
+          <div class="hold-top">
+            <div class="hold-left">
+              <span class="hold-ticker">TSLA</span>
+              <span class="hold-name">Tesla</span>
+            </div>
+            <div class="hold-right">
+              <span class="hold-price">$ 172.30</span>
+              <span class="hold-pnl down">-7.8%</span>
+            </div>
+          </div>
+          <div class="hold-thesis">仮説：自動運転収益化でEPS+30% — 進捗鈍化</div>
+
+          <svg class="hold-graph" viewBox="0 0 380 90" preserveAspectRatio="none" data-graph="TSLA">
+            <line x1="0" y1="10" x2="380" y2="10" stroke="#3a3a48" stroke-width="0.4" stroke-dasharray="2,2"/>
+            <line x1="0" y1="35" x2="380" y2="35" stroke="#3a3a48" stroke-width="0.4" stroke-dasharray="2,2"/>
+            <line x1="0" y1="60" x2="380" y2="60" stroke="#6b6962" stroke-width="0.7"/>
+            <line x1="0" y1="75" x2="380" y2="75" stroke="#3a3a48" stroke-width="0.4" stroke-dasharray="2,2"/>
+
+            <text x="2" y="13" fill="#6b6962" font-size="7" font-family="JetBrains Mono">+20%</text>
+            <text x="2" y="38" fill="#6b6962" font-size="7" font-family="JetBrains Mono">+10%</text>
+            <text x="2" y="63" fill="#6b6962" font-size="7" font-family="JetBrains Mono">0%</text>
+            <text x="2" y="78" fill="#6b6962" font-size="7" font-family="JetBrains Mono">-10%</text>
+
+            <!-- Target line +20% -->
+            <line x1="30" y1="20" x2="370" y2="20" stroke="#a09d92" stroke-width="0.6" stroke-dasharray="4,3" opacity="0.5"/>
+            <text x="368" y="17" fill="#a09d92" font-size="7" text-anchor="end" font-family="JetBrains Mono">目標 +20%</text>
+
+            <!-- Loss cut -->
+            <line x1="30" y1="72" x2="370" y2="72" stroke="#f87171" stroke-width="0.7" stroke-dasharray="3,3" opacity="0.6"/>
+            <text x="368" y="82" fill="#f87171" font-size="7" text-anchor="end" font-family="JetBrains Mono">損切 -8%</text>
+
+            <!-- Progress: 40% → x = 30 + (370-30)*0.40 = 166 -->
+            <line x1="166" y1="5" x2="166" y2="85" stroke="#a09d92" stroke-width="0.6" stroke-dasharray="2,3" opacity="0.5"/>
+
+            <!-- PAST: declining to -7.8% -->
+            <path d="M 30,60 L 60,62 L 90,65 L 120,68 L 150,70 L 166,71" fill="none" stroke="#f87171" stroke-width="2.2"/>
+
+            <!-- FUTURE: continued downside (worse) -->
+            <path d="M 166,71 Q 270,77 370,82 L 370,86 Q 270,80 166,71 Z" fill="#f87171" opacity="0.15"/>
+            <path d="M 166,71 Q 270,77 370,82" fill="none" stroke="#f87171" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.8"/>
+
+            <circle cx="30" cy="60" r="3" fill="#a09d92"/>
+            <text x="30" y="88" fill="#6b6962" font-size="8" text-anchor="middle" font-family="JetBrains Mono">04-15</text>
+            <text x="166" y="88" fill="#ece9de" font-size="8" font-weight="700" text-anchor="middle" font-family="JetBrains Mono">今</text>
+            <text x="370" y="88" fill="#6b6962" font-size="8" text-anchor="end" font-family="JetBrains Mono">07-15</text>
+
+            <g class="now-marker">
+              <circle class="now-pulse" cx="166" cy="71" r="4" fill="#f87171"/>
+              <circle cx="166" cy="71" r="5" fill="#f87171" stroke="#ece9de" stroke-width="1.5"/>
+            </g>
+            <rect class="now-label-bg" x="176" y="63" width="56" height="14" rx="2"/>
+            <text class="now-label" x="204" y="73" fill="#f87171" text-anchor="middle">今 -7.8%</text>
+          </svg>
+
+          <div class="hold-status-bar">
+            <span class="lbl">進捗</span>
+            <span class="val danger">40% · 残り 54日 · シナリオ崩壊 → 売り推奨</span>
+          </div>
+        </div>
+
+        <!-- 7203 -->
+        <div class="hold status-profit">
+          <div class="hold-labels">
+            <span class="hold-label status-profit">利確圏 · 売り推奨</span>
+            <span class="hold-label term">中期 · 6週間</span>
+            <span class="hold-label term">JP 自動車</span>
+          </div>
+          <div class="hold-top">
+            <div class="hold-left">
+              <span class="hold-ticker">7203</span>
+              <span class="hold-name">トヨタ自動車</span>
+            </div>
+            <div class="hold-right">
+              <span class="hold-price">¥ 2,840</span>
+              <span class="hold-pnl up">+12.0%</span>
+            </div>
+          </div>
+          <div class="hold-thesis">仮説：HEVシェア拡大とPBR修正 — 目標到達寸前</div>
+
+          <svg class="hold-graph" viewBox="0 0 380 90" preserveAspectRatio="none" data-graph="7203">
+            <line x1="0" y1="10" x2="380" y2="10" stroke="#3a3a48" stroke-width="0.4" stroke-dasharray="2,2"/>
+            <line x1="0" y1="35" x2="380" y2="35" stroke="#3a3a48" stroke-width="0.4" stroke-dasharray="2,2"/>
+            <line x1="0" y1="60" x2="380" y2="60" stroke="#6b6962" stroke-width="0.7"/>
+            <line x1="0" y1="75" x2="380" y2="75" stroke="#3a3a48" stroke-width="0.4" stroke-dasharray="2,2"/>
+
+            <text x="2" y="13" fill="#6b6962" font-size="7" font-family="JetBrains Mono">+20%</text>
+            <text x="2" y="38" fill="#6b6962" font-size="7" font-family="JetBrains Mono">+10%</text>
+            <text x="2" y="63" fill="#6b6962" font-size="7" font-family="JetBrains Mono">0%</text>
+            <text x="2" y="78" fill="#6b6962" font-size="7" font-family="JetBrains Mono">-10%</text>
+
+            <!-- Target line +12% -->
+            <line x1="30" y1="30" x2="370" y2="30" stroke="#a09d92" stroke-width="0.6" stroke-dasharray="4,3" opacity="0.5"/>
+            <text x="368" y="27" fill="#a09d92" font-size="7" text-anchor="end" font-family="JetBrains Mono">目標 +12%</text>
+
+            <!-- Progress: 78% → x = 30 + (370-30)*0.78 = 295 -->
+            <line x1="295" y1="5" x2="295" y2="85" stroke="#a09d92" stroke-width="0.6" stroke-dasharray="2,3" opacity="0.5"/>
+
+            <!-- PAST: strong climb to +12% (now in profit-take zone, near target) -->
+            <path d="M 30,60 L 80,55 L 130,48 L 180,40 L 230,35 L 270,32 L 295,30" fill="none" stroke="#4ade80" stroke-width="2.2"/>
+
+            <!-- FUTURE: pullback risk -->
+            <path d="M 295,30 Q 330,38 370,45 L 370,28 Q 330,30 295,30 Z" fill="#fbbf24" opacity="0.12"/>
+            <path d="M 295,30 Q 330,38 370,45" fill="none" stroke="#fbbf24" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.8"/>
+
+            <circle cx="30" cy="60" r="3" fill="#a09d92"/>
+            <text x="30" y="88" fill="#6b6962" font-size="8" text-anchor="middle" font-family="JetBrains Mono">04-18</text>
+            <text x="295" y="88" fill="#ece9de" font-size="8" font-weight="700" text-anchor="middle" font-family="JetBrains Mono">今</text>
+            <text x="370" y="88" fill="#6b6962" font-size="8" text-anchor="end" font-family="JetBrains Mono">05-30</text>
+
+            <g class="now-marker">
+              <circle class="now-pulse" cx="295" cy="30" r="4" fill="#4ade80"/>
+              <circle cx="295" cy="30" r="5" fill="#4ade80" stroke="#ece9de" stroke-width="1.5"/>
+            </g>
+            <rect class="now-label-bg" x="232" y="22" width="60" height="14" rx="2"/>
+            <text class="now-label" x="262" y="32" fill="#4ade80" text-anchor="middle">今 +12.0%</text>
+          </svg>
+
+          <div class="hold-status-bar">
+            <span class="lbl">進捗</span>
+            <span class="val good">78% · 残り 9日 · 目標到達寸前 → 利確推奨</span>
+          </div>
+        </div>
+
+        <!-- 6920 -->
+        <div class="hold status-good">
+          <div class="hold-labels">
+            <span class="hold-label status-good">順調</span>
+            <span class="hold-label term">中期-長期 · 6ヶ月</span>
+            <span class="hold-label term">JP 半導体装置</span>
+          </div>
+          <div class="hold-top">
+            <div class="hold-left">
+              <span class="hold-ticker">6920</span>
+              <span class="hold-name">レーザーテック</span>
+            </div>
+            <div class="hold-right">
+              <span class="hold-price">¥ 21,560</span>
+              <span class="hold-pnl up">+3.4%</span>
+            </div>
+          </div>
+          <div class="hold-thesis">仮説：EUV装置受注の底打ち</div>
+
+          <svg class="hold-graph" viewBox="0 0 380 90" preserveAspectRatio="none" data-graph="6920">
+            <line x1="0" y1="10" x2="380" y2="10" stroke="#3a3a48" stroke-width="0.4" stroke-dasharray="2,2"/>
+            <line x1="0" y1="35" x2="380" y2="35" stroke="#3a3a48" stroke-width="0.4" stroke-dasharray="2,2"/>
+            <line x1="0" y1="60" x2="380" y2="60" stroke="#6b6962" stroke-width="0.7"/>
+            <line x1="0" y1="75" x2="380" y2="75" stroke="#3a3a48" stroke-width="0.4" stroke-dasharray="2,2"/>
+
+            <text x="2" y="13" fill="#6b6962" font-size="7" font-family="JetBrains Mono">+20%</text>
+            <text x="2" y="38" fill="#6b6962" font-size="7" font-family="JetBrains Mono">+10%</text>
+            <text x="2" y="63" fill="#6b6962" font-size="7" font-family="JetBrains Mono">0%</text>
+            <text x="2" y="78" fill="#6b6962" font-size="7" font-family="JetBrains Mono">-10%</text>
+
+            <!-- Target line +18% -->
+            <line x1="30" y1="25" x2="370" y2="25" stroke="#a09d92" stroke-width="0.6" stroke-dasharray="4,3" opacity="0.5"/>
+            <text x="368" y="22" fill="#a09d92" font-size="7" text-anchor="end" font-family="JetBrains Mono">目標 +18%</text>
+
+            <!-- Progress: 26日 / 180日 = 14% → x = 30 + (370-30)*0.14 = 78 -->
+            <line x1="78" y1="5" x2="78" y2="85" stroke="#a09d92" stroke-width="0.6" stroke-dasharray="2,3" opacity="0.5"/>
+
+            <!-- PAST -->
+            <path d="M 30,60 L 45,59 L 60,57 L 78,53" fill="none" stroke="#4ade80" stroke-width="2.2"/>
+
+            <!-- FUTURE: long way to target -->
+            <path d="M 78,53 Q 220,38 370,22 L 370,38 Q 220,42 78,53 Z" fill="#4ade80" opacity="0.08"/>
+            <path d="M 78,53 Q 220,38 370,25" fill="none" stroke="#4ade80" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.8"/>
+
+            <circle cx="30" cy="60" r="3" fill="#a09d92"/>
+            <text x="30" y="88" fill="#6b6962" font-size="8" text-anchor="middle" font-family="JetBrains Mono">04-25</text>
+            <text x="78" y="88" fill="#ece9de" font-size="8" font-weight="700" text-anchor="middle" font-family="JetBrains Mono">今</text>
+            <text x="370" y="88" fill="#6b6962" font-size="8" text-anchor="end" font-family="JetBrains Mono">10-25</text>
+
+            <g class="now-marker">
+              <circle class="now-pulse" cx="78" cy="53" r="4" fill="#4ade80"/>
+              <circle cx="78" cy="53" r="5" fill="#4ade80" stroke="#ece9de" stroke-width="1.5"/>
+            </g>
+            <rect class="now-label-bg" x="88" y="45" width="56" height="14" rx="2"/>
+            <text class="now-label" x="116" y="55" fill="#4ade80" text-anchor="middle">今 +3.4%</text>
+          </svg>
+
+          <div class="hold-status-bar">
+            <span class="lbl">進捗</span>
+            <span class="val good">14% · 残り 154日 · 順調</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- =========================================== -->
+    <!-- Track record + manual input                   -->
+    <!-- =========================================== -->
+    <div class="section-label">
+      <span>予測の検証と補助</span>
+    </div>
+
+    <div class="lower-row">
+
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title">
+            <span class="dot sub"></span>予測の検証 <span class="en">Track Record</span>
+          </div>
+          <div class="card-meta">過去30日</div>
+        </div>
+
+        <div class="track-stats">
+          <div class="track-stat">
+            <div class="track-stat-label">的中率</div>
+            <div class="track-stat-value">68%</div>
+            <div class="track-stat-sub">15 / 22件</div>
+          </div>
+          <div class="track-stat">
+            <div class="track-stat-label">平均リターン</div>
+            <div class="track-stat-value up">+4.8%</div>
+            <div class="track-stat-sub">1件あたり30日後</div>
+          </div>
+          <div class="track-stat sub">
+            <div class="track-stat-label">スコア相関</div>
+            <div class="track-stat-value">0.62</div>
+            <div class="track-stat-sub">スコア高=勝率高</div>
+          </div>
+          <div class="track-stat sub">
+            <div class="track-stat-label">S&amp;P 500との差</div>
+            <div class="track-stat-value up">+2.3pt</div>
+            <div class="track-stat-sub">超過リターン</div>
+          </div>
+        </div>
+
+        <div class="chart-container">
+          <div class="chart-title">
+            <span>累積リターン推移</span>
+            <div class="chart-legend">
+              <div class="chart-legend-item" style="color:var(--key)">
+                <span class="chart-legend-dot" style="background:var(--key)"></span>
+                <span>実績</span>
+              </div>
+              <div class="chart-legend-item" style="color:var(--key)">
+                <span class="chart-legend-dot dashed"></span>
+                <span>予測</span>
+              </div>
+              <div class="chart-legend-item" style="color:var(--sub)">
+                <span class="chart-legend-dot" style="background:var(--sub)"></span>
+                <span>S&amp;P 500</span>
+              </div>
+            </div>
+          </div>
+
+          <svg width="100%" height="160" viewBox="0 0 460 160" preserveAspectRatio="none">
+            <line x1="40" y1="20" x2="450" y2="20" stroke="#25252f" stroke-width="0.5"/>
+            <line x1="40" y1="60" x2="450" y2="60" stroke="#25252f" stroke-width="0.5"/>
+            <line x1="40" y1="90" x2="450" y2="90" stroke="#25252f" stroke-width="0.5" stroke-dasharray="2,2"/>
+            <line x1="40" y1="120" x2="450" y2="120" stroke="#25252f" stroke-width="0.5"/>
+            <line x1="40" y1="150" x2="450" y2="150" stroke="#3a3a48" stroke-width="0.5"/>
+
+            <text x="34" y="24" fill="#6b6962" font-size="9" text-anchor="end" font-family="JetBrains Mono">+10%</text>
+            <text x="34" y="64" fill="#6b6962" font-size="9" text-anchor="end" font-family="JetBrains Mono">+5%</text>
+            <text x="34" y="94" fill="#6b6962" font-size="9" text-anchor="end" font-family="JetBrains Mono">0</text>
+            <text x="34" y="124" fill="#6b6962" font-size="9" text-anchor="end" font-family="JetBrains Mono">-5%</text>
+
+            <text x="40" y="158" fill="#6b6962" font-size="9" font-family="JetBrains Mono">04-22</text>
+            <text x="170" y="158" fill="#6b6962" font-size="9" font-family="JetBrains Mono">05-01</text>
+            <text x="295" y="158" fill="#6b6962" font-size="9" font-family="JetBrains Mono">05-10</text>
+            <text x="420" y="158" fill="#6b6962" font-size="9" font-family="JetBrains Mono">05-21</text>
+
+            <polyline fill="none" stroke="#ff8c42" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.5"
+              points="40,90 80,84 120,78 160,72 200,66 240,60 280,54 320,49 360,44 400,39 450,35"/>
+
+            <polyline fill="none" stroke="#4ecdc4" stroke-width="1.5"
+              points="40,90 80,88 120,86 160,88 200,85 240,82 280,83 320,80 360,78 400,75 450,72"/>
+
+            <polyline fill="none" stroke="#ff8c42" stroke-width="2"
+              points="40,90 80,80 120,78 160,72 200,69 240,62 280,65 320,58 360,52 400,45 450,40"/>
+
+            <!-- Individual recommendation results: each circle is a past recommendation -->
+            <!-- Green = hit, Red = miss. Hover for detail. -->
+            <circle class="track-point" cx="80" cy="80" r="4" fill="#4ade80" stroke="#0d0d11" stroke-width="1.5"
+              data-date="04-23" data-ticker="AAPL" data-action="買い" data-result="+5.2% 的中" data-hit="hit"/>
+            <circle class="track-point" cx="120" cy="78" r="4" fill="#4ade80" stroke="#0d0d11" stroke-width="1.5"
+              data-date="04-26" data-ticker="META" data-action="買い" data-result="+6.7% 的中" data-hit="hit"/>
+            <circle class="track-point" cx="160" cy="72" r="4" fill="#4ade80" stroke="#0d0d11" stroke-width="1.5"
+              data-date="04-30" data-ticker="AVGO" data-action="買い" data-result="+8.4% 的中" data-hit="hit"/>
+            <circle class="track-point" cx="200" cy="69" r="4" fill="#f87171" stroke="#0d0d11" stroke-width="1.5"
+              data-date="05-03" data-ticker="PYPL" data-action="買い" data-result="-3.2% 外れ" data-hit="miss"/>
+            <circle class="track-point" cx="240" cy="62" r="4" fill="#4ade80" stroke="#0d0d11" stroke-width="1.5"
+              data-date="05-06" data-ticker="7203" data-action="買い" data-result="+12.0% 的中" data-hit="hit"/>
+            <circle class="track-point" cx="280" cy="65" r="4" fill="#f87171" stroke="#0d0d11" stroke-width="1.5"
+              data-date="05-09" data-ticker="SNAP" data-action="買い" data-result="-4.8% 外れ" data-hit="miss"/>
+            <circle class="track-point" cx="320" cy="58" r="4" fill="#4ade80" stroke="#0d0d11" stroke-width="1.5"
+              data-date="05-12" data-ticker="MSFT" data-action="買い" data-result="+3.5% 的中" data-hit="hit"/>
+            <circle class="track-point" cx="360" cy="52" r="4" fill="#4ade80" stroke="#0d0d11" stroke-width="1.5"
+              data-date="05-15" data-ticker="NFLX" data-action="売り" data-result="-7.5% 確定" data-hit="hit"/>
+            <circle class="track-point" cx="400" cy="45" r="4" fill="#4ade80" stroke="#0d0d11" stroke-width="1.5"
+              data-date="05-18" data-ticker="6920" data-action="買い" data-result="+3.4% 的中" data-hit="hit"/>
+            <circle class="track-point" cx="450" cy="40" r="5" fill="#4ade80" stroke="#ece9de" stroke-width="1.5"
+              data-date="05-21" data-ticker="現在" data-action="累計" data-result="+8.4%" data-hit="now"/>
+          </svg>
+        </div>
+
+        <!-- Legend for points -->
+        <div style="display:flex; gap:18px; margin-top:10px; padding:0 4px; font-family:var(--mono); font-size:10px; color:var(--ink-3);">
+          <div style="display:flex; align-items:center; gap:6px;">
+            <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#4ade80; border:1px solid #0d0d11;"></span>
+            <span>各点 = レコメンド1件・<strong style="color:#4ade80">的中</strong></span>
+          </div>
+          <div style="display:flex; align-items:center; gap:6px;">
+            <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#f87171; border:1px solid #0d0d11;"></span>
+            <span><strong style="color:#f87171">外れ</strong></span>
+          </div>
+          <div style="margin-left:auto; color:var(--ink-3);">ホバーで詳細</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title">
+            <span class="dot sub"></span>手動投入 <span class="en">Quick Analyze</span>
+          </div>
+          <div class="card-meta">即時解釈</div>
+        </div>
+
+        <textarea class="manual-input" placeholder="X発言・記事URL・銘柄コードなど。AIが即座に解釈して影響銘柄を抽出します。"></textarea>
+        <div class="manual-actions">
+          <span class="manual-hint">Claude Sonnet · 1回約 ¥3</span>
+          <button class="btn btn-primary">分析する</button>
+        </div>
+
+        <div class="history-section">
+          <div class="history-title">最近の投入</div>
+          <div class="history-item">
+            <div class="history-source">05-21 05:47 · X</div>
+            <div class="history-text">Powellが利下げに前向き発言、6月FOMCで決定の可能性</div>
+            <div class="history-result">→ <span class="ticker">SPY</span> <span class="ticker">QQQ</span> 上振れ要因。金利敏感株にプラス。</div>
+          </div>
+          <div class="history-item">
+            <div class="history-source">05-20 14:22 · 日経</div>
+            <div class="history-text">半導体規制、対中輸出さらに強化へ</div>
+            <div class="history-result">→ <span class="ticker">8035</span> <span class="ticker">6920</span> 短期下押し、長期は内需転換でプラス。</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- =========================================== -->
+    <!-- Topics (収集したニュース・トピックス)         -->
+    <!-- =========================================== -->
+    <div class="section-label">
+      <span>収集したトピックス · Topics</span>
+    </div>
+
+    <div class="topics-wrap">
+
+      <div class="topics-tabs">
+        <button class="topics-tab active" data-topic-tab="all">すべて <span class="count">12</span></button>
+        <button class="topics-tab" data-topic-tab="macro">マクロ <span class="count">3</span></button>
+        <button class="topics-tab" data-topic-tab="sector">業界 <span class="count">4</span></button>
+        <button class="topics-tab" data-topic-tab="stock">個別 <span class="count">5</span></button>
+      </div>
+
+      <div class="topics-list" data-topic-content="all">
+
+        <!-- 重要度: 高 -->
+        <div class="topic imp-high" data-cat="stock">
+          <div class="topic-imp">
+            <span class="topic-imp-badge">重要</span>
+            <span class="topic-time">2h前</span>
+          </div>
+          <div class="topic-body">
+            <div class="topic-headline">Tesla、FSD収益化遅延報道 — 規制当局がレベル4認可に慎重姿勢</div>
+            <div class="topic-summary">米運輸省（NHTSA）がTeslaのFSD（Full Self-Driving）の事故率データを再調査。Q3までのレベル4承認は困難との見方が浮上。</div>
+            <div class="topic-meta">
+              <a href="#" class="topic-source"><span>Bloomberg</span><span class="ext-icon">↗</span></a>
+              <span class="topic-tag ticker">TSLA</span>
+              <span class="topic-tag">米国</span>
+              <span class="topic-tag">EV</span>
+              <span class="topic-tag">規制</span>
+            </div>
+            <div class="topic-impact">
+              <span class="topic-impact-label">影響</span>
+              <span class="topic-impact-text"><strong>TSLA</strong> <span class="down">損切り推奨</span>の根拠の一つ・<strong>シナリオ崩壊</strong>を補強</span>
+            </div>
+          </div>
+          <div class="topic-arrow">→</div>
+        </div>
+
+        <div class="topic imp-high" data-cat="macro">
+          <div class="topic-imp">
+            <span class="topic-imp-badge">重要</span>
+            <span class="topic-time">5h前</span>
+          </div>
+          <div class="topic-body">
+            <div class="topic-headline">Powell議長、6月FOMCで0.25%利下げ示唆 — 金融市場が織り込み</div>
+            <div class="topic-summary">講演で「インフレ目標達成に十分な進展」と発言。先物市場は6月利下げ確率を65% → 82%に上方修正。</div>
+            <div class="topic-meta">
+              <a href="#" class="topic-source"><span>Reuters</span><span class="ext-icon">↗</span></a>
+              <span class="topic-tag">マクロ</span>
+              <span class="topic-tag">FRB</span>
+              <span class="topic-tag">金利</span>
+            </div>
+            <div class="topic-impact">
+              <span class="topic-impact-label">影響</span>
+              <span class="topic-impact-text">米国株全体に追い風 · 特に <span class="key">NVDA</span> 等成長株が上振れ</span>
+            </div>
+          </div>
+          <div class="topic-arrow">→</div>
+        </div>
+
+        <div class="topic imp-high" data-cat="stock">
+          <div class="topic-imp">
+            <span class="topic-imp-badge">重要</span>
+            <span class="topic-time">6h前</span>
+          </div>
+          <div class="topic-body">
+            <div class="topic-headline">トヨタ自動車、HEV世界シェア33%到達 — 中期計画前倒し</div>
+            <div class="topic-summary">2026年Q1決算でHEVシェアが計画より3pt上振れ。EV戦略見直しでHEV注力が奏功。営業利益率も改善。</div>
+            <div class="topic-meta">
+              <a href="#" class="topic-source"><span>日経</span><span class="ext-icon">↗</span></a>
+              <a href="#" class="topic-source"><span>EDINET</span><span class="ext-icon">↗</span></a>
+              <span class="topic-tag ticker">7203</span>
+              <span class="topic-tag">日本</span>
+              <span class="topic-tag">自動車</span>
+            </div>
+            <div class="topic-impact">
+              <span class="topic-impact-label">影響</span>
+              <span class="topic-impact-text"><strong>7203</strong> <span class="sub">利確推奨</span>の根拠・シナリオがほぼ達成</span>
+            </div>
+          </div>
+          <div class="topic-arrow">→</div>
+        </div>
+
+        <!-- 重要度: 中 -->
+        <div class="topic imp-med" data-cat="sector">
+          <div class="topic-imp">
+            <span class="topic-imp-badge">中</span>
+            <span class="topic-time">3h前</span>
+          </div>
+          <div class="topic-body">
+            <div class="topic-headline">NVIDIA、Blackwell量産出荷を予定通り開始 — 顧客の前受注好調</div>
+            <div class="topic-summary">次世代AI GPU「Blackwell」の量産が計画通りスタート。Microsoft、Google、Metaが既に大量発注済み。</div>
+            <div class="topic-meta">
+              <a href="#" class="topic-source"><span>公式プレスリリース</span><span class="ext-icon">↗</span></a>
+              <span class="topic-tag ticker">NVDA</span>
+              <span class="topic-tag">半導体</span>
+              <span class="topic-tag">AI</span>
+            </div>
+            <div class="topic-impact">
+              <span class="topic-impact-label">影響</span>
+              <span class="topic-impact-text"><strong>NVDA</strong> <span class="key">買い推奨</span>の根拠を強化</span>
+            </div>
+          </div>
+          <div class="topic-arrow">→</div>
+        </div>
+
+        <div class="topic imp-med" data-cat="sector">
+          <div class="topic-imp">
+            <span class="topic-imp-badge">中</span>
+            <span class="topic-time">4h前</span>
+          </div>
+          <div class="topic-body">
+            <div class="topic-headline">米中半導体協議、規制さらに強化される可能性報道</div>
+            <div class="topic-summary">対中輸出規制の対象拡大検討中との報道。短期は半導体株に逆風、長期は国内シフトで日本半導体に追い風の可能性。</div>
+            <div class="topic-meta">
+              <a href="#" class="topic-source"><span>Bloomberg</span><span class="ext-icon">↗</span></a>
+              <span class="topic-tag ticker">NVDA</span>
+              <span class="topic-tag ticker">6920</span>
+              <span class="topic-tag">半導体</span>
+              <span class="topic-tag">地政学</span>
+            </div>
+            <div class="topic-impact">
+              <span class="topic-impact-label">影響</span>
+              <span class="topic-impact-text"><strong>NVDA</strong> 短期下振れリスク・<strong>6920</strong>に間接プラス</span>
+            </div>
+          </div>
+          <div class="topic-arrow">→</div>
+        </div>
+
+        <div class="topic imp-med" data-cat="stock">
+          <div class="topic-imp">
+            <span class="topic-imp-badge">中</span>
+            <span class="topic-time">8h前</span>
+          </div>
+          <div class="topic-body">
+            <div class="topic-headline">Microsoft、Azure AI 売上の伸び鈍化観測 — アナリスト予想を下方修正</div>
+            <div class="topic-summary">複数のセルサイドが、5/24決算前のプレビューでAzure AI ARR成長率を65% → 55%に下方修正。</div>
+            <div class="topic-meta">
+              <a href="#" class="topic-source"><span>Wall Street Journal</span><span class="ext-icon">↗</span></a>
+              <span class="topic-tag ticker">MSFT</span>
+              <span class="topic-tag">ソフトウェア</span>
+              <span class="topic-tag">AI</span>
+            </div>
+            <div class="topic-impact">
+              <span class="topic-impact-label">影響</span>
+              <span class="topic-impact-text"><strong>MSFT</strong> <span class="warn">注視銘柄</span>に格上げ・決算次第で売り推奨へ</span>
+            </div>
+          </div>
+          <div class="topic-arrow">→</div>
+        </div>
+
+        <div class="topic imp-med" data-cat="sector">
+          <div class="topic-imp">
+            <span class="topic-imp-badge">中</span>
+            <span class="topic-time">12h前</span>
+          </div>
+          <div class="topic-body">
+            <div class="topic-headline">レーザーテック、TSMC向けEUVマスク検査装置受注を発表</div>
+            <div class="topic-summary">2nmプロセス向け次世代装置「ACTIS A300」の大型受注。中期テーマの底打ち材料。</div>
+            <div class="topic-meta">
+              <a href="#" class="topic-source"><span>EDINET</span><span class="ext-icon">↗</span></a>
+              <a href="#" class="topic-source"><span>会社IR</span><span class="ext-icon">↗</span></a>
+              <span class="topic-tag ticker">6920</span>
+              <span class="topic-tag">日本</span>
+              <span class="topic-tag">半導体装置</span>
+            </div>
+            <div class="topic-impact">
+              <span class="topic-impact-label">影響</span>
+              <span class="topic-impact-text"><strong>6920</strong> <span class="key">買い推奨</span>の根拠</span>
+            </div>
+          </div>
+          <div class="topic-arrow">→</div>
+        </div>
+
+        <!-- 重要度: 低 -->
+        <div class="topic imp-low" data-cat="macro">
+          <div class="topic-imp">
+            <span class="topic-imp-badge">低</span>
+            <span class="topic-time">14h前</span>
+          </div>
+          <div class="topic-body">
+            <div class="topic-headline">日銀、追加利上げ時期は2026年Q3以降に後ずれの観測</div>
+            <div class="topic-summary">国内景気指標の弱さから、金融政策正常化のペースを遅らせる方針との関係者証言。</div>
+            <div class="topic-meta">
+              <a href="#" class="topic-source"><span>ロイター</span><span class="ext-icon">↗</span></a>
+              <span class="topic-tag">日本</span>
+              <span class="topic-tag">金融政策</span>
+            </div>
+            <div class="topic-impact">
+              <span class="topic-impact-label">影響</span>
+              <span class="topic-impact-text">日本株全体に小幅追い風 · 円安要因</span>
+            </div>
+          </div>
+          <div class="topic-arrow">→</div>
+        </div>
+
+        <div class="topic imp-low" data-cat="stock">
+          <div class="topic-imp">
+            <span class="topic-imp-badge">低</span>
+            <span class="topic-time">16h前</span>
+          </div>
+          <div class="topic-body">
+            <div class="topic-headline">Apple、Vision Pro の販売台数が予測を下回るも、サービス収益は堅調</div>
+            <div class="topic-summary">Vision Pro出荷台数は予測の70%に留まるも、App Storeとサブスク売上が前年比+18%。</div>
+            <div class="topic-meta">
+              <a href="#" class="topic-source"><span>9to5Mac</span><span class="ext-icon">↗</span></a>
+              <span class="topic-tag ticker">AAPL</span>
+              <span class="topic-tag">米国</span>
+              <span class="topic-tag">ハードウェア</span>
+            </div>
+            <div class="topic-impact">
+              <span class="topic-impact-label">影響</span>
+              <span class="topic-impact-text"><strong>AAPL</strong> シナリオに中立 · サービス売上仮説は維持</span>
+            </div>
+          </div>
+          <div class="topic-arrow">→</div>
+        </div>
+
+        <div class="topic imp-low" data-cat="stock">
+          <div class="topic-imp">
+            <span class="topic-imp-badge">低</span>
+            <span class="topic-time">18h前</span>
+          </div>
+          <div class="topic-body">
+            <div class="topic-headline">AMD、新型MI325を発表 — NVIDIA H200に性能で迫る</div>
+            <div class="topic-summary">第4世代AIアクセラレータ。コスト50%、メモリ288GB搭載。Llama 3.1 405Bでの推論性能はH200の95%。</div>
+            <div class="topic-meta">
+              <a href="#" class="topic-source"><span>TechCrunch</span><span class="ext-icon">↗</span></a>
+              <span class="topic-tag ticker">AMD</span>
+              <span class="topic-tag ticker">NVDA</span>
+              <span class="topic-tag">半導体</span>
+            </div>
+            <div class="topic-impact">
+              <span class="topic-impact-label">影響</span>
+              <span class="topic-impact-text"><strong>NVDA</strong> 競合リスク要因・買い推奨では監視ポイント</span>
+            </div>
+          </div>
+          <div class="topic-arrow">→</div>
+        </div>
+
+        <div class="topic imp-low" data-cat="sector">
+          <div class="topic-imp">
+            <span class="topic-imp-badge">低</span>
+            <span class="topic-time">22h前</span>
+          </div>
+          <div class="topic-body">
+            <div class="topic-headline">米個人消費支出（PCE）、4月は前月比+0.3% — 想定通り</div>
+            <div class="topic-summary">コアPCEデフレーター前年比+2.6%、市場予想通り。インフレは引き続き鈍化トレンド。</div>
+            <div class="topic-meta">
+              <a href="#" class="topic-source"><span>BEA公式</span><span class="ext-icon">↗</span></a>
+              <span class="topic-tag">マクロ</span>
+              <span class="topic-tag">インフレ</span>
+              <span class="topic-tag">米国</span>
+            </div>
+            <div class="topic-impact">
+              <span class="topic-impact-label">影響</span>
+              <span class="topic-impact-text">FRB利下げシナリオを補強・成長株にプラス</span>
+            </div>
+          </div>
+          <div class="topic-arrow">→</div>
+        </div>
+
+        <div class="topic imp-low" data-cat="stock">
+          <div class="topic-imp">
+            <span class="topic-imp-badge">低</span>
+            <span class="topic-time">1d前</span>
+          </div>
+          <div class="topic-body">
+            <div class="topic-headline">Broadcom、AIネットワーキングチップ受注好調 — ハイパースケーラー需要旺盛</div>
+            <div class="topic-summary">主要クラウド3社（Microsoft、Google、Meta）からの注文増。AI需要が周辺チップにも波及。</div>
+            <div class="topic-meta">
+              <a href="#" class="topic-source"><span>Bloomberg</span><span class="ext-icon">↗</span></a>
+              <span class="topic-tag ticker">AVGO</span>
+              <span class="topic-tag">半導体</span>
+              <span class="topic-tag">AI</span>
+            </div>
+            <div class="topic-impact">
+              <span class="topic-impact-label">影響</span>
+              <span class="topic-impact-text">買い候補 <strong>AVGO</strong>（スコア76）の根拠</span>
+            </div>
+          </div>
+          <div class="topic-arrow">→</div>
+        </div>
+
+      </div>
+
+    </div>
+
+  </main>
+
+</div>
+
+<!-- ============================================================ -->
+<!-- DETAIL PANELS                                                 -->
+<!-- ============================================================ -->
+<div class="detail-backdrop" id="detail-backdrop"></div>
+
+<!-- NVDA detail (kept condensed for space; full data) -->
+<div class="detail-panel" data-panel="nvda">
+  <div class="detail-header">
+    <div class="detail-header-left">
+      <div class="detail-ticker">NVDA</div>
+      <div class="detail-name">
+        <div class="full">NVIDIA Corporation</div>
+        <div class="meta">米国株 · 半導体 · 買いスコア 84/100</div>
+      </div>
+    </div>
+    <button class="detail-close detail-close-btn">×</button>
+  </div>
+  <div class="detail-body">
+
+    <div class="dt-section">
+      <div class="dt-summary">
+        <div class="dt-summary-eyebrow">ざっくり言うと（買い候補）</div>
+        <div class="dt-summary-text">
+          NVIDIAは <strong>AIブームの中心にいる半導体企業</strong>。AIインフラ需要が継続し、3ヶ月で <strong>+27%</strong> を狙える可能性が高い（勝率 <strong>72%</strong>）。ただし8月の決算で外すと <strong>-10% 程度</strong>のリスクあり。<strong>15,000円ほどの投資</strong>で挑戦する価値はある。
+        </div>
+      </div>
+    </div>
+
+    <div class="dt-section">
+      <div class="magi-block">
+        <div class="magi-block-head">
+          <span class="mb-tk">NVDA</span><span class="mb-mkt">US 半導体</span>
+          <span class="mb-tag">MAGI 263</span>
+        </div>
+        <div class="magi-body">
+          <div class="magi-fig">
+            <svg width="104" height="92" viewBox="0 0 104 92" aria-hidden="true">
+              <line x1="52" y1="46" x2="52" y2="20" stroke="#3a3a48" stroke-width="1"/>
+              <line x1="52" y1="46" x2="22" y2="68" stroke="#3a3a48" stroke-width="1"/>
+              <line x1="52" y1="46" x2="82" y2="68" stroke="#3a3a48" stroke-width="1"/>
+              <g><polygon points="52,8 63,14 63,27 52,33 41,27 41,14" fill="#ff8c42"/><text x="52" y="24" fill="#1a0d04" font-size="11" font-weight="700" text-anchor="middle" font-family="monospace">業</text></g>
+              <g><polygon points="22,55 33,61 33,74 22,80 11,74 11,61" fill="#4ecdc4"/><text x="22" y="71" fill="#06201d" font-size="11" font-weight="700" text-anchor="middle" font-family="monospace">株</text></g>
+              <g opacity="0.45"><polygon points="82,55 93,61 93,74 82,80 71,74 71,61" fill="none" stroke="#fbbf24" stroke-width="1.5" stroke-dasharray="3,2"/><text x="82" y="71" fill="#fbbf24" font-size="11" font-weight="700" text-anchor="middle" font-family="monospace">文</text></g>
+              <circle cx="52" cy="46" r="5" fill="none" stroke="#ff8c42" stroke-width="1.2"/><circle cx="52" cy="46" r="2" fill="#ff8c42"/>
+            </svg>
+            <div class="magi-fig-cap">業 買 株 買 / 文 慎重<br>2-1 で割れ</div>
+          </div>
+          <div class="magi-jlist">
+            <div class="magi-jrow"><span class="magi-jtag" style="background:#ff8c42"></span><span class="magi-jmeta"><div class="magi-jname">業績</div><div class="magi-jsub">MELCHIOR・1 / FUND</div></span><span class="magi-jverdict buy">買い</span><span class="magi-jreason">営業利益3Q連続改善。反転は営業利益ベース（照合済）。</span></div>
+            <div class="magi-jrow"><span class="magi-jtag" style="background:#4ecdc4"></span><span class="magi-jmeta"><div class="magi-jname">株価</div><div class="magi-jsub">BALTHASAR・2 / TECH</div></span><span class="magi-jverdict buy">買い</span><span class="magi-jreason">25/75日線を上抜け、上昇トレンド入り。</span></div>
+            <div class="magi-jrow"><span class="magi-jtag" style="background:#fbbf24"></span><span class="magi-jmeta"><div class="magi-jname">文脈</div><div class="magi-jsub">CASPER・3 / NEWS</div></span><span class="magi-jverdict warn">慎重</span><span class="magi-jreason">新規材料が乏しく、決算期待が織り込み済みの可能性。</span></div>
+          </div>
+        </div>
+        <div class="magi-foot"><span class="mf-state">2 / 3 買い・全会一致せず</span><span class="mf-note">SCORE: NONE</span></div>
+        <div class="cmd-zone">
+          <div class="cmd-zone-head"><div class="cmd-avatar" aria-hidden="true">碇</div><div><div class="cmd-name">碇司令</div><div class="cmd-role">判断アシスト</div></div></div>
+          <p class="cmd-rec">2審判が買い、業績と株価の両面で反転は裏付けられている。私の推奨は<span class="verdict">買い（小さめに入る）</span>。MELCHIORの営業利益反転が本物である点を重く見る。</p>
+          <p class="cmd-counter"><b>反対するなら：</b>CASPER の通り上昇の文脈が薄い。「業績は良いが株価に織り込み済み」なら買った直後に伸び悩む。確信が持てなければ次の決算を待つのも妥当だ。</p>
+          <p class="cmd-src">根拠：3審判の判定のみ。新たな事実は加えていない。予測グラフの数値は推奨の根拠にしていない。</p>
+        </div>
+        <div class="magi-decide">
+          <div class="magi-flags">
+            <span class="magi-flag">数値 全照合済（2026 Q1）</span>
+            <span class="magi-flag">信用性 問題なし</span>
+            <span class="magi-flag">碇発言 MAGI準拠</span>
+          </div>
+          <div class="magi-acts">
+            <button class="magi-btn primary">承認して発注へ</button>
+            <button class="magi-btn">否認</button>
+            <button class="magi-btn">保留</button>
+          </div>
+          <p class="magi-hint">CASPER の反対論拠を読んでから決裁してください</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="dt-section">
+      <div class="dt-section-head">
+        <div class="dt-section-num">1</div>
+        <div class="dt-section-title">なぜ買うべきか</div>
+      </div>
+      <div class="dt-reasons">
+        <div class="dt-reason">
+          <div class="dt-reason-icon">✓</div>
+          <div class="dt-reason-body">
+            <strong>AIインフラ需要が継続している。</strong>
+            データセンター向けGPUの売上が前年比 +427%、Q決算でも売上ガイダンスを +24% 上方修正。Microsoft、Google、Meta すべてが GPU 増設計画を発表。
+          </div>
+        </div>
+        <div class="dt-reason">
+          <div class="dt-reason-icon">✓</div>
+          <div class="dt-reason-body">
+            <strong>競合AMDが追いついてきても先行優位が崩れにくい。</strong>
+            CUDAエコシステムが10年以上の蓄積で、AMDの MI シリーズが性能で追いついてもソフトウェアで切替えコストが高い。
+          </div>
+        </div>
+        <div class="dt-reason">
+          <div class="dt-reason-icon">✓</div>
+          <div class="dt-reason-body">
+            <strong>決算後の押し目で、エントリーチャンスが来ている。</strong>
+            5月決算後、短期筋の利確で株価が一時 -8% 調整。長期トレンドは崩れていないため、$ 98.50 付近が押し目買いの好機。
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="dt-section">
+      <div class="dt-section-head">
+        <div class="dt-section-num">2</div>
+        <div class="dt-section-title">リスクは何か</div>
+      </div>
+      <div class="dt-reasons">
+        <div class="dt-reason risk">
+          <div class="dt-reason-icon">×</div>
+          <div class="dt-reason-body">
+            <strong>中国向け規制の強化。</strong> 中国向け売上（全体の約20%）が消失すると、短期で <strong>-15%</strong>。
+          </div>
+        </div>
+        <div class="dt-reason risk">
+          <div class="dt-reason-icon">×</div>
+          <div class="dt-reason-body">
+            <strong>競合のコスト優位の攻勢。</strong> AMDがコスト50%でMI325を投入すれば、利益率低下リスク。
+          </div>
+        </div>
+        <div class="dt-reason risk">
+          <div class="dt-reason-icon">×</div>
+          <div class="dt-reason-body">
+            <strong>8月の次Q決算で数字が悪いとシナリオ崩壊。</strong>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="dt-section">
+      <div class="dt-section-head">
+        <div class="dt-section-num">3</div>
+        <div class="dt-section-title">3つのシナリオ</div>
+      </div>
+      <div class="dt-scenarios">
+        <div class="dt-scenario bull">
+          <div class="dt-scenario-label">強気</div>
+          <div class="dt-scenario-target">$ 140</div>
+          <div class="dt-scenario-return up">+42%</div>
+          <div class="dt-scenario-prob">
+            <span>確率</span>
+            <div class="dt-scenario-prob-bar"><div class="dt-scenario-prob-fill" style="width:30%"></div></div>
+            <span>30%</span>
+          </div>
+          <div class="dt-scenario-desc">AI需要が想定を超え、ガイダンスを再上方修正</div>
+        </div>
+        <div class="dt-scenario base">
+          <div class="dt-scenario-label">ベース</div>
+          <div class="dt-scenario-target">$ 125</div>
+          <div class="dt-scenario-return key">+27%</div>
+          <div class="dt-scenario-prob">
+            <span>確率</span>
+            <div class="dt-scenario-prob-bar"><div class="dt-scenario-prob-fill" style="width:50%"></div></div>
+            <span>50%</span>
+          </div>
+          <div class="dt-scenario-desc">シナリオ通り。需要継続、利益率維持</div>
+        </div>
+        <div class="dt-scenario bear">
+          <div class="dt-scenario-label">弱気</div>
+          <div class="dt-scenario-target">$ 90</div>
+          <div class="dt-scenario-return down">-9%</div>
+          <div class="dt-scenario-prob">
+            <span>確率</span>
+            <div class="dt-scenario-prob-bar"><div class="dt-scenario-prob-fill" style="width:20%"></div></div>
+            <span>20%</span>
+          </div>
+          <div class="dt-scenario-desc">規制強化または競合攻勢でシナリオ崩壊</div>
+        </div>
+      </div>
+      <div class="dt-expected">
+        <span class="dt-expected-label">期待リターン（確率加重平均）</span>
+        <span class="dt-expected-value">+25%</span>
+      </div>
+    </div>
+
+    <div class="dt-section">
+      <div class="dt-section-head">
+        <div class="dt-section-num">4</div>
+        <div class="dt-section-title">moomooで買う準備</div>
+      </div>
+      <div class="dt-order">
+        <div class="dt-order-title">
+          <span class="dt-order-title-text">moomooアプリで以下の通り入力</span>
+        </div>
+        <div class="dt-order-fields">
+          <div class="dt-order-field">
+            <span class="dt-order-field-label">銘柄</span>
+            <span class="dt-order-field-value">NVDA</span>
+            <button class="copy-btn">コピー</button>
+          </div>
+          <div class="dt-order-field">
+            <span class="dt-order-field-label">注文</span>
+            <span class="dt-order-field-value">指値買い</span>
+            <button class="copy-btn">コピー</button>
+          </div>
+          <div class="dt-order-field">
+            <span class="dt-order-field-label">指値</span>
+            <span class="dt-order-field-value">$ 98.50</span>
+            <button class="copy-btn">コピー</button>
+          </div>
+          <div class="dt-order-field">
+            <span class="dt-order-field-label">数量</span>
+            <span class="dt-order-field-value">1 株</span>
+            <button class="copy-btn">コピー</button>
+          </div>
+          <div class="dt-order-field">
+            <span class="dt-order-field-label">概算</span>
+            <span class="dt-order-field-value">¥ 14,800</span>
+            <button class="copy-btn">コピー</button>
+          </div>
+          <div class="dt-order-field">
+            <span class="dt-order-field-label">損切り</span>
+            <span class="dt-order-field-value">$ 88.00</span>
+            <button class="copy-btn">コピー</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+  <div class="detail-footer">
+    <button class="btn btn-ghost btn-lg">スキップ</button>
+    <button class="btn btn-sub btn-lg">後で見る</button>
+    <button class="btn btn-primary btn-lg">この銘柄を採用する</button>
+  </div>
+</div>
+
+<!-- 7203 detail -->
+<div class="detail-panel" data-panel="sell-7203">
+  <div class="detail-header">
+    <div class="detail-header-left">
+      <div class="detail-ticker">7203</div>
+      <div class="detail-name">
+        <div class="full">トヨタ自動車</div>
+        <div class="meta">日本株 · 自動車 · <span style="color:var(--sub)">利確スコア 91/100</span></div>
+      </div>
+    </div>
+    <button class="detail-close detail-close-btn">×</button>
+  </div>
+  <div class="detail-body">
+    <div class="dt-section">
+      <div class="dt-summary" style="border-color:var(--sub); background:linear-gradient(135deg, var(--sub-bg) 0%, transparent 70%);">
+        <div class="dt-summary-eyebrow" style="color:var(--sub)">ざっくり言うと（売り：利確）</div>
+        <div class="dt-summary-text">
+          トヨタ株は当初の仮説（HEVシェア拡大・PBR修正）が <strong style="color:var(--sub)">ほぼ達成</strong>。目標株価に92%到達し、テクニカルでも頭打ちサイン。<strong style="color:var(--sub)">ここで売れば+12%の利益を確定</strong>できる。持ち続けると下振れリスクが買われすぎ反落で発生する可能性が高い。
+        </div>
+      </div>
+    </div>
+
+    <div class="dt-section">
+      <div class="magi-block">
+        <div class="magi-block-head">
+          <span class="mb-tk">7203</span><span class="mb-mkt">JP 自動車</span>
+          <span class="mb-tag">MAGI 207</span>
+        </div>
+        <div class="magi-body">
+          <div class="magi-fig">
+            <svg width="104" height="92" viewBox="0 0 104 92" aria-hidden="true">
+              <line x1="52" y1="46" x2="52" y2="20" stroke="#3a3a48" stroke-width="1"/>
+              <line x1="52" y1="46" x2="22" y2="68" stroke="#3a3a48" stroke-width="1"/>
+              <line x1="52" y1="46" x2="82" y2="68" stroke="#3a3a48" stroke-width="1"/>
+              <g><polygon points="52,8 63,14 63,27 52,33 41,27 41,14" fill="#ff8c42"/><text x="52" y="24" fill="#1a0d04" font-size="11" font-weight="700" text-anchor="middle" font-family="monospace">業</text></g>
+              <g><polygon points="22,55 33,61 33,74 22,80 11,74 11,61" fill="#4ecdc4"/><text x="22" y="71" fill="#06201d" font-size="11" font-weight="700" text-anchor="middle" font-family="monospace">株</text></g>
+              <g><polygon points="82,55 93,61 93,74 82,80 71,74 71,61" fill="#fbbf24"/><text x="82" y="71" fill="#3a2c04" font-size="11" font-weight="700" text-anchor="middle" font-family="monospace">文</text></g>
+              <circle cx="52" cy="46" r="5" fill="none" stroke="#ff8c42" stroke-width="1.2"/><circle cx="52" cy="46" r="2" fill="#ff8c42"/>
+            </svg>
+            <div class="magi-fig-cap">業 利確 株 利確 文 利確<br>全会一致：利確</div>
+          </div>
+          <div class="magi-jlist">
+            <div class="magi-jrow"><span class="magi-jtag" style="background:#ff8c42"></span><span class="magi-jmeta"><div class="magi-jname">業績</div><div class="magi-jsub">MELCHIOR・1 / FUND</div></span><span class="magi-jverdict warn">利確</span><span class="magi-jreason">当初仮説（PBR修正・HEV拡大）はほぼ達成。成長加速の新たな材料は乏しい。</span></div>
+            <div class="magi-jrow"><span class="magi-jtag" style="background:#4ecdc4"></span><span class="magi-jmeta"><div class="magi-jname">株価</div><div class="magi-jsub">BALTHASAR・2 / TECH</div></span><span class="magi-jverdict warn">利確</span><span class="magi-jreason">目標 ¥2,850 に92%到達。RSI過熱、頭打ち・反落サイン。</span></div>
+            <div class="magi-jrow"><span class="magi-jtag" style="background:#fbbf24"></span><span class="magi-jmeta"><div class="magi-jname">文脈</div><div class="magi-jsub">CASPER・3 / NEWS</div></span><span class="magi-jverdict warn">利確</span><span class="magi-jreason">追加上昇を促す新規材料なし。保有継続の積極的理由が乏しい。</span></div>
+          </div>
+        </div>
+        <div class="magi-foot"><span class="mf-state" style="color:var(--sub)">3 / 3 利確・全会一致</span><span class="mf-note">SCORE: NONE</span></div>
+        <div class="cmd-zone">
+          <div class="cmd-zone-head"><div class="cmd-avatar" aria-hidden="true">碇</div><div><div class="cmd-name">碇司令</div><div class="cmd-role">判断アシスト</div></div></div>
+          <p class="cmd-rec">3審判とも利確で一致。仮説は達成され、株価はもう上値が重い。私の推奨は<span class="verdict" style="color:var(--sub)">利確（全株売却）</span>。+12%の利益を確定させ、次のV字候補に資金を回すべきだ。</p>
+          <p class="cmd-counter"><b>反対するなら：</b>全会一致は逆に「全員が同じ方向に見落としている」可能性も残す。トヨタに想定外の上方材料（新型車・為替）が出れば、売った後にさらに伸びる。利を伸ばしたいなら半分だけ利確する手もある。</p>
+          <p class="cmd-src">根拠：3審判の判定のみ。新たな事実は加えていない。予測グラフの数値は推奨の根拠にしていない。</p>
+        </div>
+        <div class="magi-decide">
+          <div class="magi-flags">
+            <span class="magi-flag">数値 全照合済（2026 Q1）</span>
+            <span class="magi-flag">信用性 問題なし</span>
+            <span class="magi-flag">碇発言 MAGI準拠</span>
+          </div>
+          <div class="magi-acts">
+            <button class="magi-btn primary" style="background:var(--sub); border-color:var(--sub); color:#04201d">利確を承認</button>
+            <button class="magi-btn">半分だけ利確</button>
+            <button class="magi-btn">保留</button>
+          </div>
+          <p class="magi-hint">CASPER の反対論拠を読んでから決裁してください</p>
+        </div>
+      </div>
+    </div>
+    <div class="dt-section">
+      <div class="dt-section-head">
+        <div class="dt-section-num" style="background:var(--sub-bg); color:var(--sub)">1</div>
+        <div class="dt-section-title">なぜ売るべきか</div>
+      </div>
+      <div class="dt-reasons">
+        <div class="dt-reason" style="border-left-color:var(--sub)">
+          <div class="dt-reason-icon" style="background:var(--sub-bg); color:var(--sub)">¥</div>
+          <div class="dt-reason-body">
+            <strong>目標株価にほぼ到達した。</strong>
+            目標 ¥2,850 に対して現在 ¥2,840（達成度 92%）。これ以上の上昇余地は限定的、欲張ると反落リスクが高まる。
+          </div>
+        </div>
+        <div class="dt-reason" style="border-left-color:var(--sub)">
+          <div class="dt-reason-icon" style="background:var(--sub-bg); color:var(--sub)">↗</div>
+          <div class="dt-reason-body">
+            <strong>シナリオがほぼ実現した。</strong>
+            HEV計画は予定通り、PBRも 0.8 → 1.05 まで修正。投資の理由が実現したなら、次の理由が必要。
+          </div>
+        </div>
+        <div class="dt-reason" style="border-left-color:var(--sub)">
+          <div class="dt-reason-icon" style="background:var(--sub-bg); color:var(--sub)">⚠</div>
+          <div class="dt-reason-body">
+            <strong>テクニカルで頭打ちサイン。</strong>
+            RSI 72（買われすぎ圏）、出来高は減少傾向、上ヒゲのローソク足が連続。
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="dt-section">
+      <div class="dt-section-head">
+        <div class="dt-section-num" style="background:var(--sub-bg); color:var(--sub)">2</div>
+        <div class="dt-section-title">moomooで売る準備</div>
+      </div>
+      <div class="dt-order" style="background:var(--sub-bg); border-color:var(--sub)">
+        <div class="dt-order-title">
+          <span class="dt-order-title-text" style="color:var(--sub)">moomooアプリで以下の通り入力</span>
+        </div>
+        <div class="dt-order-fields">
+          <div class="dt-order-field">
+            <span class="dt-order-field-label">銘柄</span>
+            <span class="dt-order-field-value">7203</span>
+            <button class="copy-btn">コピー</button>
+          </div>
+          <div class="dt-order-field">
+            <span class="dt-order-field-label">注文</span>
+            <span class="dt-order-field-value">指値売り</span>
+            <button class="copy-btn">コピー</button>
+          </div>
+          <div class="dt-order-field">
+            <span class="dt-order-field-label">指値</span>
+            <span class="dt-order-field-value">¥ 2,830</span>
+            <button class="copy-btn">コピー</button>
+          </div>
+          <div class="dt-order-field">
+            <span class="dt-order-field-label">数量</span>
+            <span class="dt-order-field-value">5 株（全て）</span>
+            <button class="copy-btn">コピー</button>
+          </div>
+          <div class="dt-order-field">
+            <span class="dt-order-field-label">想定額</span>
+            <span class="dt-order-field-value">¥ 14,150</span>
+            <button class="copy-btn">コピー</button>
+          </div>
+          <div class="dt-order-field">
+            <span class="dt-order-field-label">確定益</span>
+            <span class="dt-order-field-value" style="color:var(--up)">+¥ 1,475</span>
+            <button class="copy-btn">コピー</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="detail-footer">
+    <button class="btn btn-ghost btn-lg">スキップ</button>
+    <button class="btn btn-sub btn-lg">半分だけ売る</button>
+    <button class="btn btn-primary btn-lg">moomooで売却する</button>
+  </div>
+</div>
+
+<!-- TSLA detail -->
+<div class="detail-panel" data-panel="sell-tsla">
+  <div class="detail-header">
+    <div class="detail-header-left">
+      <div class="detail-ticker">TSLA</div>
+      <div class="detail-name">
+        <div class="full">Tesla, Inc.</div>
+        <div class="meta">米国株 · EV · <span style="color:var(--down)">損切りスコア 78/100</span></div>
+      </div>
+    </div>
+    <button class="detail-close detail-close-btn">×</button>
+  </div>
+  <div class="detail-body">
+    <div class="dt-section">
+      <div class="dt-summary" style="border-color:var(--down); background:linear-gradient(135deg, var(--down-bg) 0%, transparent 70%);">
+        <div class="dt-summary-eyebrow" style="color:var(--down)">ざっくり言うと（売り：損切り）</div>
+        <div class="dt-summary-text">
+          Tesla株は当初の仮説（自動運転収益化）の進捗が <strong style="color:var(--down)">想定より大幅に遅れて</strong>いる。現在 -7.8% で損切りラインに迫っている。<strong style="color:var(--down)">今切れば -8% 程度で済む</strong>が、放置するとさらに <strong style="color:var(--down)">-15% 〜 -20%</strong> に広がるリスクが高い。感情ではなく機械的に切るべき局面。
+        </div>
+      </div>
+    </div>
+
+    <div class="dt-section">
+      <div class="magi-block">
+        <div class="magi-block-head">
+          <span class="mb-tk">TSLA</span><span class="mb-mkt">US EV</span>
+          <span class="mb-tag">MAGI 188</span>
+        </div>
+        <div class="magi-body">
+          <div class="magi-fig">
+            <svg width="104" height="92" viewBox="0 0 104 92" aria-hidden="true">
+              <line x1="52" y1="46" x2="52" y2="20" stroke="#3a3a48" stroke-width="1"/>
+              <line x1="52" y1="46" x2="22" y2="68" stroke="#3a3a48" stroke-width="1"/>
+              <line x1="52" y1="46" x2="82" y2="68" stroke="#3a3a48" stroke-width="1"/>
+              <g><polygon points="52,8 63,14 63,27 52,33 41,27 41,14" fill="#ff8c42"/><text x="52" y="24" fill="#1a0d04" font-size="12" font-weight="700" text-anchor="middle" font-family="monospace">業</text></g>
+              <g opacity="0.45"><polygon points="22,55 33,61 33,74 22,80 11,74 11,61" fill="none" stroke="#4ecdc4" stroke-width="1.5" stroke-dasharray="3,2"/><text x="22" y="71" fill="#4ecdc4" font-size="11" font-weight="700" text-anchor="middle" font-family="monospace">株</text></g>
+              <g><polygon points="82,55 93,61 93,74 82,80 71,74 71,61" fill="#fbbf24"/><text x="82" y="71" fill="#3a2c04" font-size="11" font-weight="700" text-anchor="middle" font-family="monospace">文</text></g>
+              <circle cx="52" cy="46" r="5" fill="none" stroke="#ff8c42" stroke-width="1.2"/><circle cx="52" cy="46" r="2" fill="#ff8c42"/>
+            </svg>
+            <div class="magi-fig-cap">業 撤退 文 撤退 / 株 保留<br>2-1 で撤退優勢</div>
+          </div>
+          <div class="magi-jlist">
+            <div class="magi-jrow"><span class="magi-jtag" style="background:#ff8c42"></span><span class="magi-jmeta"><div class="magi-jname">業績</div><div class="magi-jsub">MELCHIOR・1 / FUND</div></span><span class="magi-jverdict no">撤退</span><span class="magi-jreason">自動運転収益化が想定より大幅遅延。投資仮説の前提が崩れた。</span></div>
+            <div class="magi-jrow"><span class="magi-jtag" style="background:#4ecdc4"></span><span class="magi-jmeta"><div class="magi-jname">株価</div><div class="magi-jsub">BALTHASAR・2 / TECH</div></span><span class="magi-jverdict warn">保留</span><span class="magi-jreason">-7.8%、損切りライン直前。直近で下げ止まりの兆しもあり判断保留。</span></div>
+            <div class="magi-jrow"><span class="magi-jtag" style="background:#fbbf24"></span><span class="magi-jmeta"><div class="magi-jname">文脈</div><div class="magi-jsub">CASPER・3 / NEWS</div></span><span class="magi-jverdict no">撤退</span><span class="magi-jreason">収益化遅延の報道が相次ぐ。反転を示す新規材料は見当たらない。</span></div>
+          </div>
+        </div>
+        <div class="magi-foot"><span class="mf-state" style="color:var(--down)">2 / 3 撤退・全会一致せず</span><span class="mf-note">SCORE: NONE</span></div>
+        <div class="cmd-zone">
+          <div class="cmd-zone-head"><div class="cmd-avatar" aria-hidden="true">碇</div><div><div class="cmd-name">碇司令</div><div class="cmd-role">判断アシスト</div></div></div>
+          <p class="cmd-rec">業績の前提が崩れ、文脈にも反転材料がない。私の推奨は<span class="verdict" style="color:var(--down)">損切り（機械的に撤退）</span>。-8%で切れば傷は浅い。仮説が崩れた銘柄に感情で居座るのが最も高くつく。</p>
+          <p class="cmd-counter"><b>反対するなら：</b>BALTHASAR の言う通り、株価は損切りライン直前で下げ止まりの兆しもある。ここで切った直後に反発する「往復ビンタ」の可能性は残る。下げ止まりを確認するため、損切りラインに触れるまで1日待つ判断もありうる。</p>
+          <p class="cmd-src">根拠：3審判の判定のみ。新たな事実は加えていない。予測グラフの数値は推奨の根拠にしていない。</p>
+        </div>
+        <div class="magi-decide">
+          <div class="magi-flags">
+            <span class="magi-flag">数値 全照合済（2026 Q1）</span>
+            <span class="magi-flag">信用性 問題なし</span>
+            <span class="magi-flag">碇発言 MAGI準拠</span>
+          </div>
+          <div class="magi-acts">
+            <button class="magi-btn primary" style="background:var(--down); border-color:var(--down); color:#2a0808">損切りを承認</button>
+            <button class="magi-btn">1日待つ</button>
+            <button class="magi-btn">保留</button>
+          </div>
+          <p class="magi-hint">BALTHASAR の保留意見を読んでから決裁してください</p>
+        </div>
+      </div>
+    </div>
+    <div class="dt-section">
+      <div class="dt-section-head">
+        <div class="dt-section-num" style="background:var(--down-bg); color:var(--down)">1</div>
+        <div class="dt-section-title">なぜ損切りすべきか</div>
+      </div>
+      <div class="dt-reasons">
+        <div class="dt-reason risk">
+          <div class="dt-reason-icon">×</div>
+          <div class="dt-reason-body">
+            <strong>当初のシナリオが崩れた。</strong>
+            買った理由「自動運転収益化、EPS+30%」が、最新Q決算でFSD関連売上は想定の22%、ガイダンスも下方修正。買った理由がなくなった。
+          </div>
+        </div>
+        <div class="dt-reason risk">
+          <div class="dt-reason-icon">×</div>
+          <div class="dt-reason-body">
+            <strong>事前に決めた損切りラインに到達。</strong>
+            取得 $187 に対し損切りライン -8% ＝ $172.04。現在 $172.30 で残り 0.15%。ルールを破ると規律が崩壊する。
+          </div>
+        </div>
+        <div class="dt-reason risk">
+          <div class="dt-reason-icon">×</div>
+          <div class="dt-reason-body">
+            <strong>感情的な判断で傷を広げる典型パターン。</strong>
+            FXで経験した「感情に振られる」パターンの再来。機械的にルール通り切ることが規律。
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="dt-section">
+      <div class="dt-section-head">
+        <div class="dt-section-num" style="background:var(--down-bg); color:var(--down)">2</div>
+        <div class="dt-section-title">moomooで売る準備</div>
+      </div>
+      <div class="dt-order" style="background:var(--down-bg); border-color:var(--down)">
+        <div class="dt-order-title">
+          <span class="dt-order-title-text" style="color:var(--down)">moomooアプリで以下の通り入力</span>
+        </div>
+        <div class="dt-order-fields">
+          <div class="dt-order-field">
+            <span class="dt-order-field-label">銘柄</span>
+            <span class="dt-order-field-value">TSLA</span>
+            <button class="copy-btn">コピー</button>
+          </div>
+          <div class="dt-order-field">
+            <span class="dt-order-field-label">注文</span>
+            <span class="dt-order-field-value">成行売り</span>
+            <button class="copy-btn">コピー</button>
+          </div>
+          <div class="dt-order-field">
+            <span class="dt-order-field-label">数量</span>
+            <span class="dt-order-field-value">1 株（全て）</span>
+            <button class="copy-btn">コピー</button>
+          </div>
+          <div class="dt-order-field">
+            <span class="dt-order-field-label">想定額</span>
+            <span class="dt-order-field-value">$ 172.30</span>
+            <button class="copy-btn">コピー</button>
+          </div>
+          <div class="dt-order-field">
+            <span class="dt-order-field-label">確定損</span>
+            <span class="dt-order-field-value" style="color:var(--down)">-¥ 1,100</span>
+            <button class="copy-btn">コピー</button>
+          </div>
+          <div class="dt-order-field">
+            <span class="dt-order-field-label">救出資金</span>
+            <span class="dt-order-field-value">¥ 25,800</span>
+            <button class="copy-btn">コピー</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="detail-footer">
+    <button class="btn btn-ghost btn-lg">スキップ</button>
+    <button class="btn btn-sub btn-lg">明日まで様子見</button>
+    <button class="btn btn-primary btn-lg" style="background:var(--down); border-color:var(--down); color:#fff">moomooで損切りする</button>
+  </div>
+</div>
+
+<!-- 6920 detail -->
+<div class="detail-panel" data-panel="laser">
+  <div class="detail-header">
+    <div class="detail-header-left">
+      <div class="detail-ticker">6920</div>
+      <div class="detail-name">
+        <div class="full">レーザーテック</div>
+        <div class="meta">日本株 · 半導体 · 買いスコア 78/100</div>
+      </div>
+    </div>
+    <button class="detail-close detail-close-btn">×</button>
+  </div>
+  <div class="detail-body">
+    <div class="dt-section">
+      <div class="dt-summary">
+        <div class="dt-summary-eyebrow">ざっくり言うと（買い候補）</div>
+        <div class="dt-summary-text">
+          レーザーテックは <strong>EUV装置の独占的サプライヤー</strong>。半導体設備投資サイクル底打ちで、3〜6ヶ月で <strong>+20%</strong> を狙える局面（勝率 <strong>65%</strong>）。
+        </div>
+      </div>
+    </div>
+    <div class="dt-section">
+      <div class="dt-section-head">
+        <div class="dt-section-num">1</div>
+        <div class="dt-section-title">moomooで買う準備</div>
+      </div>
+      <div class="dt-order">
+        <div class="dt-order-fields">
+          <div class="dt-order-field">
+            <span class="dt-order-field-label">銘柄</span>
+            <span class="dt-order-field-value">6920</span>
+            <button class="copy-btn">コピー</button>
+          </div>
+          <div class="dt-order-field">
+            <span class="dt-order-field-label">注文</span>
+            <span class="dt-order-field-value">指値買い</span>
+            <button class="copy-btn">コピー</button>
+          </div>
+          <div class="dt-order-field">
+            <span class="dt-order-field-label">指値</span>
+            <span class="dt-order-field-value">¥ 21,500</span>
+            <button class="copy-btn">コピー</button>
+          </div>
+          <div class="dt-order-field">
+            <span class="dt-order-field-label">数量</span>
+            <span class="dt-order-field-value">1 株</span>
+            <button class="copy-btn">コピー</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="detail-footer">
+    <button class="btn btn-ghost btn-lg">スキップ</button>
+    <button class="btn btn-sub btn-lg">後で見る</button>
+    <button class="btn btn-primary btn-lg">この銘柄を採用する</button>
+  </div>
+</div>
+
+<script>
+const backdrop = document.getElementById('detail-backdrop');
+
+function openPanel(panelId) {
+  document.querySelectorAll('.detail-panel.show').forEach(p => p.classList.remove('show'));
+  const panel = document.querySelector(`[data-panel="${panelId}"]`);
+  if (panel) {
+    panel.classList.add('show');
+    backdrop.classList.add('show');
+  }
+}
+
+function closePanels() {
+  document.querySelectorAll('.detail-panel.show').forEach(p => p.classList.remove('show'));
+  backdrop.classList.remove('show');
+}
+
+document.querySelectorAll('[data-detail]').forEach(item => {
+  item.addEventListener('click', () => openPanel(item.dataset.detail));
+});
+
+document.querySelectorAll('.detail-close-btn').forEach(btn => {
+  btn.addEventListener('click', closePanels);
+});
+
+backdrop.addEventListener('click', closePanels);
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closePanels();
+});
+
+// === Refresh button (price update) ===
+let lastUpdateTime = Date.now();
+
+function formatRelative(ms) {
+  const sec = Math.floor(ms / 1000);
+  if (sec < 60) return `${sec}秒前`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}分前`;
+  const hour = Math.floor(min / 60);
+  return `${hour}時間前`;
+}
+
+function updateRelativeTime() {
+  const el = document.getElementById('updated-time');
+  if (!el) return;
+  const elapsed = Date.now() - lastUpdateTime;
+  el.textContent = elapsed < 5000 ? 'たった今' : formatRelative(elapsed);
+
+  // Update sidebar relative time too
+  const sbTime = document.querySelector('.sb-last-updated span:first-child');
+  if (sbTime) sbTime.textContent = (elapsed < 5000 ? 'たった今' : formatRelative(elapsed)) + ' 取得';
+}
+
+setInterval(updateRelativeTime, 10000);
+
+function simulatePriceUpdate() {
+  // Update lastUpdateTime
+  lastUpdateTime = Date.now();
+  updateRelativeTime();
+
+  // Simulate slight price changes on holdings (visual only, demo)
+  const priceCells = document.querySelectorAll('.hold-price, .hold-pnl');
+  priceCells.forEach(cell => {
+    const isUp = Math.random() > 0.5;
+    cell.classList.remove('flash-up', 'flash-down');
+    void cell.offsetWidth; // force reflow
+    cell.classList.add(isUp ? 'flash-up' : 'flash-down');
+  });
+
+  // Flash sidebar equity too
+  const eq = document.querySelector('.sb-equity-value');
+  if (eq) {
+    eq.classList.remove('flash-up', 'flash-down');
+    void eq.offsetWidth;
+    eq.classList.add('flash-up');
+  }
+}
+
+function doRefresh(btn) {
+  if (btn.classList.contains('spinning')) return;
+  btn.classList.add('spinning');
+
+  // Simulate API delay (in real app: fetch prices from moomoo)
+  setTimeout(() => {
+    simulatePriceUpdate();
+    btn.classList.remove('spinning');
+  }, 700);
+}
+
+const refreshBtn = document.getElementById('refresh-btn');
+if (refreshBtn) {
+  refreshBtn.addEventListener('click', () => doRefresh(refreshBtn));
+}
+
+const sbRefreshBtn = document.getElementById('sb-refresh-btn');
+if (sbRefreshBtn) {
+  sbRefreshBtn.addEventListener('click', () => doRefresh(sbRefreshBtn));
+}
+
+// === Topics tabs (filter by category) ===
+document.querySelectorAll('.topics-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    const cat = tab.dataset.topicTab;
+    document.querySelectorAll('.topics-tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    document.querySelectorAll('.topic').forEach(topic => {
+      if (cat === 'all') {
+        topic.style.display = '';
+      } else {
+        topic.style.display = topic.dataset.cat === cat ? '' : 'none';
+      }
+    });
+  });
+});
+
+// === Collapsible "more" sections ===
+document.querySelectorAll('.more-toggle').forEach(toggle => {
+  toggle.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const id = toggle.dataset.toggle;
+    const list = document.querySelector(`[data-list="${id}"]`);
+    toggle.classList.toggle('open');
+    if (list) list.classList.toggle('open');
+  });
+});
+
+// === Hover tooltip for holding graphs ===
+const tooltip = document.createElement('div');
+tooltip.className = 'tooltip';
+document.body.appendChild(tooltip);
+
+document.querySelectorAll('.hover-point').forEach(point => {
+  point.addEventListener('mouseenter', (e) => {
+    const date = point.dataset.date;
+    const actual = point.dataset.actual;
+    const pred = point.dataset.pred;
+    const graph = point.closest('.hold-graph');
+    const ticker = graph ? graph.dataset.graph : '';
+
+    const actualClass = actual.startsWith('-') ? 'down' : actual.startsWith('+') && actual !== '+0%' ? 'up' : '';
+
+    tooltip.innerHTML = `
+      <div class="tooltip-row"><span class="lbl">${ticker} · ${date}</span></div>
+      <div class="tooltip-row"><span class="lbl">実績</span><span class="val ${actualClass}">${actual}</span></div>
+      <div class="tooltip-row"><span class="lbl">予測</span><span class="val key">${pred}</span></div>
+    `;
+    tooltip.classList.add('show');
+  });
+
+  point.addEventListener('mousemove', (e) => {
+    const tw = tooltip.offsetWidth;
+    const th = tooltip.offsetHeight;
+    let x = e.clientX + 12;
+    let y = e.clientY - th - 8;
+    if (x + tw > window.innerWidth) x = e.clientX - tw - 12;
+    if (y < 0) y = e.clientY + 16;
+    tooltip.style.left = x + 'px';
+    tooltip.style.top = y + 'px';
+  });
+
+  point.addEventListener('mouseleave', () => {
+    tooltip.classList.remove('show');
+  });
+});
+
+// === Track record points hover ===
+document.querySelectorAll('.track-point').forEach(point => {
+  point.addEventListener('mouseenter', () => {
+    const date = point.dataset.date;
+    const ticker = point.dataset.ticker;
+    const action = point.dataset.action;
+    const result = point.dataset.result;
+    const hit = point.dataset.hit;
+
+    let resultClass = '';
+    if (hit === 'hit') resultClass = 'up';
+    else if (hit === 'miss') resultClass = 'down';
+    else if (hit === 'now') resultClass = 'key';
+
+    tooltip.innerHTML = `
+      <div class="tooltip-row"><span class="lbl">${date}</span><span class="val">${ticker}</span></div>
+      <div class="tooltip-row"><span class="lbl">アクション</span><span class="val">${action}</span></div>
+      <div class="tooltip-row"><span class="lbl">結果</span><span class="val ${resultClass}">${result}</span></div>
+    `;
+    tooltip.classList.add('show');
+  });
+
+  point.addEventListener('mousemove', (e) => {
+    const tw = tooltip.offsetWidth;
+    const th = tooltip.offsetHeight;
+    let x = e.clientX + 12;
+    let y = e.clientY - th - 8;
+    if (x + tw > window.innerWidth) x = e.clientX - tw - 12;
+    if (y < 0) y = e.clientY + 16;
+    tooltip.style.left = x + 'px';
+    tooltip.style.top = y + 'px';
+  });
+
+  point.addEventListener('mouseleave', () => {
+    tooltip.classList.remove('show');
+  });
+});
+
+/* チャートの文字・マーカーを逆スケールしてサイズ一定に保つ（線幅は non-scaling-stroke）*/
+(function () {
+  var svgs = document.querySelectorAll('svg[preserveAspectRatio="none"]');
+  function num(el, a) { return parseFloat(el.getAttribute(a) || "0"); }
+  function apply(svg) {
+    var vb = svg.viewBox.baseVal, r = svg.getBoundingClientRect();
+    if (!vb || !vb.width || !vb.height || !r.width || !r.height) return;
+    var sx = r.width / vb.width, sy = r.height / vb.height;
+    if (!isFinite(sx) || !isFinite(sy) || !sx || !sy) return;
+    function t(cx, cy) {
+      return "translate(" + cx + " " + cy + ") scale(" + (1 / sx) + " " + (1 / sy) + ") translate(" + (-cx) + " " + (-cy) + ")";
+    }
+    svg.querySelectorAll("text").forEach(function (el) { el.setAttribute("transform", t(num(el, "x"), num(el, "y"))); });
+    svg.querySelectorAll("circle, ellipse").forEach(function (el) {
+      if (el.classList.contains("now-pulse")) return;
+      el.setAttribute("transform", t(num(el, "cx"), num(el, "cy")));
+    });
+  }
+  var ro = new ResizeObserver(function (es) { es.forEach(function (e) { apply(e.target); }); });
+  svgs.forEach(function (svg) { apply(svg); ro.observe(svg); });
+})();
+</script>
+
+</body>
+</html>
