@@ -8,3 +8,4 @@
 索引：
 - `0001-session1-magi-rebuild.md` — セッション1（再構築計画〜B5・自走分まで）のまとめ
 - `0002-progress-system-and-pipeline-flow.md` — 進捗記録システム導入＋pipeline.htmlをフロー図化
+- `0003-pipeline-collection-detail.md` — データ収集をarchitecture粒度で詳細化（A-1〜A-5）

@@ -36,6 +36,9 @@
   .node .nm{font-weight:700;font-size:13.5px;display:flex;align-items:center;gap:6px}
   .node .role{font-size:11px;color:var(--ink3);margin:2px 0 5px}
   .node .src{font-size:11px;color:var(--ink2)}
+  .node .meta{font-size:10.5px;color:var(--ink3);margin-top:2px}
+  .slabel{display:block;font-size:11.5px;font-weight:700;color:var(--ink2);margin:10px 0 3px;
+          border-left:3px solid var(--line);padding-left:7px}
   .node .badge{font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:10px;margin-left:auto}
   .st-ok{border-top-color:var(--ok)} .st-ok .badge{background:var(--okbg);color:var(--ok)}
   .st-part{border-top-color:var(--part)} .st-part .badge{background:var(--partbg);color:var(--part)}
@@ -70,19 +73,73 @@
   MAGIの箱はできたが <b>入口（情報ソース）と出口が欠けている</b>。
 </div>
 
-<!-- A 収集（枝分かれ：並列ソース） -->
+<!-- A 収集（設計粒度で詳細展開） -->
 <div class="phase">
-  <span class="plabel">A. データ収集</span><span class="hint">全市場の生データを並列に集める</span>
+  <span class="plabel">A. データ収集</span><span class="hint">設計（architecture.html）は広い。だが実装済みは一部。設計ソース／現状／状態を併記</span>
+
+  <span class="slabel">A-1 相場（価格・履歴・テクニカル）</span>
   <div class="row">
-    <div class="node st-ok"><div class="nm">株価・出来高<span class="badge">実用</span></div><div class="role">BALTHASARの素材</div><div class="src">yfinance ＋ stooq（2ソース照合）</div></div>
-    <div class="node st-ok"><div class="nm">テクニカル<span class="badge">実用</span></div><div class="role">RSI/MACD等</div><div class="src">価格→コード計算</div></div>
-    <div class="node st-weak"><div class="nm">業績<span class="badge">浅い</span></div><div class="role">MELCHIORの素材</div><div class="src">yfinanceサマリ。<b>EDGAR/EDINET未解析</b></div></div>
-    <div class="node st-no"><div class="nm">ニュース<span class="badge">0件</span></div><div class="role">CASPERの素材</div><div class="src">NewsAPIキー無＋一般RSS<div class="gap">穴①：銘柄別ニュースが取れずCASPER常にna</div></div></div>
-    <div class="node st-no"><div class="nm">適時開示(JP)<span class="badge">0件</span></div><div class="role">CASPER/信用性</div><div class="src">TDnet/EDINET未設定</div></div>
-    <div class="node st-part"><div class="nm">手動投入<span class="badge">UIのみ</span></div><div class="role">X代替・速報</div><div class="src">バックエンド未配線</div></div>
+    <div class="node st-ok"><div class="nm">リアルタイム株価・出来高<span class="badge">部分</span></div><div class="role">BALTHASAR/サイジングの素材</div>
+      <div class="meta">設計：<b>moomoo OpenAPI</b>（実運用の単一ソース）</div>
+      <div class="meta">現状：yfinance＋stooq（2ソース照合）</div>
+      <div class="meta">状態：yfinance実用／moomoo未（quote権限・同意②）　ツール：market_data</div></div>
+    <div class="node st-part"><div class="nm">過去K線（履歴）<span class="badge">US実用/JP未</span></div><div class="role">テクニカル・バックテスト</div>
+      <div class="meta">設計：moomoo / yfinance / <b>J-Quants(JP)</b></div>
+      <div class="meta">現状：yfinance history（US）　J-Quants：キー未設定</div>
+      <div class="meta">ツール：market_data</div></div>
+    <div class="node st-ok"><div class="nm">テクニカル指標<span class="badge">実用</span></div><div class="role">RSI/MACD/SMA/BB/ゴールデンクロス</div>
+      <div class="meta">設計：TA-Lib　現状：numpy/pandas 自前計算（コード）</div>
+      <div class="meta">ツール：technicals</div></div>
+  </div>
+
+  <span class="slabel">A-2 財務（業績）</span>
+  <div class="row">
+    <div class="node st-weak"><div class="nm">財務サマリ<span class="badge">浅い</span></div><div class="role">MELCHIORの素材</div>
+      <div class="meta">現状：yfinance（PER/PBR/EPS/ROE/増収率/営業利益率/配当/売上/純利益）</div>
+      <div class="meta">状態：数値は取れるが浅い　ツール：fundamentals</div></div>
+    <div class="node st-no"><div class="nm">財務 一次情報（深掘り）<span class="badge">未解析</span></div><div class="role">深掘り・信用性</div>
+      <div class="meta">設計：<b>SEC EDGAR</b>(10-K/10-Q/8-K) / <b>EDINET</b>(有報/四報/大量保有)</div>
+      <div class="meta">現状：source_url リンクのみ（XBRL未解析）</div>
+      <div class="gap">穴：注記・監査意見・GC・セグメント・四半期粒度が無い</div></div>
+  </div>
+
+  <span class="slabel">A-3 文脈（ニュース・開示・マクロ・手動）</span>
+  <div class="row">
+    <div class="node st-no"><div class="nm">ニュース<span class="badge">0件</span></div><div class="role">CASPERの素材</div>
+      <div class="meta">設計：<b>NewsAPI</b>(Bloomberg/Reuters/WSJ)＋各種RSS</div>
+      <div class="meta">現状：NewsAPIキー無＋一般RSS（銘柄に当たらない）</div>
+      <div class="gap">穴①：銘柄別ニュース0→CASPER常にna　ツール：news</div></div>
+    <div class="node st-no"><div class="nm">適時開示<span class="badge">0件</span></div><div class="role">CASPER/イベント</div>
+      <div class="meta">設計：<b>TDnet RSS</b>(JP)／SEC 8-K(US)</div>
+      <div class="meta">現状：TDnetミラー＋EDINET（キー未設定）→0件　ツール：disclosure</div></div>
+    <div class="node st-no"><div class="nm">マクロ・政府公式<span class="badge">未配線</span></div><div class="role">FOMC/金利/政策</div>
+      <div class="meta">設計：政府公式RSS（FRB/財務省/ホワイトハウス）</div>
+      <div class="meta">現状：未配線（重要度ルールにFOMC等の語のみ）</div></div>
+    <div class="node st-part"><div class="nm">手動投入（X代替）<span class="badge">UIのみ</span></div><div class="role">速報の人手補完</div>
+      <div class="meta">現状：UIモック有・バックエンド未配線</div>
+      <div class="meta">※X(Twitter)直接利用は不採用（ニュース＋手動で代替）</div></div>
+    <div class="node st-part"><div class="nm">決算・イベントカレンダー<span class="badge">枠のみ</span></div><div class="role">決算日・イベント</div>
+      <div class="meta">earnings_calendar テーブル有・取得未配線</div></div>
+  </div>
+
+  <span class="slabel">A-4 口座（保有・残高・約定）</span>
+  <div class="row">
+    <div class="node st-part"><div class="nm">保有・残高・約定<span class="badge">接続済/空</span></div><div class="role">含み損益・配分・発注</div>
+      <div class="meta">設計：<b>moomoo broker_read</b>（実運用データの単一ソース）</div>
+      <div class="meta">現状：brokers層実装・OpenD接続確認(FUTUJP/US/SIMULATE)・ペーパー空</div>
+      <div class="meta">状態：同意②＋再起動＋建玉で実データ化　ツール：broker_read</div></div>
+  </div>
+
+  <span class="slabel">A-5 横断（照合・LLM）</span>
+  <div class="row">
+    <div class="node st-ok"><div class="nm">2ソース照合・出典/時点<span class="badge">実用</span></div><div class="role">ハルシネーション防御の土台</div>
+      <div class="meta">価格2ソース(yfinance/stooq ±0.5%)＋ source_refs/data_asof を全出力に</div></div>
+    <div class="node st-part"><div class="nm">LLM（解釈）<span class="badge">準備のみ</span></div><div class="role">審判の解釈文・碇</div>
+      <div class="meta">設計：Anthropic(Sonnet/Opus)＋Ollama(Cold ¥0)</div>
+      <div class="meta">現状：Anthropicキー設定済・未使用／Ollama未導入（今はコード生成で実費0）</div></div>
   </div>
 </div>
-<div class="converge">└ 収集データが合流 ┘</div>
+<div class="converge">└ 全ソースが合流（※実装済みは A-1相場・テクニカル・財務サマリ・横断照合のみ。文脈/一次情報/口座データが欠落）┘</div>
 <div class="arrow">↓</div>
 
 <!-- B 一次選抜 -->
