@@ -18,11 +18,11 @@
 | 着手前 | ゲート | 未確定論点(D-10〜D-20)＋APIコントラクト(=snapshot形) | ✅ |
 | B0 | Back | 差分計画確定（→ `B0_DIFF_PLAN.md`） | ✅ |
 | B1 | Back | 基盤再チューニング | 🟡 出典/時点・2ソース照合 ✅／信用性フィルタ・LLM審判割当 残 |
-| B2 | Back | MAGI 3審判（独立検証・judge_verdict） | 🟡 judge_verdictモデル＋3審判の決定論ロジック ✅／LLM解釈(CASPER=Anthropic)・UI反映 残 |
-| B3 | Back | 防御層（機械照合3本柱・決裁前ゲート） | ⬜ |
-| B4 | Back | 統合機構（割れ方・SCORE: NONE） | ⬜ |
-| B5 | Back | 碇司令（推奨＋反対論拠・MAGI準拠） | ⬜ |
-| B6 | Back | DAG挿入＆状態遷移 | ⬜ |
+| B2 | Back | MAGI 3審判（独立検証・judge_verdict） | ✅ 決定論ロジック＋UI反映（一覧/詳細）。LLM解釈はオプトイン(B2c)残 |
+| B3 | Back | 防御層（機械照合3本柱・決裁前ゲート） | ✅ verify()・既定保留・3フラグ反映 |
+| B4 | Back | 統合機構（割れ方・SCORE: NONE） | ✅ split_pattern・4類型分類・反映 |
+| B5 | Back | 碇司令（推奨＋反対論拠・MAGI準拠） | ✅ 決定論版（推奨＋必ず反対論拠）。LLM文面化(B2c)残 |
+| B6 | Back | DAG挿入＆状態遷移（decisions生成→MAGI検証→保存） | ⬜ **要ユーザー判断**（decisions schema再構成・screening↔MAGI統合） |
 | **P1.2** | Back | **moomooブローカー層**（positions/account・OpenD接続確認済 FUTUJP/US/SIMULATE） | ✅ 前倒し |
 | F0 | Front | golden master確定・再現スコープ棚卸し | ✅（基準スクショは未取得） |
 | F1 | Front | Next.js雛形＋CSS/フォント/マークアップ逐語移植 | ✅ build緑 |
