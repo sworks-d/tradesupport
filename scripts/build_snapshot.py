@@ -22,8 +22,7 @@ from pathlib import Path
 
 from trading_agent.brokers import StandInBroker, load_positions
 from trading_agent.db import create_all, get_engine
-from trading_agent.magi import run_judges, verify
-from trading_agent.magi.judges import split_label
+from trading_agent.magi import classify_split, command, run_judges, verify
 from trading_agent.mcp_tools.fundamentals import (
     FundamentalsInput,
     FundamentalsOutput,
@@ -157,23 +156,32 @@ def _serialize_candidate(verdicts: list, sizing: dict[str, object]) -> dict[str,
     buys = sum(1 for v in verdicts if v.verdict == "buy")
     gendo = "推し" if buys == len(verdicts) else ("要検討" if buys >= 1 else "静観")
 
-    # 防御層（B3）：機械照合＋決裁前ゲート
+    # 統合機構(B4)・防御層(B3)・碇司令(B5)
+    split = classify_split(verdicts)
     vr = verify(verdicts)
+    cmd = command(verdicts, split, vr)
     verification = {
         "default_decision": "保留" if vr.default_hold else "可",
-        "flags": [
-            {"label": "数値照合", "status": "ok" if vr.figures_checked else "warn"},
-            {"label": "時点", "status": "ok" if vr.time_ok else "warn"},
+        "flags": [  # 設計の3フラグ（時点は数値照合に内包）
+            {"label": "数値照合", "status": "ok" if (vr.figures_checked and vr.time_ok) else "warn"},
             {"label": "信用性", "status": vr.credibility_flag},
+            {"label": "碇MAGI準拠", "status": "ok" if cmd.magi_compliant else "warn"},
         ],
         "unverified": vr.unverified_claims,
     }
     return {
         "judges": judges,
-        "split": split_label(verdicts),
+        "split": split.label,
+        "split_interp": split.interpretation,
         "gendo": gendo,
         "sizing": sizing,
         "verification": verification,
+        "commander": {
+            "recommendation": cmd.recommendation,
+            "counter": cmd.counter_argument,
+            "src_note": cmd.src_note,
+            "compliant": cmd.magi_compliant,
+        },
     }
 
 

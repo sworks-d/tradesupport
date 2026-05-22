@@ -36,12 +36,20 @@ type Verification = {
   flags: { label: string; status: string }[];
   unverified: string[];
 };
+type Commander = {
+  recommendation: string;
+  counter: string;
+  src_note: string;
+  compliant: boolean;
+};
 type Candidate = {
   judges: JudgeMini[];
   split: string;
+  split_interp?: string;
   gendo: string;
   sizing?: Sizing;
   verification?: Verification;
+  commander?: Commander;
 };
 type Account = {
   cash: number;
@@ -158,7 +166,25 @@ export default function LiveData() {
             }
           });
           const state = mini.querySelector(".magi-mini-state");
-          if (state) state.textContent = cand.split;
+          if (state) {
+            state.textContent = cand.split;
+            if (cand.split_interp)
+              (state as HTMLElement).title = cand.split_interp; // 割れ方の解釈
+          }
+
+          // 碇司令（B5）：推奨＋反対論拠を候補カードに表示
+          if (cand.commander) {
+            let cmdEl = card.querySelector<HTMLElement>(".cmd-line");
+            if (!cmdEl && mini.parentElement) {
+              cmdEl = document.createElement("div");
+              cmdEl.className = "cmd-line";
+              mini.parentElement.appendChild(cmdEl);
+            }
+            if (cmdEl) {
+              cmdEl.textContent = `碇：${cand.commander.recommendation}`;
+              cmdEl.title = `${cand.commander.counter}\n${cand.commander.src_note}`;
+            }
+          }
 
           // 予算内サイジング（¥1M・1銘柄20%上限・米株端株）を候補カードに表示
           if (cand.sizing) {

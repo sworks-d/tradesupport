@@ -2453,3 +2453,11 @@ svg[preserveAspectRatio="none"] :is(line, path, polyline, polygon, rect, circle)
 .verify-line.vl-hold {
   color: var(--warn);
 }
+/* 碇司令の推奨行（明朝で碇らしさ） */
+.cmd-line {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--ink-2);
+  font-family: var(--serif);
+  line-height: 1.5;
+}

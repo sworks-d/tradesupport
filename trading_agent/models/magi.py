@@ -13,6 +13,38 @@ from sqlmodel import Field, SQLModel
 from trading_agent.models._common import utcnow
 
 
+class SplitPattern(SQLModel, table=True):
+    """統合機構の出力（B4）。3審判の割れ方を類型化するだけ（総合スコアは出さない）。"""
+
+    __tablename__ = "split_pattern"
+
+    id: int | None = Field(default=None, primary_key=True)
+    decision_id: int | None = Field(default=None, foreign_key="decisions.id", index=True)
+    ticker: str = Field(index=True)
+
+    agree_count: int = 0  # 多数派の人数
+    total: int = 3
+    label: str = ""  # 例「2/3 買い・割れ」
+    interpretation: str = ""  # 割れ方の解釈（推奨はしない）
+    created_at: dt.datetime = Field(default_factory=utcnow)
+
+
+class CommanderRec(SQLModel, table=True):
+    """碇司令の推奨（B5）。MAGIの出力だけを根拠に推奨＋反対論拠を必ず両方出す。決定はしない。"""
+
+    __tablename__ = "commander_rec"
+
+    id: int | None = Field(default=None, primary_key=True)
+    decision_id: int | None = Field(default=None, foreign_key="decisions.id", index=True)
+    ticker: str = Field(index=True)
+
+    recommendation: str  # 推奨（方向＋簡潔な理由）
+    counter_argument: str  # 「反対するなら：」必ず併記
+    magi_compliant: bool = True  # MAGI外の新事実を創作していないか
+    src_note: str = "根拠：3審判の判定のみ。新たな事実は加えていない。"
+    created_at: dt.datetime = Field(default_factory=utcnow)
+
+
 class Verification(SQLModel, table=True):
     """防御層の結果（B3）。決裁直前の機械照合（数値・出典・時点）と決裁前ゲート。
 

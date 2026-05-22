@@ -207,7 +207,7 @@ class TestInitDatabase:
         db_path = tmp_path / "init.sqlite"
         result = init_database(db_path)
         assert db_path.exists()
-        assert result["tables"] == 19  # 既存17 + judge_verdict(B2) + verification(B3)
+        assert result["tables"] == 21  # 既存17 + MAGI 4表(judge_verdict/verification/split_pattern/commander_rec)
         assert result["settings_inserted"] == len(DEFAULT_SETTINGS)
 
     def test_init_is_idempotent(self, tmp_path: Path) -> None:
