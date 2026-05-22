@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Trading Agent — 収集→提案 パイプライン（過不足判定）</title>
+<style>
+  :root{
+    --bg:#0d0d11;--bg1:#14141a;--bg2:#1c1c24;--bd:#2a2a35;--bd2:#3a3a48;
+    --ink:#ece9de;--ink2:#a09d92;--ink3:#6b6962;
+    --key:#ff8c42;--sub:#4ecdc4;--up:#4ade80;--down:#f87171;--warn:#fbbf24;--info:#7aa2f7;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--ink);font-family:'Noto Sans JP',-apple-system,sans-serif;
+       line-height:1.6;padding:32px;max-width:1100px;margin:0 auto}
+  h1{font-size:22px;margin-bottom:4px}
+  h2{font-size:16px;margin:28px 0 10px;color:var(--key);border-left:3px solid var(--key);padding-left:10px}
+  .sub{color:var(--ink2);font-size:13px;margin-bottom:16px}
+  .legend{display:flex;flex-wrap:wrap;gap:14px;background:var(--bg1);border:1px solid var(--bd);
+          border-radius:10px;padding:12px 16px;font-size:12px;margin-bottom:18px}
+  .legend b{font-weight:600}
+  .verdict{background:var(--bg1);border:1px solid var(--bd2);border-left:3px solid var(--warn);
+           border-radius:10px;padding:14px 16px;margin-bottom:22px;font-size:14px}
+  .flow{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:8px 0 24px;font-size:12px}
+  .flow .step{background:var(--bg2);border:1px solid var(--bd2);border-radius:20px;padding:5px 12px}
+  .flow .arr{color:var(--ink3)}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:8px}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--bd);vertical-align:top}
+  th{color:var(--ink2);font-weight:600;font-size:12px;background:var(--bg1)}
+  td.st{white-space:nowrap;font-weight:600}
+  .ok{color:var(--up)} .part{color:var(--warn)} .weak{color:var(--key)}
+  .no{color:var(--down)} .judge{color:var(--info)}
+  .src{color:var(--ink2);font-size:12px}
+  .note{color:var(--ink);font-size:12.5px}
+  code{font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--sub);background:var(--bg2);
+       padding:1px 5px;border-radius:4px}
+  .phase-tag{display:inline-block;font-size:11px;color:var(--ink3);margin-left:6px}
+</style>
+</head>
+<body>
+
+<h1>収集 → 提案 パイプライン：過不足判定シート</h1>
+<div class="sub">最終更新：2026-05-23 ／ ブランチ <code>feat/magi-rebuild</code> ／ 状態は実測ベース（憶測なし）</div>
+
+<div class="legend">
+  <span><b class="ok">✅ 実用</b> 動く＆実データで信頼できる</span>
+  <span><b class="part">🟡 部分</b> ロジック有・未起動/未完</span>
+  <span><b class="weak">⚠ ソース弱</b> 仕組みは有るが餌が足りない</span>
+  <span><b class="no">❌ 未</b> 未実装</span>
+  <span><b class="judge">🔵 要判断</b> ユーザーの方針が必要</span>
+</div>
+
+<div class="verdict">
+  <b>総合判定：まだ「使える」と言える段階ではない。</b>
+  株価/テクニカルの脚は実用だが、<b class="weak">文脈（ニュース）が0件＝CASPERが目隠し</b>、
+  業績は浅い（一次情報未解析）、決裁→発注→評価が未接続。
+  MAGIの構造（3審判→防御→統合→碇）は通っているが、<b>入力（情報ソース）と出口（決裁・発注・評価）が揃っていない。</b>
+</div>
+
+<div class="flow">
+  <span class="step">A 収集</span><span class="arr">→</span>
+  <span class="step">B 一次選抜</span><span class="arr">→</span>
+  <span class="step">C MAGI判断</span><span class="arr">→</span>
+  <span class="step">D サイジング/提案</span><span class="arr">→</span>
+  <span class="step">E 決裁/発注</span><span class="arr">→</span>
+  <span class="step">F 評価/学習</span>
+</div>
+
+<h2>A. データ収集層</h2>
+<table>
+<tr><th style="width:16%">工程</th><th style="width:14%">状態</th><th style="width:30%">情報ソース（実態）</th><th>過不足メモ</th></tr>
+<tr><td>株価・出来高</td><td class="st ok">✅ 実用</td><td class="src">yfinance（主）＋ stooq（2ソース照合 ±0.5%）</td><td class="note">動く。NVDA等で実価格取得済。※yfinanceは非公式。本番は moomoo 実価格へ（OpenD同意後）</td></tr>
+<tr><td>テクニカル</td><td class="st ok">✅ 実用</td><td class="src">価格履歴(yfinance)→コード計算（RSI/MACD/SMA/BB）</td><td class="note">LLM不使用・コード計算。BALTHASARの素材として実用</td></tr>
+<tr><td>業績（財務）</td><td class="st weak">⚠ 浅い</td><td class="src">yfinance サマリ（PER/PBR/EPS/増収率/営業利益率）</td><td class="note">数値は取れる（NVDA増収率85%）が<b>一次情報(EDGAR/EDINET)を未解析</b>。注記・監査意見・GC・セグメント・四半期粒度が無い</td></tr>
+<tr><td>ニュース（文脈）</td><td class="st no">❌ 0件</td><td class="src">NewsAPI（<b>キー未設定</b>）＋一般RSS（銘柄に当たらず）</td><td class="note"><b>最重要の穴</b>。NVDAで0件→CASPERが常に判定不能(na)。無料の銘柄別ソース（yfinance.news / Google News RSS）未導入</td></tr>
+<tr><td>適時開示（JP）</td><td class="st no">❌ 0件</td><td class="src">TDnetミラー＋EDINET（<b>キー未設定</b>）</td><td class="note">7203で0件。JP銘柄の文脈・信用性が取れない</td></tr>
+<tr><td>手動投入（X代替）</td><td class="st part">🟡 UIのみ</td><td class="src">人が貼る → CASPER相当が分析</td><td class="note">UIはモック有・バックエンド未配線。速報の補完手段として有効だが未稼働</td></tr>
+</table>
+
+<h2>B. 一次選抜（スクリーニング＋信用性）</h2>
+<table>
+<tr><th style="width:16%">工程</th><th style="width:14%">状態</th><th style="width:30%">情報ソース</th><th>過不足メモ</th></tr>
+<tr><td>定量スクリーニング</td><td class="st part">🟡 未起動</td><td class="src">screeningツール（V字4軸＋テーマ4軸→composite）</td><td class="note">ロジックは有るが<b>universe（母集団）未投入で未起動</b>。今は候補が<code>NVDA</code>決め打ち。①→③が繋がっていない</td></tr>
+<tr><td>信用性ハードフィルタ</td><td class="st no">❌ 未（D-14）</td><td class="src">EDINET 監査意見/上場廃止/特設注意/GC注記</td><td class="note"><b>粉飾・上場廃止を弾けない</b>。EDINETキーも未設定。実弾前に必須</td></tr>
+</table>
+
+<h2>C. MAGI判断層（3審判→防御→統合→碇）</h2>
+<table>
+<tr><th style="width:16%">工程</th><th style="width:14%">状態</th><th style="width:30%">入力ソース</th><th>過不足メモ</th></tr>
+<tr><td>MELCHIOR（業績）</td><td class="st part">🟡 動くが浅い</td><td class="src">fundamentals（yfinanceサマリ）</td><td class="note">実数値で可否を出す。ただし素材が浅い（上記A業績）。LLM解釈は未（コード生成）</td></tr>
+<tr><td>BALTHASAR（株価）</td><td class="st ok">✅ 実用</td><td class="src">technicals（コード計算）</td><td class="note">コード計算で完結。実用</td></tr>
+<tr><td>CASPER（文脈）</td><td class="st no">❌ 目隠し</td><td class="src">news / disclosure（0件）</td><td class="note"><b>入力が0なので常にna</b>。文脈の脚が立たない＝MAGIが2.5脚。ニュース源が入れば即機能</td></tr>
+<tr><td>防御層（機械照合）</td><td class="st ok">✅</td><td class="src">各判定の source_refs / data_asof をコード照合</td><td class="note">出典・時点・数値照合＋決裁前ゲート（割れ/na/未照合→既定保留）。動作確認済</td></tr>
+<tr><td>統合機構（割れ方）</td><td class="st ok">✅</td><td class="src">3審判の集計</td><td class="note">4類型分類・総合スコア出さない（SCORE: NONE）。動作確認済</td></tr>
+<tr><td>碇司令（推奨）</td><td class="st part">🟡 コード版</td><td class="src">MAGI出力のみ</td><td class="note">推奨＋必ず反対論拠・MAGI準拠。決定論生成（実費0）。<b>LLMによる自然文化は未（オプトイン）</b></td></tr>
+</table>
+
+<h2>D. サイジング・提案生成</h2>
+<table>
+<tr><th style="width:16%">工程</th><th style="width:14%">状態</th><th style="width:30%">ソース</th><th>過不足メモ</th></tr>
+<tr><td>ポジションサイジング</td><td class="st ok">✅</td><td class="src">口座(現金)＋実価格＋USD/JPY</td><td class="note">1銘柄20%上限・米株端株・日本株単元。¥1Mで「NVDA ¥200,000=5.7株」等を実算定</td></tr>
+<tr><td>提案(decision)生成→DB保存</td><td class="st judge">🔵 要判断（B6）</td><td class="src">—</td><td class="note"><b>decisions未生成</b>。decisionsテーブルがver1形（総合スコア前提）で、MAGI用にスキーマ再構成が必要。screening↔MAGI↔朝バッチの統合方針も要判断</td></tr>
+</table>
+
+<h2>E. 人間決裁・発注</h2>
+<table>
+<tr><th style="width:16%">工程</th><th style="width:14%">状態</th><th style="width:30%">ソース</th><th>過不足メモ</th></tr>
+<tr><td>決裁UI（承認/否認/保留）</td><td class="st part">🟡 表示のみ</td><td class="src">snapshot</td><td class="note">既定「保留」表示・3フラグ反映済。ボタンの<b>押下→状態保存は未配線</b></td></tr>
+<tr><td>発注リスト出力（Tier1手動）</td><td class="st no">❌ 未</td><td class="src">—</td><td class="note">承認→moomoo手動発注用の出力が無い</td></tr>
+<tr><td>発注記録→保有化</td><td class="st no">❌ 未</td><td class="src">moomoo positions</td><td class="note">口座(同意②＋OpenD再起動)後に実保有取得。建玉が入れば保有パネルが実データ化</td></tr>
+</table>
+
+<h2>F. 評価・学習</h2>
+<table>
+<tr><th style="width:16%">工程</th><th style="width:14%">状態</th><th style="width:30%">ソース</th><th>過不足メモ</th></tr>
+<tr><td>Track Record（予測vs実績）</td><td class="st no">❌ モック</td><td class="src">decisions評価</td><td class="note">UIはモック値。decisions生成(B6)＋評価ジョブが前提</td></tr>
+<tr><td>A/Bロジック育成</td><td class="st no">❌ 枠のみ</td><td class="src">運用実績</td><td class="note">データ蓄積後（Phase後半）。今は回す実績が無い</td></tr>
+</table>
+
+<h2>外部AIエージェント投資リポジトリの活用（要件）</h2>
+<table>
+<tr><th style="width:16%">対象</th><th style="width:14%">状態</th><th style="width:30%">内容</th><th>過不足メモ</th></tr>
+<tr><td>virattt/ai-hedge-fund 等</td><td class="st no">❌ 未着手(0%)</td><td class="src">LLM多エージェント（著名投資家ペルソナ→シグナル）、データadapter、backtest</td><td class="note"><b>要件だが未着手</b>。docsは「調査して思想一致を確認」のみ。実際の流用（審判プロンプト/データ接続/バックテスト/評価指標）はゼロ。要：何を借りるか棚卸し</td></tr>
+<tr><td>TradingAgents 等</td><td class="st no">❌ 未着手(0%)</td><td class="src">多エージェントの議論（debate）フレーム</td><td class="note">MAGIの「割れを見せる」思想と近い。debate構造・反証の作法を参考にできる可能性。未調査</td></tr>
+</table>
+
+<p style="color:var(--ink3);font-size:12px;margin-top:20px">
+凡例の状態は 2026-05-23 実測。最短で「使える」に近づける順：
+<b class="weak">① ニュース源（無料・キー不要）でCASPERを起動</b> →
+② 外部リポジトリ棚卸し（借りる所を確定） →
+③ スクリーニング起動（候補を実リスト化） →
+④ 信用性フィルタ(D-14) →
+⑤ 決裁→発注→評価(B6/E/F) の接続。
+</p>
+
+</body>
+</html>
