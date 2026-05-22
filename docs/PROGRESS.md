@@ -85,7 +85,7 @@
 - [done] 1.3.5 実行ログ — execute_agent が analysis_logs に start/end 記録（invocation_id トレース）
 - [done] 1.3.6 シリアライズ — `agents/serialization.py`（buy/sell は旧 active を false 化、scenarios は upsert）
 
-## Phase 1.4：エージェント実装
+## Phase 1.4：エージェント実装 — ✅ 完了（6体 / pytest 173件 green）
 - [done] 1.4.1 topics-collector — `agents/topics_collector.py`：news+disclosure 収集 → URL デデュープ
   → ルール重要度（保有/決算速報/FOMC 等）→ 影響先抽出（$X/(NNNN)/universe）→ topics 保存。
   LLM は低重要度の補強のみ（キー無しでも動作）。テスト 9 件（計 145 件 green）。
@@ -98,7 +98,10 @@
 - [done] 1.4.4 sell-recommender — `agents/sell_recommender.py`：保有評価 → 利確/損切りスコア
   （純粋関数）+ シナリオ進捗（LLM、縮退 0.5）+ 規律メッセージ（損切り≥70）+ 売却数量（§3.7）→
   sell_signals/scenarios 保存。買って3日内スキップ。テスト 12 件（計 167）。
-- [ ] 1.4.5 portfolio-builder / 1.4.6 manual-input-analyst
+- [done] 1.4.5 portfolio-builder — `agents/portfolio_builder.py`：initial（コア/サテ配分推奨）+
+  review（コア比率・セクター集中の警告）。ルールベース決定論。テスト 3 件。
+- [done] 1.4.6 manual-input-analyst — `agents/manual_input_analyst.py`：投入テキストを LLM 解釈
+  → 影響先/方向/規模/推奨アクション + manual_inputs 保存 + トピックス化候補。短文拒否・縮退対応。テスト 3 件。
 
 ## Phase 1.5：オーケストレーター
 - [ ] 1.5.1 DAG / 1.5.2 朝バッチ定義 / 1.5.3 エラー処理 / 1.5.4 APScheduler / 1.5.5 健康チェック
