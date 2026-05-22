@@ -86,7 +86,10 @@
 - [done] 1.3.6 シリアライズ — `agents/serialization.py`（buy/sell は旧 active を false 化、scenarios は upsert）
 
 ## Phase 1.4：エージェント実装
-- [ ] 1.4.1 topics-collector / 1.4.2 screening / 1.4.3 market-analyst / 1.4.4 sell-recommender / 1.4.5 portfolio-builder / 1.4.6 manual-input-analyst
+- [done] 1.4.1 topics-collector — `agents/topics_collector.py`：news+disclosure 収集 → URL デデュープ
+  → ルール重要度（保有/決算速報/FOMC 等）→ 影響先抽出（$X/(NNNN)/universe）→ topics 保存。
+  LLM は低重要度の補強のみ（キー無しでも動作）。テスト 9 件（計 145 件 green）。
+- [ ] 1.4.2 screening / 1.4.3 market-analyst / 1.4.4 sell-recommender / 1.4.5 portfolio-builder / 1.4.6 manual-input-analyst
 
 ## Phase 1.5：オーケストレーター
 - [ ] 1.5.1 DAG / 1.5.2 朝バッチ定義 / 1.5.3 エラー処理 / 1.5.4 APScheduler / 1.5.5 健康チェック
