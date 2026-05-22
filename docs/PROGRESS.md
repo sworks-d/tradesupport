@@ -92,7 +92,13 @@
 - [done] 1.4.2 screening-agent — `agents/screening_agent.py`：universe から market_data/technicals/
   fundamentals を集約 → screening ツールで採点・ランク → screening_results 保存。テスト 3 件（計 148）。
   ※部分データ採点（90日高安/四半期EPS/銘柄別ニュースの配線は後日）。
-- [ ] 1.4.3 market-analyst / 1.4.4 sell-recommender / 1.4.5 portfolio-builder / 1.4.6 manual-input-analyst
+- [done] 1.4.3 market-analyst — `agents/market_analyst.py`：5軸スコア（fundamental/technical は純粋関数、
+  strategy_fit=screening、news=50中立、ai_confidence/scenarios は LLM）+ 推奨数量・指値（§2.7）→ buy_signals。
+  LLM 無しでも縮退動作。テスト 7 件（計 155）。
+- [done] 1.4.4 sell-recommender — `agents/sell_recommender.py`：保有評価 → 利確/損切りスコア
+  （純粋関数）+ シナリオ進捗（LLM、縮退 0.5）+ 規律メッセージ（損切り≥70）+ 売却数量（§3.7）→
+  sell_signals/scenarios 保存。買って3日内スキップ。テスト 12 件（計 167）。
+- [ ] 1.4.5 portfolio-builder / 1.4.6 manual-input-analyst
 
 ## Phase 1.5：オーケストレーター
 - [ ] 1.5.1 DAG / 1.5.2 朝バッチ定義 / 1.5.3 エラー処理 / 1.5.4 APScheduler / 1.5.5 健康チェック
