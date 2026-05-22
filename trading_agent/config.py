@@ -53,6 +53,8 @@ class Settings(BaseSettings):
     moomoo_opend_port: int = 11111
     moomoo_trading_pwd: str
     moomoo_account_id: str
+    moomoo_security_firm: str = "FUTUJP"  # moomoo JP（US主体口座なら FUTUINC）
+    moomoo_markets: str = "US,JP"  # カンマ区切り。位置情報取得対象の市場
 
     # === モード ===
     trading_mode: Literal["paper", "live"] = "paper"

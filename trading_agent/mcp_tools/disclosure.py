@@ -20,6 +20,7 @@ from trading_agent.mcp_tools.base import (
     MCPToolInput,
     MCPToolOutput,
     NetworkError,
+    SourceRef,
 )
 from trading_agent.utils.logger import get_logger
 from trading_agent.utils.time_utils import utcnow
@@ -104,8 +105,23 @@ class DisclosureTool(MCPTool[DisclosureInput]):
             result.append(item)
 
         result.sort(key=lambda d: d.get("published_at", ""), reverse=True)
+        # 開示ごとに出典（URL・公開時点）を保持＝CASPER の主張の出典実在照合の土台
+        refs = [
+            SourceRef(
+                source=str(d.get("source") or "disclosure"),
+                ref=str(d.get("url")),
+                as_of=_parse_dt(d.get("published_at")),
+            )
+            for d in result
+            if d.get("url")
+        ]
+        asof = [r.as_of for r in refs if r.as_of is not None]
         return DisclosureOutput(
-            success=True, disclosures=result, metadata={"source_failures": failures}
+            success=True,
+            disclosures=result,
+            data_asof=max(asof) if asof else None,
+            source_refs=refs,
+            metadata={"source_failures": failures},
         )
 
 

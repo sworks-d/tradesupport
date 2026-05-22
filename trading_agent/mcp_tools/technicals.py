@@ -24,7 +24,9 @@ from trading_agent.mcp_tools.base import (
     MCPToolInput,
     MCPToolOutput,
     NetworkError,
+    SourceRef,
 )
+from trading_agent.utils.time_utils import utcnow
 
 # 終値系列の取得関数の型：(ticker, period_days) → 終値リスト（古い→新しい）
 HistoryProvider = Callable[[str, int], list[float]]
@@ -150,7 +152,17 @@ class TechnicalsTool(MCPTool[TechnicalsInput]):
                 data[indicator] = value
 
         signals = self._signals(tool_input.indicators, closes, data)
-        return TechnicalsOutput(success=True, data=data, signals=signals)
+        now = utcnow()
+        # テクニカルはコード計算（LLMに計算させない原則の体現）。出典=computed。
+        ref = SourceRef(
+            source="computed",
+            ref=tool_input.ticker,
+            as_of=now,
+            note="technical indicators computed from price history",
+        )
+        return TechnicalsOutput(
+            success=True, data=data, signals=signals, data_asof=now, source_refs=[ref]
+        )
 
     def _compute(self, indicator: str, closes: list[float]) -> Any:
         if indicator == "rsi":

@@ -26,6 +26,7 @@ from trading_agent.mcp_tools.base import (
     MCPToolInput,
     MCPToolOutput,
     NetworkError,
+    SourceRef,
 )
 from trading_agent.utils.time_utils import utcnow
 
@@ -140,16 +141,31 @@ class FundamentalsTool(MCPTool[FundamentalsInput]):
         if entry is not None and (now - entry.as_of) < self._ttl:
             values, fiscal_period = entry.values, entry.fiscal_period
             source = "memory"
+            data_asof = entry.as_of
         else:
             values, fiscal_period = self._fetcher(ticker)  # NetworkError は base が処理
             self._memory[ticker] = _MemEntry(values=values, fiscal_period=fiscal_period, as_of=now)
             source = "yfinance"
+            data_asof = now
 
         projected = {f: values[f] for f in tool_input.fields if f in values}
+        # 報告期(fiscal_period)が ISO 日付なら時点として保持（temporal hallucination 対策）
+        try:
+            fiscal_asof: datetime | None = datetime.fromisoformat(fiscal_period)
+        except ValueError:
+            fiscal_asof = None
+        ref = SourceRef(
+            source=source,
+            ref=primary_source_url(ticker),
+            as_of=fiscal_asof,
+            note=f"fiscal_period={fiscal_period}",
+        )
         return FundamentalsOutput(
             success=True,
             data=projected,
             fiscal_period=fiscal_period,
             source_url=primary_source_url(ticker),
+            data_asof=data_asof,
+            source_refs=[ref],
             metadata={"source": source, "market": "JP" if is_jp_ticker(ticker) else "US"},
         )

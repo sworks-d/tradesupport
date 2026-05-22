@@ -26,6 +26,7 @@ from trading_agent.mcp_tools.base import (
     MCPToolInput,
     MCPToolOutput,
     NetworkError,
+    SourceRef,
 )
 from trading_agent.utils.logger import get_logger
 from trading_agent.utils.time_utils import utcnow
@@ -162,10 +163,23 @@ class NewsTool(MCPTool[NewsInput]):
             article.setdefault("language", detect_language(article.get("title", "")))
         deduped.sort(key=lambda a: a.get("published_at", ""), reverse=True)
 
+        # 記事ごとに出典（URL・公開時点）を保持＝CASPER の主張の出典実在照合の土台
+        refs = [
+            SourceRef(
+                source=str(a.get("source") or "news"),
+                ref=a.get("url") or None,
+                as_of=_parse_dt(a.get("published_at")),
+            )
+            for a in deduped
+            if a.get("url")
+        ]
+        asof = [r.as_of for r in refs if r.as_of is not None]
         return NewsOutput(
             success=True,
             articles=deduped,
             total_before_dedupe=total_before,
+            data_asof=max(asof) if asof else None,
+            source_refs=refs,
             metadata={"source_failures": failures},
         )
 

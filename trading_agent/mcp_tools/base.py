@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from datetime import datetime
 from enum import StrEnum
 from typing import Any, ClassVar
 
@@ -89,6 +90,20 @@ class MCPToolInput(BaseModel):
     """ツール入力の基底。"""
 
 
+class SourceRef(BaseModel):
+    """データの出典（防御層＝出典実在・時点照合の土台。B1）。
+
+    数値・主張が「どのソースの、いつ時点のものか」をコードが保持するための最小構造。
+    LLMに数値を作らせない原則（数値はコードが取得した実データのみ）の裏付けとして、
+    各出力の出所を機械可読に残す。後段の防御層がこれを使って機械照合する。
+    """
+
+    source: str  # 例: "yfinance" / "edinet" / "tdnet" / "newsapi" / "computed"
+    ref: str | None = None  # URL / 開示ID / 財務項目 / ticker 等の参照
+    as_of: datetime | None = None  # その出典の時点（temporal hallucination 対策）
+    note: str | None = None
+
+
 class MCPToolOutput(BaseModel):
     """ツール出力の基底（SYSTEM_DESIGN §3.1）。"""
 
@@ -97,6 +112,9 @@ class MCPToolOutput(BaseModel):
     error_type: MCPErrorType | None = None
     data: Any | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+    # --- 防御層（B1）：全ツール共通の出典・時点。既定は空で後方互換。 ---
+    data_asof: datetime | None = None  # この出力データの代表時点
+    source_refs: list[SourceRef] = Field(default_factory=list)  # 出典の列挙
 
 
 # リトライ対象（一時的障害）

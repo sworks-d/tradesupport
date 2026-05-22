@@ -28,6 +28,7 @@ from trading_agent.mcp_tools.base import (
     MCPToolInput,
     MCPToolOutput,
     NetworkError,
+    SourceRef,
 )
 from trading_agent.models.market_data import MarketDataCache
 from trading_agent.utils.logger import get_logger
@@ -63,6 +64,8 @@ class MarketDataOutput(MCPToolOutput):
     data: dict[str, dict[str, float]] = Field(default_factory=dict)  # {ticker: {field: value}}
     as_of: datetime | None = None
     sources: dict[str, str] = Field(default_factory=dict)  # {ticker: source}
+    # 2ソース照合の結果（D-12）。ticker -> ok/mismatch/single/cached
+    reconciliation: dict[str, str] = Field(default_factory=dict)
 
 
 @dataclass
@@ -110,16 +113,22 @@ class MarketDataTool(MCPTool[MarketDataInput]):
         *,
         cache_ttl_seconds: int = 300,
         fetcher: Fetcher | None = None,
+        reconcile_fetcher: Fetcher | None = None,
+        reconcile_tolerance: float = 0.005,
     ) -> None:
         self._engine = engine
         self._ttl = timedelta(seconds=cache_ttl_seconds)
         self._memory: dict[str, _MemEntry] = {}
         self._fetcher: Fetcher = fetcher or _fetch_from_yfinance
+        self._reconcile: Fetcher | None = reconcile_fetcher  # 2ソース目（任意・未設定なら無効）
+        self._tol = reconcile_tolerance  # 許容誤差（D-12: ±0.5%）
 
     async def _execute(self, tool_input: MarketDataInput) -> MCPToolOutput:
         now = utcnow()
         data: dict[str, dict[str, float]] = {}
         sources: dict[str, str] = {}
+        ref_asof: dict[str, datetime] = {}  # ticker ごとの実際の時点（防御層用）
+        recon: dict[str, str] = {}  # ticker -> ok/mismatch/single/cached（2ソース照合）
         to_fetch: list[str] = []
 
         for ticker in tool_input.tickers:
@@ -127,6 +136,8 @@ class MarketDataTool(MCPTool[MarketDataInput]):
             if tool_input.use_cache and entry is not None and (now - entry.as_of) < self._ttl:
                 data[ticker] = _project(entry.quote, tool_input.fields)
                 sources[ticker] = "memory"
+                ref_asof[ticker] = entry.as_of  # キャッシュ元の取得時点を保持
+                recon[ticker] = "cached"
             else:
                 to_fetch.append(ticker)
 
@@ -137,19 +148,65 @@ class MarketDataTool(MCPTool[MarketDataInput]):
                 self._write_db_cache(ticker, quote, now)
                 data[ticker] = _project(quote, tool_input.fields)
                 sources[ticker] = "yfinance"
+                ref_asof[ticker] = now
+                recon[ticker] = "single"
+            self._reconcile_prices(fetched, recon)
 
-        return MarketDataOutput(success=True, data=data, as_of=now, sources=sources)
+        refs = [
+            SourceRef(source=sources[t], ref=t, as_of=ref_asof.get(t)) for t in sources
+        ]
+        mismatches = [t for t, s in recon.items() if s == "mismatch"]
+        metadata = {"price_mismatch": mismatches} if mismatches else {}
+        return MarketDataOutput(
+            success=True,
+            data=data,
+            as_of=now,
+            sources=sources,
+            data_asof=now,
+            source_refs=refs,
+            reconciliation=recon,
+            metadata=metadata,
+        )
+
+    def _reconcile_prices(
+        self, fetched: dict[str, dict[str, float]], recon: dict[str, str]
+    ) -> None:
+        """2ソース目で current_price を再取得し ±tol 内かを照合する（D-12）。
+
+        不一致は recon[ticker]="mismatch"。2ソース目の失敗は主データを壊さず "single" のまま。
+        """
+        if self._reconcile is None or not fetched:
+            return
+        try:
+            secondary = self._reconcile(list(fetched))
+        except Exception as exc:  # 2ソース目の失敗は主データを壊さない
+            get_logger("mcp_tool").bind(tool=self.name).warning(
+                "reconcile_failed", reason=str(exc)
+            )
+            return
+        for ticker, quote in fetched.items():
+            sq = secondary.get(ticker)
+            p1 = quote.get("current_price")
+            p2 = sq.get("current_price") if sq else None
+            if not p1 or not p2:
+                continue
+            recon[ticker] = "ok" if abs(p1 - p2) / p1 <= self._tol else "mismatch"
 
     async def fallback(self, tool_input: MarketDataInput, error: Exception) -> MCPToolOutput | None:
         """live 取得が全滅した時、DB キャッシュ（stale）から返す。"""
         data: dict[str, dict[str, float]] = {}
         sources: dict[str, str] = {}
+        refs: list[SourceRef] = []
+        oldest: datetime | None = None  # 最も古い時点をデータ代表時点に（staleの明示）
         with Session(self._engine) as session:
             for ticker in tool_input.tickers:
                 row = session.get(MarketDataCache, ticker)
                 if row is not None:
                     data[ticker] = _project(_row_to_quote(row), tool_input.fields)
                     sources[ticker] = "db_cache"
+                    refs.append(SourceRef(source="db_cache", ref=ticker, as_of=row.as_of))
+                    if oldest is None or (row.as_of is not None and row.as_of < oldest):
+                        oldest = row.as_of
         if not data:
             return None  # キャッシュも無い → base が失敗出力にする
         get_logger("mcp_tool").bind(tool=self.name).warning(
@@ -160,6 +217,8 @@ class MarketDataTool(MCPTool[MarketDataInput]):
             data=data,
             as_of=utcnow(),
             sources=sources,
+            data_asof=oldest,
+            source_refs=refs,
             metadata={"degraded": True, "reason": str(error)},
         )
 

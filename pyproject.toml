@@ -30,6 +30,7 @@ dependencies = [
     "fastapi>=0.115",  # UI 配信 + API
     "uvicorn[standard]>=0.30",  # ASGI サーバー
     "jinja2>=3.1",  # Phase 1.3.2: プロンプトのテンプレート展開
+    "moomoo-api>=10.6.6608",
 ]
 
 [dependency-groups]
