@@ -31,6 +31,11 @@ from trading_agent.mcp_tools.news import NewsInput
 from trading_agent.mcp_tools.technicals import TechnicalsInput
 from trading_agent.models.decisions import Decision
 from trading_agent.models.magi import CommanderRec, JudgeVerdict, SplitPattern, Verification
+from trading_agent.screening import (
+    Financials,
+    assess_credibility,
+    melchior_credibility_counter,
+)
 from trading_agent.utils.logger import get_logger
 from trading_agent.utils.time_utils import utcnow
 
@@ -40,6 +45,7 @@ _log = get_logger("magi_persist")
 JudgeBundle = tuple[list[JudgeVerdict], SplitResult, VerificationResult, CommanderResult]
 JudgeFn = Callable[[str], Awaitable[JudgeBundle]]
 CallTool = Callable[[str, MCPToolInput], Awaitable[MCPToolOutput]]
+FinancialsFetcher = Callable[[str], Financials | None]
 
 
 def materialize_decisions(
@@ -180,10 +186,18 @@ async def magi_verify(engine: Engine, decision_ids: list[int], judge_fn: JudgeFn
     return counts
 
 
-def make_live_judge_fn(call_tool: CallTool, *, llm_tool: LLMCallTool | None = None) -> JudgeFn:
+def make_live_judge_fn(
+    call_tool: CallTool,
+    *,
+    llm_tool: LLMCallTool | None = None,
+    financials_fetcher: FinancialsFetcher | None = None,
+    sector_lookup: Callable[[str], str | None] | None = None,
+) -> JudgeFn:
     """MCP（call_tool）で素材を集め、3審判→防御→統合→碇を回す judge_fn を作る。
 
-    llm_tool を渡すと CASPER のみ Sonnet 解釈に格上げ（既定はOFF＝決定論・コスト0・再現可能）。
+    - llm_tool：CASPER を Sonnet 解釈に格上げ（既定OFF＝決定論・コスト0）。
+    - financials_fetcher：2期財務で信用性(S5)を判定→ credibility_flag と MELCHIOR反証(S6) に反映
+      （既定OFF＝ネット非依存・テストで注入）。粉飾/倒産疑いは default_hold へ寄せる。
     """
 
     async def judge(ticker: str) -> JudgeBundle:
@@ -200,9 +214,38 @@ def make_live_judge_fn(call_tool: CallTool, *, llm_tool: LLMCallTool | None = No
             upgraded = await casper_llm(ticker, news=news, llm_tool=llm_tool)
             verdicts = [upgraded if v.judge == "CASPER" else v for v in verdicts]
 
+        # S5b/S6：信用性フィルタを MELCHIOR 反証と防御層 credibility_flag に反映
+        credibility_flag = "ok"
+        if financials_fetcher is not None:
+            sector = sector_lookup(ticker) if sector_lookup is not None else None
+            credibility_flag = _apply_credibility(ticker, verdicts, financials_fetcher, sector)
+
         split = classify_split(verdicts)
-        vr = verify(verdicts)
+        vr = verify(verdicts, credibility_flag=credibility_flag)
         cmd = command(verdicts, split, vr)
         return verdicts, split, vr, cmd
 
     return judge
+
+
+def _apply_credibility(
+    ticker: str,
+    verdicts: list[JudgeVerdict],
+    fetcher: FinancialsFetcher,
+    sector: str | None,
+) -> str:
+    """2期財務→信用性。MELCHIOR の counter_within_domain を更新し、credibility_flag を返す。"""
+    try:
+        fin = fetcher(ticker)
+    except Exception as exc:  # 取得失敗は信用性スキップ（ok・graceful）
+        _log.warning("credibility_fetch_failed", ticker=ticker, error=str(exc))
+        return "ok"
+    if fin is None:
+        return "ok"
+    cred = assess_credibility(fin, sector=sector)
+    counter = melchior_credibility_counter(cred)
+    if counter:
+        for v in verdicts:
+            if v.judge == "MELCHIOR":
+                v.counter_within_domain = [*v.counter_within_domain, *counter]
+    return cred.credibility_flag

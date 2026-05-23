@@ -9,6 +9,7 @@ from trading_agent.screening.credibility import (
     altman_z_score,
     assess_credibility,
     beneish_m_score,
+    melchior_credibility_counter,
     piotroski_f_score,
 )
 from trading_agent.screening.financials import Financials, PeriodFinancials
@@ -130,3 +131,20 @@ class TestAssessCredibility:
         assert res.m_score.zone == "na"
         assert res.z_score.zone == "na"
         assert "業種除外" in res.m_score.note
+
+
+class TestMelchiorCredibilityCounter:
+    def test_risk_zones_become_counter_claims(self) -> None:
+        # 倒産リスク（Z risk）→ MELCHIOR反証に「倒産リスク域」が出る（S6）
+        t = _pf("2026", working_capital=-100.0, total_assets=1000.0, retained_earnings=50.0,
+                ebit=10.0, total_liabilities=900.0, revenue=300.0)
+        res = assess_credibility(_fin(t, None, market_cap=100.0))
+        counter = melchior_credibility_counter(res, source_refs=[{"source": "yfinance"}])
+        assert any("倒産リスク" in c["claim"] for c in counter)
+        assert all(c["source_refs"] for c in counter)  # 出典付き（摘出＝R5）
+
+    def test_clean_has_no_counter(self) -> None:
+        t = _pf("2026", working_capital=500.0, total_assets=1000.0, retained_earnings=600.0,
+                ebit=250.0, total_liabilities=500.0, revenue=1000.0)
+        res = assess_credibility(_fin(t, None, market_cap=3000.0))
+        assert melchior_credibility_counter(res) == []

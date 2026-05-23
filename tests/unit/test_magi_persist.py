@@ -171,6 +171,38 @@ class TestMagiVerify:
             jv = list(s.exec(select(JudgeVerdict).where(col(JudgeVerdict.decision_id) == did)))
             assert len(jv) == 3  # 6 にならない
 
+    async def test_credibility_wiring_warns_and_rebuts(self, engine) -> None:
+        """S5b/S6：financials_fetcher を渡すと credibility_flag=warn＋MELCHIOR反証が乗る。"""
+        from trading_agent.magi.persist import make_live_judge_fn
+        from trading_agent.mcp_tools.fundamentals import FundamentalsOutput
+        from trading_agent.mcp_tools.news import NewsOutput
+        from trading_agent.mcp_tools.technicals import TechnicalsOutput
+        from trading_agent.screening.financials import Financials, PeriodFinancials
+
+        async def call_tool(name: str, _inp):
+            if name == "fundamentals":
+                return FundamentalsOutput(
+                    success=True, data={"revenue_growth": 0.2, "operating_margin": 0.2}
+                )
+            if name == "technicals":
+                return TechnicalsOutput(success=True, data={"rsi": 50.0}, signals=[])
+            return NewsOutput(success=True, articles=[])
+
+        def fin_fetcher(_ticker: str) -> Financials:
+            # 倒産リスク域（Z risk）の財務 → credibility warn
+            cur = PeriodFinancials(
+                period="2026", working_capital=-100.0, total_assets=1000.0,
+                retained_earnings=50.0, ebit=10.0, total_liabilities=900.0, revenue=300.0,
+            )
+            return Financials(ticker="X", current=cur, prior=None, market_cap=100.0)
+
+        judge = make_live_judge_fn(call_tool, financials_fetcher=fin_fetcher)
+        verdicts, _split, vr, _cmd = await judge("X")
+        assert vr.credibility_flag == "warn"
+        assert vr.default_hold is True  # 信用性warnは保留へ寄せる
+        mel = next(v for v in verdicts if v.judge == "MELCHIOR")
+        assert any("倒産リスク" in c["claim"] for c in mel.counter_within_domain)
+
     async def test_failure_is_isolated(self, engine) -> None:
         ids = materialize_decisions(engine, ["NVDA"])
 

@@ -92,8 +92,13 @@ TradingAgents の Bear論拠の組み立て方を翻案（別Bear体は置かな
 - **P3-8 反証フィールド**〔✅ 2026-05-23〕：`JudgeVerdict.counter_within_domain: list[dict]`（claim＋source_refs）。永続化・冪等保存も対応。
 - **P3-9 BALTHASAR反証（コード）**〔✅ 2026-05-23〕：buy寄り→過熱(RSI≥70)/弱気ダイバージェンス(macd_bearish)/上限突破(割高)/
   デッドクロス併存を摘出。warn寄り→売られすぎ(RSI≤30)/ゴールデンクロス/macd強気を摘出。全てコード・出典付き(R1/R5)、無ければ空(R4)。
-- **P3-10 MELCHIOR/CASPER反証（LLM摘出＋コード照合）**：「逆向きの事実をデータから選べ・創作禁止」。
-  予測語を弾き source_refs 必須、防御層で実在照合（不通過は捨てる）。
+- **P3-10 MELCHIOR反証**〔✅ 2026-05-23・**コード版に再設計**〕：当初LLM摘出だったが、研究で
+  「利益の質はコード計算可能」と判明 → **信用性スコア(S5)の危険域をコード摘出**（`melchior_credibility_counter`）。
+  M-Score risk＝利益操作の疑い／Z-Score risk＝倒産リスク／F-Score risk＝財務健全性低、を MELCHIOR の
+  `counter_within_domain` に出典付きで（R5：創作でなく計算結果の摘出）。`make_live_judge_fn` が2期財務から自動付与。
+  ※CASPER反証(LLM)は将来。
+  - **配線(S5b)**：`assess_credibility`→`verify(credibility_flag=)`。warn は default_hold＝保留へ（D-17保守）。
+    業種除外（金融/REITはM/Z無効）は universe の sector を参照。実測 NVDA＝warn（M risk・F4/9）でMELCHIOR反証＋保留。
 - **P3-11 碇が反証を束ねる**〔✅ 2026-05-23〕：碇の反対論拠に各審判の counter_within_domain を集約（`_aggregate_counters`）。
   審判の摘出を束ねるだけ＝MAGI外の新事実なし（magi_compliant維持・R5）。
 - **P3-12 統合：全会一致でも内在不安**〔✅ 2026-05-23〕：全会一致でも複数審判（≥2）が自領域に逆向きの事実を摘出した時、

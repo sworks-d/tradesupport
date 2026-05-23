@@ -12,6 +12,8 @@ universe_refresh / link_topics / notify は Phase 1 では軽量（no-op / ロ�
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, col, select
 
@@ -23,6 +25,7 @@ from trading_agent.agents.screening_agent import ScreeningAgent, ScreeningAgentI
 from trading_agent.agents.sell_recommender import SellRecommenderAgent, SellRecommenderInput
 from trading_agent.agents.topics_collector import TopicsCollectorAgent, TopicsCollectorInput
 from trading_agent.magi.persist import (
+    FinancialsFetcher,
     magi_verify,
     make_live_judge_fn,
     materialize_decisions,
@@ -39,6 +42,7 @@ from trading_agent.mcp_tools.technicals import TechnicalsTool
 from trading_agent.models.batch import BatchState
 from trading_agent.models.signals import BuySignal, ScreeningResult, SellSignal
 from trading_agent.models.topics import Topic
+from trading_agent.models.universe import Universe
 from trading_agent.orchestrator.dag import DAGExecutor, DAGNode, overall_status
 from trading_agent.utils.logger import get_logger
 from trading_agent.utils.time_utils import utcnow
@@ -131,6 +135,13 @@ def _buy_candidate_tickers(engine: Engine, limit: int = 10) -> list[str]:
     return out
 
 
+def _sector_lookup(engine: Engine) -> Callable[[str], str | None]:
+    """ticker→セクター（信用性フィルタの業種除外用）。universe を1回読んで辞書化。"""
+    with Session(engine) as session:
+        sectors = {u.ticker: u.sector for u in session.exec(select(Universe))}
+    return lambda ticker: sectors.get(ticker)
+
+
 def _summary(engine: Engine) -> str:
     today = utcnow().date()
     with Session(engine) as session:
@@ -141,13 +152,23 @@ def _summary(engine: Engine) -> str:
 
 
 async def run_morning_batch(
-    engine: Engine, *, host: MCPHost | None = None, dry_run: bool = False
+    engine: Engine,
+    *,
+    host: MCPHost | None = None,
+    dry_run: bool = False,
+    financials_fetcher: FinancialsFetcher | None = None,
 ) -> BatchState:
-    """朝バッチを DAG で実行し、BatchState を保存して返す。"""
+    """朝バッチを DAG で実行し、BatchState を保存して返す。
+
+    `financials_fetcher` を渡すと magi_verify で信用性フィルタ(S5)を効かせる
+    （MELCHIOR反証＋credibility_flag）。既定 None＝OFF（テストはネット非依存）。実運用は
+    `fetch_financials` を渡す。業種除外は universe の sector を引く。
+    """
     invocation_id = f"morning_{utcnow().date().isoformat()}"
     resolved_host = host if host is not None else build_host(engine)
     ctx = AgentContext(host=resolved_host, engine=engine, invocation_id=invocation_id)
     started_at = utcnow()
+    sector_of = _sector_lookup(engine) if financials_fetcher is not None else None
 
     async def pre_check() -> dict[str, bool]:
         return {"ok": True}
@@ -198,8 +219,11 @@ async def run_morning_batch(
 
     async def run_magi_verify() -> dict[str, int]:
         # 当日の未検証 decision に 3審判→防御→統合→碇 を回して保存（決定論・コスト0）
+        # financials_fetcher があれば信用性フィルタ(S5)も効かせる（MELCHIOR反証＋credibility）
         ids = pending_decision_ids(engine)
-        judge_fn = make_live_judge_fn(ctx.call_tool)
+        judge_fn = make_live_judge_fn(
+            ctx.call_tool, financials_fetcher=financials_fetcher, sector_lookup=sector_of
+        )
         return await magi_verify(engine, ids, judge_fn)
 
     async def link_topics() -> dict[str, bool]:

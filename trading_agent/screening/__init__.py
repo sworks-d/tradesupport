@@ -6,6 +6,7 @@ from trading_agent.screening.credibility import (
     altman_z_score,
     assess_credibility,
     beneish_m_score,
+    melchior_credibility_counter,
     piotroski_f_score,
 )
 from trading_agent.screening.financials import (
@@ -23,5 +24,6 @@ __all__ = [
     "assess_credibility",
     "beneish_m_score",
     "fetch_financials",
+    "melchior_credibility_counter",
     "piotroski_f_score",
 ]

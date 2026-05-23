@@ -195,3 +195,22 @@ def assess_credibility(fin: Financials, *, sector: str | None = None) -> Credibi
     return CredibilityResult(
         m_score=m, f_score=f, z_score=z, credibility_flag=flag, warnings=warnings
     )
+
+
+def melchior_credibility_counter(
+    cred: CredibilityResult, *, source_refs: list[dict] | None = None
+) -> list[dict]:
+    """S6：信用性スコアの危険域を MELCHIOR の自領域反証として摘出（B-3のコード版）。
+
+    MELCHIOR が「増収率高い→買い」でも、利益の質/倒産リスクの危険域を逆向きの事実として併記。
+    全てコード計算の結果に基づく（R5：創作でなく摘出）。各反証に出典(財務)を付ける。
+    """
+    refs = source_refs or [{"source": "yfinance", "ref": "financial-statements"}]
+    out: list[dict] = []
+    if cred.m_score.zone == "risk":
+        out.append({"claim": f"利益の質に疑い（{cred.m_score.note}）", "source_refs": refs})
+    if cred.z_score.zone == "risk":
+        out.append({"claim": f"倒産リスク域（{cred.z_score.note}）", "source_refs": refs})
+    if cred.f_score.zone == "risk":
+        out.append({"claim": f"財務健全性が低い（{cred.f_score.note}）", "source_refs": refs})
+    return out

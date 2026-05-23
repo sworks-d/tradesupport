@@ -30,3 +30,4 @@
 - `0022-s4a-two-period-financials.md` — S4a(餌)：2期分財務（yfinance諸表・キー不要）＝M/F/Z・MELCHIOR反証の前提
 - `0023-s5-credibility-mfz.md` — S5(弾)：信用性フィルタ Beneish M / Piotroski F / Altman Z（独立warn・コード計算・定性ゾーン）
 - `0024-track-research-docs.md` — 研究3doc(RESEARCH_METHODS/RESEARCH_TO_IMPLEMENTATION/RISK_EXOSKELETON)をリポジトリに格納
+- `0025-s5b-s6-credibility-wired.md` — S5b/S6：信用性をMAGIに配線（credibility_flag→保留／M・Z・F危険域をMELCHIORコード反証に）

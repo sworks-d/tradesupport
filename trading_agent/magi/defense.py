@@ -35,8 +35,13 @@ def verify(
     *,
     now: datetime | None = None,
     max_age_days: int = 400,
+    credibility_flag: str = "ok",
 ) -> VerificationResult:
-    """3審判の判定を機械照合し、決裁前ゲート（既定保留）を判定する。"""
+    """3審判の判定を機械照合し、決裁前ゲート（既定保留）を判定する。
+
+    `credibility_flag`＝信用性フィルタ(S5)の結果（ok/warn）。warn（粉飾/倒産の疑い）は
+    決裁の既定を「保留」に寄せる（D-17：不正企業＝ゼロ化への保守側）。
+    """
     now = now or utcnow()
     unverified: list[str] = []
     notes: list[str] = []
@@ -63,12 +68,15 @@ def verify(
 
     figures_checked = len(unverified) == 0
     time_ok = all(v.data_asof is not None for v in actionable)
-    credibility_flag = "ok"  # 信用性フィルタ(D-14)未実装 → 既定 ok
     gendo_compliant = None  # 碇司令(B5)未実装
+    if credibility_flag == "warn":
+        notes.append("信用性フィルタ警戒（粉飾/倒産の疑い）")
 
-    # 決裁前ゲート：未照合 or 判定不能 or 全会一致買いでない（割れ）→ 既定「保留」
+    # 決裁前ゲート：未照合 or 判定不能 or 割れ or 信用性warn → 既定「保留」
     unanimous_buy = bool(actionable) and buy_count == len(verdicts)
-    default_hold = (not figures_checked) or has_na or (not unanimous_buy)
+    default_hold = (
+        (not figures_checked) or has_na or (not unanimous_buy) or (credibility_flag == "warn")
+    )
 
     return VerificationResult(
         figures_checked=figures_checked,
