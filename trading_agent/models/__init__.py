@@ -5,7 +5,7 @@
 
 from trading_agent.models.analytics import AnalysisLog, CostLog, HealthCheck
 from trading_agent.models.batch import BatchState
-from trading_agent.models.decisions import Decision
+from trading_agent.models.decisions import DECISION_STATUSES, Decision
 from trading_agent.models.magi import (
     CommanderRec,
     JudgeVerdict,
@@ -30,6 +30,7 @@ __all__ = [
     "BuySignal",
     "CommanderRec",
     "CostLog",
+    "DECISION_STATUSES",
     "DEFAULT_SETTINGS",
     "Decision",
     "EarningsCalendar",

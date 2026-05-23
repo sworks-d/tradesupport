@@ -21,9 +21,11 @@ from trading_agent.db import (
     seed_default_settings,
 )
 from trading_agent.models import (
+    DECISION_STATUSES,
     DEFAULT_SETTINGS,
     BatchState,
     BuySignal,
+    Decision,
     Setting,
     Topic,
     Universe,
@@ -150,6 +152,43 @@ class TestCrud:
             assert row.affected_tickers == ["AAPL", "MSFT"]
             assert row.is_archived is False
 
+    def test_decision_magi_candidate_minimal(self, engine) -> None:
+        """A-3：MAGI候補は予測値なしで status='verifying' として保存できる。"""
+        with Session(engine) as session:
+            session.add(Decision(date=dt.date(2026, 5, 23), ticker="NVDA", action="buy"))
+            session.commit()
+        with Session(engine) as session:
+            row = session.exec(select(Decision)).one()
+            assert row.status == "verifying"  # 既定
+            assert row.score is None  # nullable 化（D-06：UIに総合点は出さない）
+            assert row.expected_return is None
+            assert row.target_period_days is None
+            assert row.thesis_at_decision is None
+            assert row.evaluation_date is None
+            assert row.gendo_stance is None
+            assert row.verified_at is None
+            assert row.hit_or_miss == "pending"
+            assert row.scenarios == {}
+
+    def test_decision_lifecycle_transition(self, engine) -> None:
+        """A-3：verifying→verified へ進め、碇の構えと検証時点を埋められる。"""
+        ts = dt.datetime(2026, 5, 23, 6, 0, 0)
+        with Session(engine) as session:
+            session.add(Decision(date=dt.date(2026, 5, 23), ticker="NVDA", action="buy"))
+            session.commit()
+            row = session.exec(select(Decision)).one()
+            row.status = "verified"
+            row.gendo_stance = "要検討"
+            row.verified_at = ts
+            session.add(row)
+            session.commit()
+        with Session(engine) as session:
+            row = session.exec(select(Decision)).one()
+            assert row.status == "verified"
+            assert row.status in DECISION_STATUSES
+            assert row.gendo_stance == "要検討"
+            assert row.verified_at == ts
+
     def test_batch_state_dict_roundtrip(self, engine) -> None:
         node_status = {"screening": "success", "market_analyst": "partial"}
         with Session(engine) as session:
@@ -207,7 +246,8 @@ class TestInitDatabase:
         db_path = tmp_path / "init.sqlite"
         result = init_database(db_path)
         assert db_path.exists()
-        assert result["tables"] == 21  # 既存17 + MAGI 4表(judge_verdict/verification/split_pattern/commander_rec)
+        # 既存17 + MAGI 4表(judge_verdict/verification/split_pattern/commander_rec)
+        assert result["tables"] == 21
         assert result["settings_inserted"] == len(DEFAULT_SETTINGS)
 
     def test_init_is_idempotent(self, tmp_path: Path) -> None:

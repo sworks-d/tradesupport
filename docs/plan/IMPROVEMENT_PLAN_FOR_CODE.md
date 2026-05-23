@@ -65,7 +65,7 @@ C群：OSS借用（着手条件＝A-5後。decisionが生成される状態。�
 
 # A群：断線解消（最優先）
 
-## A-3 decisions スキーマ再構成 ★最初にやる ［方針確定済 2026-05-23］
+## A-3 decisions スキーマ再構成 ★最初にやる ［✅ 完了 2026-05-23］
 - **目的**：ver1形（総合スコア前提）の `decisions` をMAGIに適合させ、提案を保存可能に。下流全部の前提。
 - **対象**：`models/decisions.py`、`alembic/versions/`、`tests/unit/test_models.py`（＋`test_sell_recommender.py`）。
 - **確定方針（ユーザー確定。叩き台ではない）**：
@@ -83,6 +83,11 @@ C群：OSS借用（着手条件＝A-5後。decisionが生成される状態。�
 - **ハルシネ防止**：R7 既存カラム無改変（追加とnullable化のみ）。
 - **受入**：MAGI候補から decision を生成・保存できる。既存テスト green（更新分は意図をコミットに記録）。
 - **依存**：なし。**規模**：中。**後方互換**：Decision生成箇所が皆無のため影響最小。
+- **実績（2026-05-23）**：`models/decisions.py` に status（既定 verifying・index）/gendo_stance/verified_at を追加、
+  score/expected_return/target_period_days/thesis_at_decision/evaluation_date を nullable 化（既存カラムは無削除）。
+  `DECISION_STATUSES`（9遷移）を定義・公開。スキーマは create_all 生成のため alembic 不要（Phase1）。
+  新規テスト2（verifying最小生成／verifying→verified遷移）。Decision生成箇所が無いため既存テストは無改変で green。
+  **これで A-4（DAG接続）の保存先が用意できた**。
 
 ## A-1 universe 投入  [要ユーザー判断：銘柄リストの出所]
 - **目的**：母集団を入れてスクリーニングを起動可能に（NVDA決め打ち脱却）。

@@ -17,3 +17,4 @@
 - `0009-a2-news-self-build-casper-unblock.md` — A-2ニュース自前実装でCASPER解放（NVDA53件・CASPER=buy／D-22精度最優先）
 - `0010-p3-7-casper-llm-interpretation.md` — P3-7 CASPER LLM解釈（=Sonnet）。数える→読むへ・決定論フォールバック付き
 - `0011-p1-5a-melchior-multifactor.md` — P1-5(a) MELCHIOR多面化（2→14指標・成長×収益性×健全性×CFのルーブリック）
+- `0012-a3-decisions-schema-magi-fit.md` — A-3 decisionsスキーマをMAGI適合（status/gendo_stance/verified_at追加・予測値nullable化）
