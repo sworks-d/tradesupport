@@ -14,19 +14,29 @@ from trading_agent.screening.financials import (
     PeriodFinancials,
     fetch_financials,
 )
+from trading_agent.screening.relative_strength import (
+    RSResult,
+    compute_relative_strength,
+    market_proxy,
+    relative_strength_live,
+)
 from trading_agent.screening.turnaround import TurnaroundResult, assess_turnaround
 
 __all__ = [
     "CredibilityResult",
     "Financials",
     "PeriodFinancials",
+    "RSResult",
     "ScoreResult",
     "TurnaroundResult",
     "altman_z_score",
     "assess_credibility",
     "assess_turnaround",
     "beneish_m_score",
+    "compute_relative_strength",
     "fetch_financials",
+    "market_proxy",
     "melchior_credibility_counter",
     "piotroski_f_score",
+    "relative_strength_live",
 ]
