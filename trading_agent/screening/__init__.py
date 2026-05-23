@@ -8,6 +8,7 @@ from trading_agent.screening.credibility import (
     beneish_m_score,
     melchior_credibility_counter,
     piotroski_f_score,
+    scan_disclosure_red_flags,
 )
 from trading_agent.screening.financials import (
     Financials,
@@ -39,4 +40,5 @@ __all__ = [
     "melchior_credibility_counter",
     "piotroski_f_score",
     "relative_strength_live",
+    "scan_disclosure_red_flags",
 ]

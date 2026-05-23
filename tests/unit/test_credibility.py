@@ -11,6 +11,7 @@ from trading_agent.screening.credibility import (
     beneish_m_score,
     melchior_credibility_counter,
     piotroski_f_score,
+    scan_disclosure_red_flags,
 )
 from trading_agent.screening.financials import Financials, PeriodFinancials
 
@@ -131,6 +132,37 @@ class TestAssessCredibility:
         assert res.m_score.zone == "na"
         assert res.z_score.zone == "na"
         assert "業種除外" in res.m_score.note
+
+
+class TestDisclosureRedFlags:
+    def test_detects_going_concern_and_correction(self) -> None:
+        disc = [
+            {"title": "継続企業の前提に関する重要事象等", "description": ""},
+            {"title": "有価証券報告書の訂正報告書の提出", "description": ""},
+            {"title": "通期業績予想の修正", "description": ""},  # 通常開示＝フラグでない
+        ]
+        flags = scan_disclosure_red_flags(disc)
+        assert any("継続企業" in f for f in flags)
+        assert any("訂正" in f for f in flags)
+        assert not any("業績予想" in f for f in flags)
+
+    def test_empty_or_none(self) -> None:
+        assert scan_disclosure_red_flags(None) == []
+        assert scan_disclosure_red_flags([{"title": "通常のIR"}]) == []
+
+    def test_assess_credibility_warns_on_disclosure(self) -> None:
+        # 健全な財務でも、開示にGC注記があれば credibility warn（S4b・D-14）
+        t = _pf("2026", working_capital=500.0, total_assets=1000.0, retained_earnings=600.0,
+                ebit=250.0, total_liabilities=500.0, revenue=1000.0)
+        res = assess_credibility(
+            _fin(t, None, market_cap=3000.0),
+            disclosures=[{"title": "継続企業の前提に関する注記"}],
+        )
+        assert res.credibility_flag == "warn"
+        assert res.disclosure_flags  # GCフラグ
+        # MELCHIOR反証にも開示フラグが出る
+        counter = melchior_credibility_counter(res)
+        assert any("開示レッドフラグ" in c["claim"] for c in counter)
 
 
 class TestMelchiorCredibilityCounter:

@@ -21,6 +21,41 @@ _EXCLUDED_SECTORS = {
     "Real Estate", "REIT",
 }
 
+# S4b：開示メタデータ（TDnet/EDINET）の信用性レッドフラグ（D-14 第1フィルタ）。
+# キーワード→ラベル。XBRL深掘り（GC注記の本文照合）は要EDINETキーの将来拡張。
+_DISCLOSURE_RED_FLAGS: dict[str, str] = {
+    "上場廃止": "上場廃止に関する開示",
+    "特設注意市場": "特設注意市場銘柄",
+    "監理銘柄": "監理銘柄",
+    "継続企業の前提": "継続企業の前提に関する注記（GC）",
+    "不適正意見": "監査：不適正意見",
+    "意見不表明": "監査：意見不表明",
+    "限定付適正意見": "監査：限定付適正意見",
+    "内部統制報告書の訂正": "内部統制報告書の訂正",
+    "開示すべき重要な不備": "内部統制の重要な不備",
+    "有価証券報告書の訂正": "有価証券報告書の訂正（数値信頼性に懸念）",
+    "訂正有価証券報告書": "訂正有価証券報告書",
+    "課徴金": "課徴金（不正会計の疑い）",
+    "不適切な会計": "不適切な会計処理",
+    "粉飾": "粉飾の疑い",
+}
+
+
+def scan_disclosure_red_flags(disclosures: list[dict] | None) -> list[str]:
+    """開示（TDnet/EDINET）のタイトル/説明から信用性レッドフラグを抽出（D-14）。
+
+    キーワード照合のみ（コード・LLM不使用）。EDINETキー無しでも TDnet 由来の開示で動く。
+    """
+    if not disclosures:
+        return []
+    flags: list[str] = []
+    for d in disclosures:
+        text = f"{d.get('title', '')} {d.get('description', '')}"
+        for kw, label in _DISCLOSURE_RED_FLAGS.items():
+            if kw in text and label not in flags:
+                flags.append(label)
+    return flags
+
 
 @dataclass
 class ScoreResult:
@@ -37,6 +72,7 @@ class CredibilityResult:
     z_score: ScoreResult
     credibility_flag: str  # "ok" / "warn"（防御層 credibility_flag へ）
     warnings: list[str] = field(default_factory=list)  # 危険ゾーンの独立フラグ列
+    disclosure_flags: list[str] = field(default_factory=list)  # 開示由来のレッドフラグ（S4b・D-14）
 
 
 def _ratio(a: float | None, b: float | None) -> float | None:
@@ -169,11 +205,14 @@ def altman_z_score(fin: Financials) -> ScoreResult:
     return ScoreResult("Altman Z", round(z, 2), zone, note)
 
 
-def assess_credibility(fin: Financials, *, sector: str | None = None) -> CredibilityResult:
-    """3手法を独立に評価し、防御層向けの credibility_flag（ok/warn）に集約する。
+def assess_credibility(
+    fin: Financials, *, sector: str | None = None, disclosures: list[dict] | None = None
+) -> CredibilityResult:
+    """3手法＋開示レッドフラグを独立に評価し、credibility_flag（ok/warn）に集約する。
 
     M/Z は金融・REIT で当てはまらない＝na（除外）。**一致は求めない**：どれか1つでも危険なら warn。
     F-Score は質評価（MELCHIORへ）。低Fも value trap 警戒として warn に寄与。
+    disclosures（TDnet/EDINET）の D-14 レッドフラグ（GC注記/訂正/上場廃止等）も warn に寄与（S4b）。
     """
     excluded = sector is not None and sector in _EXCLUDED_SECTORS
     if excluded:
@@ -183,6 +222,7 @@ def assess_credibility(fin: Financials, *, sector: str | None = None) -> Credibi
         m = beneish_m_score(fin)
         z = altman_z_score(fin)
     f = piotroski_f_score(fin)
+    disclosure_flags = scan_disclosure_red_flags(disclosures)
 
     warnings: list[str] = []
     if m.zone == "risk":
@@ -191,9 +231,11 @@ def assess_credibility(fin: Financials, *, sector: str | None = None) -> Credibi
         warnings.append(f"Z-Score:{z.note}")
     if f.zone == "risk":
         warnings.append(f"F-Score:{f.note}")
+    warnings.extend(f"開示:{flag}" for flag in disclosure_flags)
     flag = "warn" if warnings else "ok"
     return CredibilityResult(
-        m_score=m, f_score=f, z_score=z, credibility_flag=flag, warnings=warnings
+        m_score=m, f_score=f, z_score=z, credibility_flag=flag,
+        warnings=warnings, disclosure_flags=disclosure_flags,
     )
 
 
@@ -213,4 +255,6 @@ def melchior_credibility_counter(
         out.append({"claim": f"倒産リスク域（{cred.z_score.note}）", "source_refs": refs})
     if cred.f_score.zone == "risk":
         out.append({"claim": f"財務健全性が低い（{cred.f_score.note}）", "source_refs": refs})
+    for flag in cred.disclosure_flags:
+        out.append({"claim": f"開示レッドフラグ：{flag}", "source_refs": refs})
     return out

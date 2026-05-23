@@ -35,3 +35,4 @@
 - `0027-s7a-turnaround-vshape.md` — S7a(弾)：V字質判定（底×反転の点火×株価転換×生存性・value trap除外）
 - `0028-s7b-screening-value-trap-guard.md` — S7b(弾)：screening V字スコアに value trap ガード（Value×Momentum・点火なしの底は割引）
 - `0029-s7c-theme-relative-strength.md` — S7c(テーマ)：相対力＋4象限（Improving＝テーマV字・市場proxy ^GSPC/^N225）
+- `0030-s4b-disclosure-credibility.md` — S4b：開示(TDnet/EDINET)のD-14レッドフラグ走査→credibility warn（GC注記/訂正/上場廃止等）
