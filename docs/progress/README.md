@@ -48,3 +48,4 @@
 - `0040-backtest-harness.md` — 価格ベース・先読みなしバックテスト＋CLI（資産成長の最速検証・生存者バイアス注意）
 - `0041-melchior-accrual-counter.md` — MELCHIOR accrual反証（CFO<NI/発生高/DSO/在庫を2期財務からコード摘出）
 - `0042-spec-sync.md` — spec/00_overview の進捗マーカーを実装状態に同期（doc drift解消）
+- `0043-user-runbook.md` — ユーザー手順書（準備→動作確認→自動化→ペーパー→実弾の実行順）
