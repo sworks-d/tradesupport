@@ -52,14 +52,95 @@ def _refs_to_json(refs: list[SourceRef] | None) -> list[dict[str, Any]]:
 
 
 def melchior(ticker: str, fundamentals: Any) -> JudgeVerdict:
-    """業績審判：fundamentals の実数値だけで可否を出す。"""
+    """業績審判：fundamentals の実数値だけで、成長・収益性・健全性・CFを多面評価する（P1-5）。
+
+    数値はすべてコード取得値（R1）。欠損した指標は評価から外す（R4：推測で埋めない）。
+    総合スコアは出さず、良い兆候(pos)と警戒材料(red)を集約して buy/hold/warn/na を決める。
+    財務は保守的に：赤字・減収減益・過剰レバレッジ・流動性不足など赤が1つでもあれば warn 寄り。
+    """
     data = getattr(fundamentals, "data", {}) or {}
     refs = _refs_to_json(getattr(fundamentals, "source_refs", []))
     asof = getattr(fundamentals, "data_asof", None)
 
+    def pct(x: float) -> str:
+        return f"{x * 100:.0f}%"
+
+    parts: list[str] = []  # 値つき所見（reason 用）
+    pos: list[str] = []  # 良い兆候
+    red: list[str] = []  # 警戒材料（赤）
+    seen = 0  # 評価に使えた指標数（=確信度の土台）
+
     rg = data.get("revenue_growth")
+    if rg is not None:
+        seen += 1
+        parts.append(f"増収率{pct(rg)}")
+        if rg >= 0.10:
+            pos.append("増収")
+        elif rg < 0:
+            red.append("減収")
+
+    eg = data.get("earnings_growth")
+    if eg is not None:
+        seen += 1
+        parts.append(f"純益成長{pct(eg)}")
+        if eg >= 0.10:
+            pos.append("増益")
+        elif eg < 0:
+            red.append("減益")
+
     om = data.get("operating_margin")
-    if rg is None and om is None:
+    if om is not None:
+        seen += 1
+        parts.append(f"営業利益率{pct(om)}")
+        if om >= 0.10:
+            pos.append("営業利益率良好")
+        elif om < 0:
+            red.append("営業赤字")
+
+    pm = data.get("profit_margin")
+    if pm is not None:
+        seen += 1
+        parts.append(f"純利益率{pct(pm)}")
+        if pm >= 0.10:
+            pos.append("高純利益率")
+        elif pm < 0:
+            red.append("最終赤字")
+
+    roe = data.get("roe")
+    if roe is not None:
+        seen += 1
+        parts.append(f"ROE{pct(roe)}")
+        if roe >= 0.15:
+            pos.append("高ROE")
+        elif roe < 0:
+            red.append("ROEマイナス")
+
+    de = data.get("debt_to_equity")
+    if de is not None:
+        seen += 1
+        ratio = de / 100 if de > 5 else de  # yfinance は % 表記が多い → 比率へ
+        parts.append(f"D/E{ratio:.1f}")
+        if ratio > 2.0:
+            red.append("高レバレッジ")
+
+    cr = data.get("current_ratio")
+    if cr is not None:
+        seen += 1
+        parts.append(f"流動比率{cr:.1f}")
+        if cr < 1.0:
+            red.append("流動性不足")
+        elif cr >= 1.5:
+            pos.append("流動性良好")
+
+    fcf = data.get("free_cashflow")
+    if fcf is not None:
+        seen += 1
+        if fcf < 0:
+            red.append("FCFマイナス")
+        else:
+            pos.append("FCF黒字")
+
+    if seen == 0:
         return JudgeVerdict(
             ticker=ticker,
             judge="MELCHIOR",
@@ -70,27 +151,38 @@ def melchior(ticker: str, fundamentals: Any) -> JudgeVerdict:
             data_asof=asof,
         )
 
-    parts: list[str] = []
-    if rg is not None:
-        parts.append(f"増収率{rg * 100:.0f}%")
-    if om is not None:
-        parts.append(f"営業利益率{om * 100:.0f}%")
+    growth_ok = (rg is not None and rg >= 0.10) or (eg is not None and eg >= 0.10)
+    profit_ok = (
+        (om is not None and om >= 0.10)
+        or (pm is not None and pm >= 0.10)
+        or (roe is not None and roe >= 0.15)
+    )
 
-    good = (rg is not None and rg >= 0.10) and (om is not None and om >= 0.10)
-    bad = (rg is not None and rg < 0) or (om is not None and om < 0)
-    if good:
-        verdict, conf = "buy", "高"
-    elif bad:
-        verdict, conf = "warn", "中"
+    if red:
+        verdict = "warn"
+        conf = "高" if (len(red) >= 2 or seen >= 4) else "中"
+    elif growth_ok and profit_ok:
+        verdict = "buy"
+        conf = "高"
+    elif pos:
+        verdict = "hold"
+        conf = "中" if seen >= 3 else "低"
     else:
-        verdict, conf = "hold", "中"
+        verdict = "hold"
+        conf = "低"
+
+    reason = "・".join(parts) + "。"
+    if red:
+        reason += f"警戒：{'／'.join(red)}。"
+    elif verdict == "buy":
+        reason += "成長と収益性がともに良好。"
 
     return JudgeVerdict(
         ticker=ticker,
         judge="MELCHIOR",
         verdict=verdict,
         confidence=conf,
-        reason="・".join(parts) + "。",
+        reason=reason,
         source_refs=refs,
         data_asof=asof,
     )
@@ -138,7 +230,10 @@ def balthasar(ticker: str, technicals: Any) -> JudgeVerdict:
 
 
 # 文脈の方向を示唆するキーワード（決定論ヒューリスティック。本格判定はLLMで補完）
-_NEG = ("下方修正", "減益", "赤字", "訴訟", "不正", "遅延", "リコール", "delay", "lawsuit", "recall")
+_NEG = (
+    "下方修正", "減益", "赤字", "訴訟", "不正", "遅延", "リコール",
+    "delay", "lawsuit", "recall",
+)
 _POS = ("上方修正", "最高益", "増配", "受注", "record", "beat", "surge")
 
 

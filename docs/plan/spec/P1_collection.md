@@ -44,14 +44,21 @@ LLMはこのフェーズで一切使わない（収集はすべてAPI/コード�
 - ハルシネ防止：R1取得値のみ／R2 報告期(fiscal_period)を as_of に保持（四半期取り違え対策）。
 - 受入：実数値＋報告期が返る（既存テスト green）。**過不足**：一次情報未解析＝浅い→P1-5で補完。
 
-### P1-5 財務 一次情報（深掘り）  〔❌ 未解析〕
+### P1-5 財務 深掘り  〔🟡 yfinance多面化済（無料）／EDGAR/EDINET一次情報は❌〕
 - 全体ゴール：MELCHIORの深掘り＋P2-3信用性の判定材料。
 - 前からの引き継ぎ：ticker（市場でUS/JP分岐）。
-- 目的：SEC EDGAR(10-K/10-Q/8-K)・EDINET(有報/四報/監査意見/GC注記)を取得・解析。
-- 実装：`fundamentals.py`/`disclosure.py` に EDGAR/EDINET provider 追加（XBRL/書類）。要 EDINETキー。
-- 次への引き渡し：深掘り財務＋監査意見/GC注記フラグ＋出典URL＋時点（→P2-3, P3-1）。
-- ハルシネ防止：R2 出典URL実在確認／R5 LLMで要約する場合も数値はXBRL値のみ／R4 取得不能はna。
-- 受入：1銘柄でEDGAR/EDINETの一次情報が取得され、監査意見/GC注記が判定できる。
+- **2段構成**：
+  - **(a) 指標の多面化〔✅ 2026-05-23・無料・キー不要〕**：`fundamentals.py` の `_YF_FIELD_MAP` を
+    成長(revenue/earnings growth)・収益性(operating/profit/gross margin・ROE/ROA)・健全性(D/E・流動比率・
+    quick・FCF・total_debt/cash)・バリュエーション(forward_per・P/S・PEG・beta) に拡張。`_default_fields()` も
+    MELCHIORが見る14指標に拡張。**MELCHIORの判定ロジックを2指標→多面ルーブリックに刷新**（成長×収益性×
+    健全性×CF。赤1つでwarn寄り・総合スコアなし）。実測 NVDA＝14指標取得・reasonが
+    「増収率85%・純益成長214%・営業利益率66%・純利益率63%・ROE114%・D/E0.1・流動比率3.4」へ厚みが出た。
+  - **(b) 一次情報の取得・解析〔❌ 残〕**：SEC EDGAR(10-K/10-Q/8-K)・EDINET(有報/四報/監査意見/GC注記)。
+    `fundamentals.py`/`disclosure.py` に provider 追加（XBRL/書類）。要 EDINETキー。→ P2-3信用性・第1フィルタへ。
+- 次への引き渡し：深掘り財務（多面指標）＋（後段(b)で）監査意見/GC注記フラグ＋出典URL＋時点（→P2-3, P3-1）。
+- ハルシネ防止：R1 数値はコード取得値のみ／R4 欠損指標は評価から除外（埋めない）／R2 出典URL・報告期を保持。
+- 受入：(a) NVDAで多面指標が取得されMELCHIORが厚い根拠を返す〔達成〕。(b) 1銘柄でEDGAR/EDINET一次情報＋監査意見/GC注記が判定できる〔残〕。
 
 ### P1-6 ニュース収集（銘柄別）  〔✅ A-2実装済（yfinance＋GoogleNews自前）／★本書の"深さ"の見本〕
 - **全体ゴール**：CASPER（文脈審判）に"なぜ動くか"の一次材料を供給し、MAGIを3脚で立たせる。

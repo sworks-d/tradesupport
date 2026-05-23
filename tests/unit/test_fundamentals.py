@@ -7,8 +7,10 @@ from __future__ import annotations
 
 from trading_agent.mcp_tools.base import DataNotFoundError, MCPErrorType, NetworkError
 from trading_agent.mcp_tools.fundamentals import (
+    _YF_FIELD_MAP,
     FundamentalsInput,
     FundamentalsTool,
+    _default_fields,
     is_jp_ticker,
     primary_source_url,
 )
@@ -38,6 +40,41 @@ class _CountingFetcher:
         if self.notfound:
             raise DataNotFoundError("unknown ticker")
         return dict(self.values), self.fiscal_period
+
+
+class TestFieldCoverage:
+    """P1-5：MELCHIOR の多面評価に必要な指標が既定で取得されること。"""
+
+    def test_defaults_cover_growth_profit_health(self) -> None:
+        defaults = set(_default_fields())
+        # 成長・収益性・健全性・CF を網羅
+        for f in (
+            "revenue_growth",
+            "earnings_growth",
+            "operating_margin",
+            "profit_margin",
+            "roe",
+            "debt_to_equity",
+            "current_ratio",
+            "free_cashflow",
+        ):
+            assert f in defaults, f
+
+    def test_field_map_has_yfinance_keys(self) -> None:
+        assert _YF_FIELD_MAP["debt_to_equity"] == "debtToEquity"
+        assert _YF_FIELD_MAP["free_cashflow"] == "freeCashflow"
+        assert _YF_FIELD_MAP["earnings_growth"] == "earningsGrowth"
+
+    async def test_new_fields_projected_when_present(self) -> None:
+        values = {
+            "revenue_growth": 0.2,
+            "roe": 0.18,
+            "debt_to_equity": 40.0,
+            "free_cashflow": 1.0e9,
+        }
+        tool = FundamentalsTool(fetcher=_CountingFetcher(values))
+        out = await tool.execute(FundamentalsInput(ticker="AAPL"))
+        assert set(out.data) == set(values)
 
 
 class TestMarketDetection:

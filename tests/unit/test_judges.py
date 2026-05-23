@@ -60,6 +60,50 @@ def test_melchior_na_on_missing_data() -> None:
     assert v.confidence == "na"
 
 
+# --- MELCHIOR 多面評価（P1-5：成長/収益性/健全性/CF） ----------------------
+def test_melchior_warn_on_high_leverage() -> None:
+    # 成長も収益性も良いが、過剰レバレッジ（D/E>2）は警戒材料
+    v = melchior(
+        "X", _fund({"revenue_growth": 0.2, "operating_margin": 0.2, "debt_to_equity": 250.0})
+    )
+    assert v.verdict == "warn"
+    assert "高レバレッジ" in v.reason
+    assert "D/E2.5" in v.reason  # %表記250→比率2.5に正規化
+
+
+def test_melchior_warn_on_negative_fcf() -> None:
+    v = melchior("X", _fund({"profit_margin": 0.2, "free_cashflow": -1.0e9}))
+    assert v.verdict == "warn"
+    assert "FCFマイナス" in v.reason
+
+
+def test_melchior_warn_on_liquidity_shortfall() -> None:
+    v = melchior("X", _fund({"revenue_growth": 0.15, "current_ratio": 0.7}))
+    assert v.verdict == "warn"
+    assert "流動性不足" in v.reason
+
+
+def test_melchior_buy_via_roe_path() -> None:
+    # マージン欠損でも、増収＋高ROEなら growth_ok ∧ profit_ok で buy
+    v = melchior("X", _fund({"revenue_growth": 0.12, "roe": 0.22}))
+    assert v.verdict == "buy"
+    assert v.confidence == "高"
+    assert "ROE22%" in v.reason
+
+
+def test_melchior_hold_growth_without_profitability() -> None:
+    # 増収だが収益性を確認できない → buy にはしない（hold・確信度低）
+    v = melchior("X", _fund({"revenue_growth": 0.15}))
+    assert v.verdict == "hold"
+    assert v.confidence == "低"
+
+
+def test_melchior_high_confidence_on_multiple_reds() -> None:
+    v = melchior("X", _fund({"revenue_growth": -0.1, "profit_margin": -0.05}))
+    assert v.verdict == "warn"
+    assert v.confidence == "高"  # 赤2つ以上は確信度高い警戒
+
+
 # --- BALTHASAR（株価） ------------------------------------------------------
 def test_balthasar_buy_on_golden_cross() -> None:
     v = balthasar("NVDA", _tech({"rsi": 55.0}, ["golden_cross", "macd_bullish"]))

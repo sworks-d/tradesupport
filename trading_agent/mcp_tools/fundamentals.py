@@ -31,16 +31,36 @@ from trading_agent.mcp_tools.base import (
 from trading_agent.utils.time_utils import utcnow
 
 # yfinance の info キー → 共通フィールド名
+# MELCHIOR（業績審判）が成長・収益性・健全性・キャッシュフローを多面評価できるよう拡張（P1-5）。
 _YF_FIELD_MAP: dict[str, str] = {
+    # バリュエーション
     "eps": "trailingEps",
     "per": "trailingPE",
+    "forward_per": "forwardPE",
     "pbr": "priceToBook",
+    "price_to_sales": "priceToSalesTrailing12Months",
+    "peg": "trailingPegRatio",
+    # 成長
     "revenue_growth": "revenueGrowth",
+    "earnings_growth": "earningsGrowth",
+    # 収益性（マージン・資本効率）
     "operating_margin": "operatingMargins",
+    "profit_margin": "profitMargins",
+    "gross_margin": "grossMargins",
+    "roe": "returnOnEquity",
+    "roa": "returnOnAssets",
+    # 規模・配当
     "revenue": "totalRevenue",
     "net_income": "netIncomeToCommon",
-    "roe": "returnOnEquity",
     "dividend_yield": "dividendYield",
+    # 財務健全性（レバレッジ・流動性・CF）
+    "debt_to_equity": "debtToEquity",
+    "current_ratio": "currentRatio",
+    "quick_ratio": "quickRatio",
+    "free_cashflow": "freeCashflow",
+    "total_debt": "totalDebt",
+    "total_cash": "totalCash",
+    "beta": "beta",
 }
 
 # 取得関数の型：ticker → (正規化済み数値, fiscal_period)
@@ -48,7 +68,23 @@ Fetcher = Callable[[str], tuple[dict[str, float], str]]
 
 
 def _default_fields() -> list[str]:
-    return ["eps", "per", "pbr", "revenue_growth", "operating_margin"]
+    """MELCHIOR が見る既定指標。成長・収益性・健全性・CF を網羅（取得不能な項目は欠損＝na）。"""
+    return [
+        "eps",
+        "per",
+        "pbr",
+        "revenue_growth",
+        "earnings_growth",
+        "operating_margin",
+        "profit_margin",
+        "gross_margin",
+        "roe",
+        "roa",
+        "debt_to_equity",
+        "current_ratio",
+        "free_cashflow",
+        "dividend_yield",
+    ]
 
 
 class FundamentalsInput(MCPToolInput):

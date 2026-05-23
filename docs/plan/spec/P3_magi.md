@@ -8,14 +8,17 @@ judge_verdict×3／split_pattern／verification／commander_rec（→P4 decision
 
 > 状態：✅実装済 / 🟡部分 / ❌未 / 🔵要判断 ／ コード：`trading_agent/magi/`、`models/magi.py`
 
-### P3-1 MELCHIOR（業績審判）  〔🟡 動くが素材浅い〕
+### P3-1 MELCHIOR（業績審判）  〔✅ 多面化済（成長×収益性×健全性×CF）／一次情報深掘りはP1-5(b)〕
 - 全体ゴール：業績（ファンダ）の裏付けの可否を独立に出す。
 - 前からの引き継ぎ：**fundamentals のみ**（P1-4/将来P1-5）。他審判の結論は受け取らない（独立）。
 - 目的：増収率・営業利益率等から buy/hold/warn/na と確信度(定性)を出す。
 - 実装：`magi/judges.py::melchior`。数値はコード、根拠文もコード生成（現状LLM不使用）。
 - 次への引き渡し：`JudgeVerdict(judge=MELCHIOR, verdict, confidence, reason, source_refs, data_asof)`。
 - ハルシネ防止：R1数値はfundamentals値のみ／R2出典・報告期を引継ぎ／R4欠損はna／R7 fundamentals以外見ない。
-- 受入：強財務→buy・減収→warn・欠損→na（既存テスト green）。**過不足**：素材はP1-5で深掘り。
+- 受入：強財務→buy・減収→warn・欠損→na（既存テスト green）。
+- **多面化実績（2026-05-23・P1-5(a)）**：判定ロジックを2指標→多面ルーブリックに刷新。成長(増収/増益)・
+  収益性(各マージン/ROE)・健全性(D/E>2・流動比率<1・FCFマイナス)を集約し、**赤が1つでもあれば warn 寄り**（財務は保守的）。
+  確信度は使えた指標数と一貫性に連動。reasonは全指標を値つきで列挙（数値はコード値＝R1）。**残**：一次情報(EDGAR/EDINET)はP1-5(b)。
 
 ### P3-2 BALTHASAR（株価審判）  〔✅〕
 - 全体ゴール：株価（テクニカル）の勢い・需給の可否を独立に出す。
