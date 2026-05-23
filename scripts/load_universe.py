@@ -1,8 +1,9 @@
 """universe（銘柄母集団）を投入する（A-1）。
 
-方針（D-22「自動定義」採用・2026-05-23）：**出所の明確な実在銘柄のみ**を登録し、勝手に発明しない。
-- US：流動性の高い大型株（端株可なので単価は不問）。
-- JP：流動性が高く比較的安価な主力（¥100万・単元100株前提。可否はサイジングの20%上限で担保）。
+方針（D-23「日本株主体」採用・2026-05-23）：**出所の明確な実在銘柄のみ**を登録し、勝手に発明しない。
+- **JP主体（為替対策）**：流動性の高い主力をセクター分散で（テーマ集中規律③が効くように）。
+  moomoo は JP も**単元未満（ひと株）手数料0**＝単価が高くても1株から買え、¥100kでも分散可能。
+- US従：メガキャップ少数（端株可）。¥100kでは円→ドルの為替スプレッドが効くため数を絞る。
 メタ情報（社名・セクター・時価総額・出来高）は **yfinance から取得**（出所＝yfinance）。
 upsert（ticker主キー）で冪等。`screening_agent._load_universe` が market_cap_jpy 降順で読む。
 
@@ -19,7 +20,7 @@ from pathlib import Path
 
 from sqlalchemy import inspect
 from sqlalchemy.engine import Engine
-from sqlmodel import Session
+from sqlmodel import Session, col, select
 
 from trading_agent.db import create_all, get_engine
 from trading_agent.models._common import utcnow
@@ -28,28 +29,33 @@ from trading_agent.utils.logger import get_logger
 
 _log = get_logger("load_universe")
 
-# --- 母集団（実在・検証可能な大型株。発明しない） ---------------------------
-# US：大型・高流動。端株前提のため単価は不問。
-US_TICKERS: tuple[str, ...] = (
-    "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "AVGO", "TSLA",
-    "AMD", "NFLX", "ADBE", "CRM", "COST", "JPM", "V", "MA", "WMT", "KO",
-)
-# JP：高流動かつ比較的安価な主力（証券コード）。100株ロットが¥1M枠に収まりやすい順を意識。
+# --- 母集団（実在・検証可能。発明しない）。D-23：JP主体・US従 ----------------
+# JP主体：高流動の主力をセクター分散で（証券コード）。moomoo単元未満で1株から買える。
 JP_TICKERS: tuple[str, ...] = (
-    "9432",  # NTT（超低位・高流動）
-    "7267",  # ホンダ
-    "8306",  # 三菱UFJ
-    "6178",  # 日本郵政
-    "3382",  # セブン&アイ
-    "9434",  # ソフトバンク（通信）
-    "6501",  # 日立
-    "7203",  # トヨタ
+    "7203",  # トヨタ（自動車）
+    "6758",  # ソニーG（電機/娯楽）
+    "9984",  # ソフトバンクG（投資/通信）
+    "8306",  # 三菱UFJ（銀行）
+    "9432",  # NTT（通信・低位）
+    "6501",  # 日立（総合電機/IT）
+    "6098",  # リクルート（人材/サービス）
+    "4063",  # 信越化学（素材）
+    "8058",  # 三菱商事（商社）
+    "7974",  # 任天堂（ゲーム）
+    "4502",  # 武田薬品（医薬）
+    "6902",  # デンソー（自動車部品）
+    "8035",  # 東京エレクトロン（半導体製造装置）
+    "9983",  # ファーストリテイリング（小売）
+)
+# US従：メガキャップ少数（端株可）。為替スプレッドのため数を絞る。
+US_TICKERS: tuple[str, ...] = (
+    "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META",
 )
 
-# (ticker, market) の確定リスト
+# (ticker, market) の確定リスト（JP主体なので JP を先に）
 ENTRIES: tuple[tuple[str, str], ...] = (
-    *((t, "US") for t in US_TICKERS),
     *((t, "JP") for t in JP_TICKERS),
+    *((t, "US") for t in US_TICKERS),
 )
 
 # メタ取得関数の型：(ticker, market) → メタ辞書（取得不能は None）
@@ -112,7 +118,12 @@ def build_rows(
 
 
 def upsert_universe(engine: Engine, rows: list[Universe]) -> int:
-    """ticker 主キーで upsert（冪等）。返り値＝書き込んだ件数。"""
+    """ticker 主キーで upsert（冪等）。**渡した集合＝アクティブな母集団**：
+
+    リストに無い既存銘柄は `is_active=False` にする（リストから外した銘柄が母集団に残らない）。
+    返り値＝upsert（挿入/更新）した件数。
+    """
+    keep = {r.ticker for r in rows}
     n = 0
     with Session(engine) as session:
         for row in rows:
@@ -132,6 +143,12 @@ def upsert_universe(engine: Engine, rows: list[Universe]) -> int:
                 existing.updated_at = utcnow()
                 session.add(existing)
             n += 1
+        # リストから外れた銘柄は母集団から外す（is_active=False）
+        for u in session.exec(select(Universe).where(col(Universe.is_active))).all():
+            if u.ticker not in keep:
+                u.is_active = False
+                u.updated_at = utcnow()
+                session.add(u)
         session.commit()
     return n
 

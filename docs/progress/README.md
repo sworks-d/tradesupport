@@ -23,3 +23,4 @@
 - `0015-b1-b2-counter-evidence-balthasar.md` — B-1/B-2 反証層土台（BALTHASARが自領域の逆向き事実をコード摘出・確証バイアス対策）
 - `0016-b4-b5-commander-aggregation-internal-unease.md` — B-4/B-5 碇が反証を束ねる＋統合「全会一致でも内在不安」。architecture.html進捗運用を開始
 - `0017-exoskeleton-params-capital-100k.md` — 規律層(外骨格)§1：リスク8数値の整合版確定＋元本¥100k（研究の貫通→餌→弾に転換）
+- `0018-exoskeleton-universe-jp-first.md` — 規律層(外骨格)§2：universe を日本株主体に再編（JP14+US6・外れた銘柄は自動非活性）

@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 from scripts.load_universe import (
     ENTRIES,
@@ -76,6 +76,16 @@ class TestUpsert:
             all_rows = session.exec(select(Universe)).all()
             assert len(all_rows) == 1
             assert all_rows[0].is_active is True
+
+    def test_dropped_tickers_deactivated(self, engine) -> None:
+        # 旧リスト投入 → 新リスト投入で、外れた銘柄は is_active=False（母集団に残らない）
+        upsert_universe(engine, build_rows((("AAPL", "US"), ("7203", "JP")), _meta, 150.0))
+        upsert_universe(engine, build_rows((("7203", "JP"),), _meta, 150.0))  # AAPL を外す
+        with Session(engine) as session:
+            rows = session.exec(select(Universe).where(col(Universe.is_active))).all()
+            active = {r.ticker for r in rows}
+            assert active == {"7203"}  # AAPL は非アクティブ化
+            assert session.get(Universe, "AAPL").is_active is False  # 行は残るが除外
 
     def test_screening_can_read_active_by_cap(self, engine) -> None:
         rows = build_rows((("AAPL", "US"), ("7203", "JP")), _meta, usdjpy=150.0)
