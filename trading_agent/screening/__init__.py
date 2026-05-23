@@ -14,14 +14,17 @@ from trading_agent.screening.financials import (
     PeriodFinancials,
     fetch_financials,
 )
+from trading_agent.screening.turnaround import TurnaroundResult, assess_turnaround
 
 __all__ = [
     "CredibilityResult",
     "Financials",
     "PeriodFinancials",
     "ScoreResult",
+    "TurnaroundResult",
     "altman_z_score",
     "assess_credibility",
+    "assess_turnaround",
     "beneish_m_score",
     "fetch_financials",
     "melchior_credibility_counter",

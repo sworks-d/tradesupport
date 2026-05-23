@@ -66,11 +66,15 @@ class Financials:
     ticker: str
     current: PeriodFinancials
     prior: PeriodFinancials | None
+    prior2: PeriodFinancials | None = None  # 3期目（earnings acceleration＝成長率の加速に必要）
     market_cap: float | None = None
     source: str = "yfinance"
 
     def has_two_periods(self) -> bool:
         return self.prior is not None
+
+    def has_three_periods(self) -> bool:
+        return self.prior is not None and self.prior2 is not None
 
 
 def _num(rows: dict[str, list], labels: tuple[str, ...], idx: int) -> float | None:
@@ -118,8 +122,10 @@ def fetch_financials(
         return None
     current = _period(rows, periods, 0)
     prior = _period(rows, periods, 1) if len(periods) >= 2 else None
+    prior2 = _period(rows, periods, 2) if len(periods) >= 3 else None
     return Financials(
-        ticker=ticker, current=current, prior=prior, market_cap=market_cap, source="yfinance"
+        ticker=ticker, current=current, prior=prior, prior2=prior2,
+        market_cap=market_cap, source="yfinance",
     )
 
 
