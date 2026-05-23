@@ -43,3 +43,4 @@
 - `0035-morning-batch-cli-entrypoint.md` — 朝バッチ実行CLI（scripts/run_morning_batch.py・弾ON）＝実運用の入口
 - `0036-p6a-evaluation-core.md` — P6-a：評価メトリクス（R-multiple/hit-miss/Track Record・先読み回避・provisional）
 - `0037-p6b-evaluation-job.md` — P6-b：評価ジョブ（評価期日到来分を実価格で採点・先読み回避・冪等）＋decisionにentry/stop/benchmark
+- `0038-scheduling-and-eval-cli.md` — 定期実行：評価CLI（run_evaluation.py）＋launchd雛形（朝7:00/評価7:30）＋設置doc

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 朝バッチを毎朝 7:00 に実行（macOS launchd）。設置手順は docs/OPERATIONS_SCHEDULING.md -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.tradesupport.morning-batch</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/a05/tradesupport/.venv/bin/python</string>
+    <string>/Users/a05/tradesupport/scripts/run_morning_batch.py</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/a05/tradesupport</string>
+
+  <!-- 毎日 7:00（平日のみにしたい場合は Weekday を 1〜5 で複数 dict に） -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key><integer>7</integer>
+    <key>Minute</key><integer>0</integer>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/Users/a05/tradesupport/data/logs/morning-batch.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/a05/tradesupport/data/logs/morning-batch.err.log</string>
+
+  <key>RunAtLoad</key>
+  <false/>
+</dict>
+</plist>
