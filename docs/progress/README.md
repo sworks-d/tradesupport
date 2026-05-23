@@ -42,3 +42,4 @@
 - `0034-edinet-key-live-disclosure-wiring.md` — EDINETキー稼働確認(公式・228件live)＋開示をMAGI信用性に配線（GC注記/訂正→保留）
 - `0035-morning-batch-cli-entrypoint.md` — 朝バッチ実行CLI（scripts/run_morning_batch.py・弾ON）＝実運用の入口
 - `0036-p6a-evaluation-core.md` — P6-a：評価メトリクス（R-multiple/hit-miss/Track Record・先読み回避・provisional）
+- `0037-p6b-evaluation-job.md` — P6-b：評価ジョブ（評価期日到来分を実価格で採点・先読み回避・冪等）＋decisionにentry/stop/benchmark

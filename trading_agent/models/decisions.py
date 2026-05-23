@@ -56,6 +56,10 @@ class Decision(SQLModel, table=True):
     scenarios: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     thesis_at_decision: str | None = None
 
+    # 発注時の記録（P6評価の前提＝R-multiple算定に entry と stop が要る）
+    entry_price: float | None = None  # エントリー価格（発注時。実約定で更新可）
+    stop_pct: float | None = None  # 損切り幅（R-mult＝実リターン÷stop）
+
     # ユーザーの反応
     user_action: str | None = None  # "adopted" / "skipped" / "modified" / "deferred"
     user_acted_at: dt.datetime | None = None
@@ -64,6 +68,7 @@ class Decision(SQLModel, table=True):
     # 評価（評価期日は target_period_days 確定後に決まるため nullable／A-3）
     evaluation_date: dt.date | None = None  # date + target_period_days
     actual_return: float | None = None
+    benchmark_return: float | None = None  # 同期間ベンチマーク（S&P比超過の算定用・P6）
     hit_or_miss: str = Field(default="pending", index=True)  # "hit"/"miss"/"neutral"/"pending"
     evaluated_at: dt.datetime | None = None
 
