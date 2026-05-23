@@ -16,8 +16,8 @@ def test_standin_real_state_cash_no_positions() -> None:
     assert broker.get_positions() == []  # 実稼働初期＝保有0
     acct = broker.get_account()
     assert acct is not None
-    assert acct.cash == 1_000_000.0  # 仮の運用元本
-    assert acct.total_assets == 1_000_000.0
+    assert acct.cash == 100_000.0  # 運用元本 ¥100,000（RISK_EXOSKELETON 確定）
+    assert acct.total_assets == 100_000.0
     assert acct.currency == "JPY"
 
 

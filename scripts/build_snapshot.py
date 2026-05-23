@@ -1,6 +1,6 @@
 """ダッシュボードのスナップショットJSONを生成する（UIが /data/snapshot.json として読む）。
 
-実稼働想定：現金（仮¥1,000,000）・保有はブローカー（口座未接続なら0）。
+実稼働想定：現金（運用元本¥100,000）・保有はブローカー（口座未接続なら0）。
 買い候補は実データで3審判判定し、予算内のポジションサイジング（1銘柄20%上限・米株端株）を付ける。
 価格は MarketDataTool / yfinance（2ソース照合つき）、財務/テクニカル/ニュースは各MCPツール。
 
@@ -276,7 +276,7 @@ async def build(*, live: bool, prefer_moomoo: bool) -> dict[str, object]:
     create_all(eng)
 
     positions, broker_src = load_positions(prefer_moomoo=prefer_moomoo)
-    account = StandInBroker().get_account()  # 仮¥1,000,000（moomoo口座連携は後続）
+    account = StandInBroker().get_account()  # 運用元本¥100,000（moomoo口座連携は後続）
     total = account.total_assets if account else 0.0
     cash = account.cash if account else 0.0
     usdjpy = _usdjpy(live)

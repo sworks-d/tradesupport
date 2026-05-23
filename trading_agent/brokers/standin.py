@@ -8,9 +8,9 @@ from __future__ import annotations
 
 from trading_agent.brokers.base import Account, Position
 
-# 運用元本（仮：100万円。docのMASTER §1.3は10万円だが、実稼働想定の検証用に1,000,000）。
-# 口座連携後は accinfo_query が実際の現金を返す。
-STARTING_CASH_JPY = 1_000_000.0
+# 運用元本：¥100,000（RISK_EXOSKELETON 2026-05-23 確定。¥1Mから変更）。
+# ¥100kは「①システムの実弾検証 ②規律を体に入れる訓練」が主目的。口座連携後は accinfo_query が実値を返す。
+STARTING_CASH_JPY = 100_000.0
 
 
 class StandInBroker:
