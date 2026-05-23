@@ -5,6 +5,7 @@
 B2 ではまず3審判（judges）を実装する。
 """
 
+from trading_agent.magi.casper_llm import casper_llm
 from trading_agent.magi.commander import CommanderResult, command
 from trading_agent.magi.defense import VerificationResult, verify
 from trading_agent.magi.integration import SplitResult, classify_split
@@ -16,6 +17,7 @@ __all__ = [
     "VerificationResult",
     "balthasar",
     "casper",
+    "casper_llm",
     "classify_split",
     "command",
     "melchior",

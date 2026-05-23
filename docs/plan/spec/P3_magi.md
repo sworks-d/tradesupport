@@ -26,7 +26,7 @@ judge_verdict×3／split_pattern／verification／commander_rec（→P4 decision
 - ハルシネ防止：R1 計算はコード／R7 technicals以外見ない。
 - 受入：golden_cross→buy・overbought→warn・欠損→na（既存テスト green）。
 
-### P3-3 CASPER（文脈審判）  〔🟡 入力解放済（A-2）／本格判定はP3-7 LLM待ち〕
+### P3-3 CASPER（文脈審判）  〔✅ 入力解放（A-2）＋本格判定（P3-7 LLM=Sonnet）実装済〕
 - 全体ゴール：文脈・イベント（なぜ動くか）の可否を独立に出す。
 - 前からの引き継ぎ：**news/disclosure/manual/macro のみ**（P1-6/7/8/11）。
 - 目的：材料の方向（ポジ/ネガ）から可否。**本格判定はLLM解釈（P3-7）で補完**。
@@ -62,7 +62,7 @@ judge_verdict×3／split_pattern／verification／commander_rec（→P4 decision
 - ハルシネ防止：R5 MAGI外の新事実を加えない（決定論版は構造上True）。LLM版はP3-7で碇MAGI準拠を機械照合。
 - 受入：常に反対論拠を併記・割れ/na時は保留推奨（既存テスト green）。
 
-### P3-7 LLM解釈（審判の文章化・碇の文面化）  〔❌ 未（オプトイン）〕
+### P3-7 LLM解釈（審判の文章化・碇の文面化）  〔🟡 CASPER=Sonnet実装済（2026-05-23）／MELCHIOR・碇は未〕
 - 全体ゴール：解釈文の質を上げる（数値はコードのまま）。
 - 前からの引き継ぎ：各審判のコード判定＋実データ／碇のコード推奨。
 - 目的：CASPER＝Sonnet(文脈解釈)、MELCHIOR＝Ollama(業績解釈)、碇＝文面化。**数値は生成させない**。
@@ -70,6 +70,12 @@ judge_verdict×3／split_pattern／verification／commander_rec（→P4 decision
 - 次への引き渡し：reason/recommendation の自然文（数値は元のコード値を保持）。
 - ハルシネ防止：R5 LLMは渡された実データの解釈のみ／**碇MAGI準拠を機械照合（D-15）**＝LLM出力中の数値/事実がjudge_verdict範囲内かをコードで検証、外れたら`gendo_compliant=false`で赤。
 - 受入：LLM接続時に解釈文が実物化し、MAGI外創作が検出される。コスト日次¥500で停止。
+- **CASPER実績（2026-05-23）**：`magi/casper_llm.py::casper_llm`（非同期・オプトイン）。Anthropicキーがある時のみ
+  `LLMCallTool`（予算ガード＋コスト記録）経由でSonnet解釈に格上げ。出力は厳密JSON（verdict/confidence/reason）を
+  列挙値検証してパース。**材料0・予算超過・接続失敗・パース失敗は全て決定論版 `casper()` にフォールバック**。
+  source_refs/data_asof は入力ニュース由来を維持（R5：出典を捏造しない）。build_snapshot が live＋キー時に自動格上げ。
+  実測：NVDAでreasonが「直近N件…」→「1Q決算 売上85%増・営業益2.5倍…ポジ材料が優勢」へ実物化（数値はソース由来の引用）。
+  新規12テスト（_parse 7・casper_llm 5：正常/0件/パース不可/接続失敗/予算超過）。**残**：MELCHIOR=Ollama・碇文面化・碇MAGI準拠の機械照合（D-15）。
 
 ---
 

@@ -20,14 +20,18 @@ import sys
 import tempfile
 from pathlib import Path
 
+from sqlalchemy.engine import Engine
+
 from trading_agent.brokers import StandInBroker, load_positions
 from trading_agent.db import create_all, get_engine
-from trading_agent.magi import classify_split, command, run_judges, verify
+from trading_agent.llm.anthropic_client import AnthropicClient
+from trading_agent.magi import casper_llm, classify_split, command, run_judges, verify
 from trading_agent.mcp_tools.fundamentals import (
     FundamentalsInput,
     FundamentalsOutput,
     FundamentalsTool,
 )
+from trading_agent.mcp_tools.llm_call import LLMCallTool
 from trading_agent.mcp_tools.market_data import Fetcher, MarketDataInput, MarketDataTool
 from trading_agent.mcp_tools.news import NewsInput, NewsOutput, NewsTool
 from trading_agent.mcp_tools.technicals import (
@@ -131,7 +135,11 @@ def _demo_primary(tickers: list[str]) -> dict[str, dict[str, float]]:
 
 
 def _demo_secondary(tickers: list[str]) -> dict[str, dict[str, float]]:
-    return {t: _quote(_DEMO_PRICE[t][0] + 0.2, _DEMO_PRICE[t][1]) for t in tickers if t in _DEMO_PRICE}
+    return {
+        t: _quote(_DEMO_PRICE[t][0] + 0.2, _DEMO_PRICE[t][1])
+        for t in tickers
+        if t in _DEMO_PRICE
+    }
 
 
 def _fmt_price(ticker: str, price: float) -> str:
@@ -164,7 +172,10 @@ def _serialize_candidate(verdicts: list, sizing: dict[str, object]) -> dict[str,
     verification = {
         "default_decision": "保留" if vr.default_hold else "可",
         "flags": [  # 設計の3フラグ（時点は数値照合に内包）
-            {"label": "数値照合", "status": "ok" if (vr.figures_checked and vr.time_ok) else "warn"},
+            {
+                "label": "数値照合",
+                "status": "ok" if (vr.figures_checked and vr.time_ok) else "warn",
+            },
             {"label": "信用性", "status": vr.credibility_flag},
             {"label": "碇MAGI準拠", "status": "ok" if cmd.magi_compliant else "warn"},
         ],
@@ -186,7 +197,32 @@ def _serialize_candidate(verdicts: list, sizing: dict[str, object]) -> dict[str,
     }
 
 
-async def _build_candidates(live: bool, total_assets: float, cash: float, usdjpy: float) -> dict:
+def _maybe_llm_tool(engine: Engine, *, live: bool) -> LLMCallTool | None:
+    """Anthropic キーがあれば CASPER 用の LLMCallTool を作る（live のみ・任意）。
+
+    キー未設定なら None＝決定論版 CASPER のまま（コスト0）。予算超過時は LLMCallTool 内で拒否。
+    """
+    if not live:
+        return None
+    try:
+        from trading_agent.config import get_settings
+
+        key = get_settings().anthropic_api_key
+    except Exception:
+        return None
+    if not key:
+        return None
+    return LLMCallTool(engine, anthropic_client=AnthropicClient(key))
+
+
+async def _build_candidates(
+    live: bool,
+    total_assets: float,
+    cash: float,
+    usdjpy: float,
+    *,
+    llm_tool: LLMCallTool | None = None,
+) -> dict:
     out: dict[str, object] = {}
     for card_id, ticker in CANDIDATES.items():
         if live:
@@ -209,6 +245,11 @@ async def _build_candidates(live: bool, total_assets: float, cash: float, usdjpy
             price_usd = _DEMO_PRICE[ticker][0]
 
         verdicts = run_judges(ticker, fundamentals=fund, technicals=tech, news=news)
+
+        # P3-7：CASPER を Sonnet 解釈に格上げ（キーがある時のみ・失敗時は決定論版のまま）
+        if llm_tool is not None:
+            upgraded = await casper_llm(ticker, news=news, llm_tool=llm_tool)
+            verdicts = [upgraded if v.judge == "CASPER" else v for v in verdicts]
 
         # 予算内サイジング（米株は端株可。JP は単元）
         is_jp = _is_jp(ticker)
@@ -253,7 +294,10 @@ async def build(*, live: bool, prefer_moomoo: bool) -> dict[str, object]:
             price = p.nominal_price or out.data.get(p.code, {}).get("current_price")
             pnl = None
             if p.pl_ratio is not None:
-                pnl = {"ratio_display": f"{p.pl_ratio:+.1f}%", "direction": "up" if p.pl_ratio >= 0 else "down"}
+                pnl = {
+                    "ratio_display": f"{p.pl_ratio:+.1f}%",
+                    "direction": "up" if p.pl_ratio >= 0 else "down",
+                }
             elif price is not None and p.cost_price:
                 r = (price - p.cost_price) / p.cost_price * 100.0
                 pnl = {"ratio_display": f"{r:+.1f}%", "direction": "up" if r >= 0 else "down"}
@@ -264,7 +308,8 @@ async def build(*, live: bool, prefer_moomoo: bool) -> dict[str, object]:
                 "pnl": pnl,
             }
 
-    candidates = await _build_candidates(live, total, cash, usdjpy)
+    llm_tool = _maybe_llm_tool(eng, live=live)
+    candidates = await _build_candidates(live, total, cash, usdjpy, llm_tool=llm_tool)
 
     holdings_source = "moomoo ペーパー" if broker_src == "moomoo" else "サンプル/未接続"
     return {
