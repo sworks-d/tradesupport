@@ -81,13 +81,15 @@ def calculate_v_shape_score(d: ScreeningTickerData) -> tuple[float, dict[str, An
     score = 0.0
     details: dict[str, Any] = {}
 
-    # 1. 業績反転 (最大40pt、排他)
+    # 1. 業績反転 (最大40pt、排他)。ignition＝「反転の点火」（強い反転のみ。単なる増収は点火でない）
+    ignition = False
     if (
         d.eps_latest_q is not None
         and d.eps_prev_prev_q is not None
         and d.eps_latest_q > 0 > d.eps_prev_prev_q
     ):
         score += 25
+        ignition = True
         details["earnings_turnaround"] = "赤字→黒字"
     elif (
         d.eps_growth_latest_q is not None
@@ -96,17 +98,24 @@ def calculate_v_shape_score(d: ScreeningTickerData) -> tuple[float, dict[str, An
         and d.eps_growth_prev_prev_q < 0
     ):
         score += 20
-        details["earnings_turnaround"] = "減益→大幅増益"
+        ignition = True
+        details["earnings_turnaround"] = "減益→大幅増益（点火）"
     elif d.revenue_growth_latest_q is not None and d.revenue_growth_latest_q > 0.1:
         score += 10
-        details["earnings_turnaround"] = "増収"
+        details["earnings_turnaround"] = "増収（点火は弱い）"
 
-    # 2. 株価底打ち (30pt)
+    # 2. 株価底打ち。**Value×Momentum両立(Asness)**：点火がある時のみ満額。
+    #    点火なしで底だけ＝value trap として満額にしない（研究 領域3-A：底だけは買わない）。
     if d.current_price is not None and d.min_price_90d and d.max_price_90d:
         drawdown = (d.current_price - d.min_price_90d) / d.min_price_90d
         if drawdown > 0.1 and d.current_price < d.max_price_90d * 0.85:
-            score += 30
-            details["price_bottom"] = True
+            if ignition:
+                score += 30
+                details["price_bottom"] = True
+            else:
+                score += 10  # 底だが点火なし＝割引
+                details["price_bottom"] = "底だが点火なし"
+                details["value_trap"] = True
 
     # 3. テクニカル (20pt)
     if d.rsi is not None and 30 < d.rsi < 50:

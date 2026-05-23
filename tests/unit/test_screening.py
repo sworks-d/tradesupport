@@ -44,6 +44,37 @@ class TestVShapeScore:
     def test_empty_is_zero(self) -> None:
         assert calculate_v_shape_score(ScreeningTickerData(ticker="X"))[0] == 0.0
 
+    def test_bottom_without_ignition_is_value_trap(self) -> None:
+        # 底だが点火（業績反転）なし → 満額30でなく10＋value_trapフラグ（Value×Momentum）
+        d = ScreeningTickerData(
+            ticker="X",
+            current_price=112.0, min_price_90d=100.0, max_price_90d=200.0,  # 底条件
+        )
+        score, details = calculate_v_shape_score(d)
+        assert score == 10.0  # 満額30でない
+        assert details.get("value_trap") is True
+
+    def test_bottom_with_ignition_full_points(self) -> None:
+        # 点火（赤字→黒字）あり → 底が満額30（25＋30＝55）。value_trapフラグなし
+        d = ScreeningTickerData(
+            ticker="X", eps_latest_q=1.0, eps_prev_prev_q=-1.0,
+            current_price=112.0, min_price_90d=100.0, max_price_90d=200.0,
+        )
+        score, details = calculate_v_shape_score(d)
+        assert score == 55.0
+        assert "value_trap" not in details
+        assert details["price_bottom"] is True
+
+    def test_revenue_growth_is_not_ignition(self) -> None:
+        # 増収だけは点火でない → 底は割引（10＋10＝20・value_trap）
+        d = ScreeningTickerData(
+            ticker="X", revenue_growth_latest_q=0.15,
+            current_price=112.0, min_price_90d=100.0, max_price_90d=200.0,
+        )
+        score, details = calculate_v_shape_score(d)
+        assert score == 20.0
+        assert details.get("value_trap") is True
+
 
 class TestThemeScore:
     def test_components_sum(self) -> None:
