@@ -26,7 +26,7 @@
 - ハルシネ防止：（スキーマ）— ／ R7 既存16表は無改変、追加のみ。
 - 受入：MAGI候補から decision を作成・保存できる。既存テスト維持。
 
-### P4-3 decision生成（materialize_decisions）  〔❌ 未〕
+### P4-3 decision生成（materialize_decisions）  〔✅ A-4〕
 - 全体ゴール：候補→決裁待ちの提案レコードを生成。
 - 前からの引き継ぎ：P2/P3を通った候補＋P3結果。
 - 目的：active候補から `decision` 行を作成（status=verifying）。gendo_stance=碇/割れから導出。
@@ -35,7 +35,7 @@
 - ハルシネ防止：R7 候補に無い銘柄を作らない／R2 decisionに時点を持たせる。
 - 受入：候補N→decision N行（status=verifying）。
 
-### P4-4 MAGI永続化（magi_verify＝B6本体）  〔❌ 未〕
+### P4-4 MAGI永続化（magi_verify）  〔✅ A-4・検証4表をdecision_id付きで永続化〕
 - 全体ゴール：decisionに3審判→防御→統合→碇の結果をDB保存し、UIに出す前に検証を完了させる。
 - 前からの引き継ぎ：decision行（P4-3）＋P3各結果。
 - 目的：`judge_verdict×3 / split_pattern / verification / commander_rec` を decision_id付きで保存。

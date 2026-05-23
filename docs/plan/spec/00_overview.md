@@ -71,18 +71,23 @@ P1 収集 ─→ P2 一次選抜 ─→ P3 MAGI判断 ─→ P4 提案生成 ─
 
 ## 7. 全タスク INDEX（網羅の可視化／状態つき）
 > 詳細は各Pファイル。状態：✅実装済 / 🟡部分 / ❌未 / 🔵要判断
-- **P1 収集**：P1-1 相場(価格)✅ / P1-2 過去K線🟡 / P1-3 テクニカル✅ / P1-4 財務サマリ🟡 /
-  P1-5 財務一次情報❌ / P1-6 ニュース❌ / P1-7 適時開示❌ / P1-8 マクロ・政府公式❌ /
-  P1-9 決算カレンダー🟡 / P1-10 口座(保有/残高/約定)🟡 / P1-11 手動投入🟡 / P1-12 2ソース照合・出典/時点✅
-- **P2 一次選抜**：P2-1 universe投入❌ / P2-2 定量スクリーニング🟡 / P2-3 信用性ハードフィルタ(D-14)❌
-- **P3 MAGI**：P3-1 MELCHIOR🟡 / P3-2 BALTHASAR✅ / P3-3 CASPER❌(入力欠) / P3-4 防御層✅ /
-  P3-5 統合機構✅ / P3-6 碇司令🟡(コード版) / P3-7 LLM解釈(審判/碇)❌
-- **P4 提案生成**：P4-1 サイジング✅ / P4-2 decisions schema再構成🔵 / P4-3 decision生成(materialize)❌ /
-  P4-4 MAGI永続化(magi_verify=B6)❌
-- **P5 決裁・発注**：P5-1 決裁UI配線🟡 / P5-2 発注リスト出力❌ / P5-3 発注記録→保有化❌
-- **P6 評価・学習**：P6-1 decision評価ジョブ❌ / P6-2 Track Record実データ化❌ / P6-3 A/Bロジック育成❌
-- **横断**：X-1 外部棚卸し❌ / X-2 借用移植❌ / U-1 反映機構✅ / U-2 コンポーネント化❌ /
+> **最終同期：2026-05-23**（progress 0009〜0041 反映）。実装の出来事は `docs/progress/` と architecture.html §0 が正。
+- **P1 収集**：P1-1 相場(価格)✅ / P1-2 過去K線🟡 / P1-3 テクニカル✅ / P1-4 財務サマリ✅(14指標) /
+  P1-5 財務深掘り🟡(2-3期財務✅・EDGAR/EDINET一次情報🟡：EDINET一覧/本文XBRL検出✅・自動引当❌) /
+  P1-6 ニュース✅(yf+GNews) / P1-7 適時開示✅(TDnet/EDINET) / P1-8 マクロ・政府公式❌ /
+  P1-9 決算カレンダー🟡 / P1-10 口座🟡(StandIn¥100k・moomoo同意②待) / P1-11 手動投入🟡 / P1-12 2ソース照合✅
+- **P2 一次選抜**：P2-1 universe投入✅(JP主体・自動定義) / P2-2 定量スクリーニング✅(V字value-trapガード＋弾エンリッチ) /
+  P2-3 信用性ハードフィルタ(D-14)✅(M/F/Z＋開示レッドフラグ・XBRL GC/監査)
+- **P3 MAGI**：P3-1 MELCHIOR✅(14指標多面＋accrual反証) / P3-2 BALTHASAR✅(コード反証付) / P3-3 CASPER✅(実ニュース＋Sonnet) /
+  P3-4 防御層✅(credibility_flag配線) / P3-5 統合機構✅(内在不安) / P3-6 碇司令✅(反証集約) / P3-7 LLM解釈🟡(CASPER=Sonnet✅・MELCHIOR=Ollama❌・碇文面化❌)
+- **P4 提案生成**：P4-1 サイジング✅(R-mult/anti-martingale) / P4-2 decisions schema✅ / P4-3 decision生成(materialize)✅ /
+  P4-4 MAGI永続化(magi_verify)✅
+- **P5 決裁・発注**：P5-1 決裁✅(ロジック・CLI／UIボタン❌＝moomoo手動) / P5-2 発注リスト出力✅(R-mult+規律ゲート) / P5-3 発注記録→保有化🟡(record_entry有・自動フック❌)
+- **P6 評価・学習**：P6-1 decision評価ジョブ✅ / P6-2 Track Record✅(R-mult・バックテスト✅／UI描画❌) / P6-3 A/Bロジック育成❌
+- **規律層(外骨格/G群)**：✅ R-mult・anti-martingale・集中/DD・現金下限・増額ゲート（spec G_risk_discipline.md）
+- **横断**：X-1/X-2 外部OSS=考え方借用(D-21) / U-1 反映機構✅ / U-2 コンポーネント化❌ /
   U-3 新規6画面❌ / G-1 コストロガー✅ / G-2 HALT/予算停止✅ / G-3 paper-live分離✅
+- **実行入口**：load_universe / run_morning_batch / run_evaluation / run_backtest / build_snapshot（scripts/）＋launchd雛形(ops/)
 
 ## 8. ファイル一覧（spec群）
 - `00_overview.md`（本書）

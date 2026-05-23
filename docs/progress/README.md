@@ -47,3 +47,4 @@
 - `0039-edinet-xbrl-deepparse.md` — S4b深掘り：EDINET本文(type=5)からGC注記/監査意見を検出（検出器＋DL・hermetic）
 - `0040-backtest-harness.md` — 価格ベース・先読みなしバックテスト＋CLI（資産成長の最速検証・生存者バイアス注意）
 - `0041-melchior-accrual-counter.md` — MELCHIOR accrual反証（CFO<NI/発生高/DSO/在庫を2期財務からコード摘出）
+- `0042-spec-sync.md` — spec/00_overview の進捗マーカーを実装状態に同期（doc drift解消）

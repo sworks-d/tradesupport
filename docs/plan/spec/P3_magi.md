@@ -86,7 +86,7 @@ judge_verdict×3／split_pattern／verification／commander_rec（→P4 decision
 
 ---
 
-## 反証層（B群）〔❌ 未／詳細は `../IMPROVEMENT_PLAN_FOR_CODE.md` B群〕
+## 反証層（B群）〔✅ B-1/B-2(BALTHASARコード)・B-4(碇集約)・B-5(内在不安)・S6(MELCHIOR信用性/accrual)／CASPER LLM反証は未〕
 三権独立を**壊さず**、各審判が自領域データ内で「判定と逆向きの事実」を**摘出**する（創作でなくR5順守）。
 TradingAgents の Bear論拠の組み立て方を翻案（別Bear体は置かない）。着手条件＝A-4（DAG接続）完了後。
 - **P3-8 反証フィールド**〔✅ 2026-05-23〕：`JudgeVerdict.counter_within_domain: list[dict]`（claim＋source_refs）。永続化・冪等保存も対応。
