@@ -53,15 +53,27 @@ LLMはこのフェーズで一切使わない（収集はすべてAPI/コード�
 - ハルシネ防止：R2 出典URL実在確認／R5 LLMで要約する場合も数値はXBRL値のみ／R4 取得不能はna。
 - 受入：1銘柄でEDGAR/EDINETの一次情報が取得され、監査意見/GC注記が判定できる。
 
-### P1-6 ニュース  〔❌ 0件（最優先穴）〕
-- 全体ゴール：CASPERの文脈材料（"なぜ動くか"）。
-- 前からの引き継ぎ：ticker（と任意トピック）。
-- 目的：銘柄別ニュースを収集・重複除去・言語/期間フィルタ。
-- 実装：`mcp_tools/news.py` に **yfinance `Ticker.news` ＋ Google News RSS（銘柄クエリ）** fetcher を追加（無料・キー不要）。
-  将来：NewsAPI/moomooニュース。
-- 次への引き渡し：`articles[]`（title/summary/source/url/published_at）＋`source_refs(url, as_of=公開時点)`（→P3-3）。
-- ハルシネ防止：R2 各記事に出典URL＋公開時点／R4 0件なら CASPER は na（埋めない）。
-- 受入：NVDA・7203 で記事>0、CASPERが na を脱する。
+### P1-6 ニュース収集（銘柄別）  〔❌ 0件（最優先穴）／★本書の"深さ"の見本〕
+- **全体ゴール**：CASPER（文脈審判）に"なぜ動くか"の一次材料を供給し、MAGIを3脚で立たせる。
+- **前からの引き継ぎ（入力契約）**：
+  `NewsInput{ tickers:list[str], topics:list[str]|None, since:datetime|None(既定 now-72h), sources:list[str]|None }`。
+  銘柄→社名補完に `universe.name`（あれば。無くても ticker で動く）。
+- **目的**：銘柄別ニュースを**無料・キー不要**で取得→正規化→重複除去→期間/銘柄フィルタ。
+- **詳細仕様（ソース別）**：
+  1. **yfinance**：`yf.Ticker(t).news` → `[{title,publisher,link,providerPublishTime(epoch),type,relatedTickers}]`。
+     正規化 `Article{title, summary="", source=publisher, url=link, published_at=epoch→ISO}`。関数 `_fetch_yf_news(inp)->list[Article]`。
+  2. **Google News RSS**：`https://news.google.com/rss/search?q={q}&hl=ja&gl=JP&ceid=JP:ja`、
+     `q=f"{ticker} {company} 株 OR stock"`。feedparserで entries→`Article{title, summary=entry.summary, source=entry.source.title or "GoogleNews", url=entry.link, published_at=entry.published}`。関数 `_fetch_gnews_rss(inp)->list[Article]`。
+  3. 既定fetchersに上記2を追加（NewsAPIはキーがある時のみ）。
+- **正規化・重複除去**：既存 `dedupe_articles`（URL一致／見出しmd5／difflib類似>0.90）＋`detect_language`＋`since`フィルタ＋published降順。
+- **次への引き渡し（出力契約）**：
+  `NewsOutput{ articles:list[Article], total_before_dedupe:int, data_asof=max(published), source_refs=[SourceRef(source, ref=url, as_of=published)] }`（→P3-3 CASPER、topics_collector→Topic保存）。
+- **アルゴリズム（関連度）**：title+summary に ticker か company を含む記事を残す（`_matches_filters`）。重要度は topics_collector のルール（決算/FOMC=高）。
+- **エッジ・失敗**：記事0→`articles=[]`（CASPERはna）。JP記事→language=ja。要約空(paywall)→titleのみで判定。yf/gnews片方失敗→他方で継続(graceful)。両方失敗→NetworkError→baseリトライ。
+- **テスト（tests/unit/test_news.py 追加）**：①`_fetch_yf_news` 正規化 ②`_fetch_gnews_rss` 正規化 ③銘柄フィルタがNVDA記事を残す ④yf+gnens横断の重複除去 ⑤0件→CASPER na維持 ⑥(結合)news>0→CASPER verdict。
+- **受入条件（計測可能）**：NVDAで記事≥1、7203（社名トヨタ補完）で記事≥1、`casper()` が na を脱し方向を返す。新規6テスト＋既存 green。
+- **ハルシネ防止**：R2 各記事に url＋published(as_of)必須／R4 0件はna（記事を捏造しない）／R5 summaryはソース提供文のまま（LLM生成しない）。
+- **依存**：なし（無料・キー不要）。**規模**：小〜中。**想定差分**：`mcp_tools/news.py`, `tests/unit/test_news.py`。
 
 ### P1-7 適時開示  〔❌ 0件〕
 - 全体ゴール：CASPERのイベント材料＋P2-3信用性。
