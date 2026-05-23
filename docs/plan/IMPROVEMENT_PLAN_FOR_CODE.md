@@ -114,7 +114,7 @@ C群：OSS借用（着手条件＝A-5後。decisionが生成される状態。�
 - **依存**：なし。**規模**：小。
 - **実績（2026-05-23）**：`_fetch_yf_news`（旧/新yf両形対応）＋`_fetch_gnews_rss`（社名补完・`companies` 引数）を新設、`_default_fetchers()`先頭2枠に。実測 NVDA=53件・7203=48件（failures=0）、CASPER=buy（na脱出）。新規17テスト・全スイートgreen。コミット参照：progress/0009。
 
-## A-4 MAGI を DAG に接続（materialize_decisions + magi_verify）★貫通の核
+## A-4 MAGI を DAG に接続（materialize_decisions + magi_verify）★貫通の核  〔✅ 完了 2026-05-23〕
 - **目的**：孤立しているMAGIを実行経路に繋ぐ。候補→decision生成→3審判→防御→統合→碇→保存。
 - **対象**：`orchestrator/morning_batch.py`（2ノード追加）、新規 `magi/persist.py`、`tests/unit/test_morning_batch.py`。
 - **実装（B0_DIFF_PLAN §2 のDAG差分）**：
@@ -127,6 +127,14 @@ C群：OSS借用（着手条件＝A-5後。decisionが生成される状態。�
 - **ハルシネ防止**：R6 default_hold を status/既定決裁に反映／R2 全行に出典・時点／R7 候補に無い銘柄を作らない。
 - **受入**：1銘柄がDBに decision＋MAGI 4表付きで保存され status 遷移。`magi_verify` 完了まで「決裁待ち」にしない。
 - **依存**：A-3。A-1/A-2（候補・データが揃うと中身が出る）。**規模**：中。
+- **実績（2026-05-23）**：新規 `magi/persist.py`（`materialize_decisions`／`magi_verify`／`persist_bundle`／
+  `derive_gendo_stance`／`make_live_judge_fn`）。`morning_batch` に2ノードを直列追加（portfolio_builder→
+  **materialize_decisions→magi_verify**→link_topics）。候補源は active buy_signals 優先・無ければ screening上位。
+  データ取得は `ctx.call_tool`（MCPHost）注入＝本番実ツール／テストはモック同経路。判定は決定論（バッチ既定・コスト0）、
+  CASPER の Sonnet 格上げは llm_tool 注入でオプトイン。**冪等**（同日 decision 再利用・検証4表は decision_id 単位で作り直し）。
+  status: verifying→awaiting、`default_hold` は gendo_stance に反映（保留→要検討/静観）。1件失敗は隔離（verifying のまま）。
+  ライブ実証：NVDA/AAPL→decision生成→3審判→碇まで `data/trading.sqlite` に保存（held=2＝割れで保留推奨）。
+  新規テスト：persist 11＋morning_batch +1（貫通E2E）。全スイート green。コミット参照：progress/0014。
 
 ## A-5 決裁 → 発注リスト → 記録
 - **目的**：承認/否認/保留を保存し、承認分をmoomoo手動発注用に出力、結果を保有化。

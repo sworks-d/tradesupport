@@ -22,6 +22,12 @@ from trading_agent.agents.portfolio_builder import PortfolioBuilderAgent, Portfo
 from trading_agent.agents.screening_agent import ScreeningAgent, ScreeningAgentInput
 from trading_agent.agents.sell_recommender import SellRecommenderAgent, SellRecommenderInput
 from trading_agent.agents.topics_collector import TopicsCollectorAgent, TopicsCollectorInput
+from trading_agent.magi.persist import (
+    magi_verify,
+    make_live_judge_fn,
+    materialize_decisions,
+    pending_decision_ids,
+)
 from trading_agent.mcp_tools.base import MCPHost
 from trading_agent.mcp_tools.disclosure import DisclosureTool
 from trading_agent.mcp_tools.fundamentals import FundamentalsTool
@@ -76,6 +82,46 @@ def _candidate_tickers(engine: Engine, limit: int = 10) -> list[str]:
         )
     seen: set[str] = set()
     out: list[str] = []
+    for r in rows:
+        if r.ticker not in seen:
+            seen.add(r.ticker)
+            out.append(r.ticker)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _buy_candidate_tickers(engine: Engine, limit: int = 10) -> list[str]:
+    """MAGI 検証にかける買い候補。active な buy_signals を優先し、無ければ screening 上位で代替。
+
+    （IMPROVEMENT_PLAN A-4：「active な buy/sell signals (or screening上位)」）。
+    """
+    with Session(engine) as session:
+        buys = list(
+            session.exec(
+                select(BuySignal)
+                .where(col(BuySignal.is_active))
+                .order_by(col(BuySignal.score).desc())
+            )
+        )
+    seen: set[str] = set()
+    out: list[str] = []
+    for b in buys:
+        if b.ticker not in seen:
+            seen.add(b.ticker)
+            out.append(b.ticker)
+        if len(out) >= limit:
+            return out
+    if out:
+        return out
+
+    # フォールバック：screening 上位（passed 問わず・composite 降順）。MAGIが深く検証する。
+    with Session(engine) as session:
+        rows = list(
+            session.exec(
+                select(ScreeningResult).order_by(col(ScreeningResult.composite_score).desc())
+            )
+        )
     for r in rows:
         if r.ticker not in seen:
             seen.add(r.ticker)
@@ -145,6 +191,17 @@ async def run_morning_batch(
             engine,
         )
 
+    async def run_materialize() -> dict[str, int]:
+        # 買い候補を Decision(status="verifying") として保存（A-4）
+        ids = materialize_decisions(engine, _buy_candidate_tickers(engine))
+        return {"decisions": len(ids)}
+
+    async def run_magi_verify() -> dict[str, int]:
+        # 当日の未検証 decision に 3審判→防御→統合→碇 を回して保存（決定論・コスト0）
+        ids = pending_decision_ids(engine)
+        judge_fn = make_live_judge_fn(ctx.call_tool)
+        return await magi_verify(engine, ids, judge_fn)
+
     async def link_topics() -> dict[str, bool]:
         return {"skipped": True}  # Phase 1：トピックス↔decisions 紐付けは後日
 
@@ -163,7 +220,19 @@ async def run_morning_batch(
         DAGNode("market_analyst", run_market_analyst, depends_on=["screening"], timeout_s=600),
         DAGNode("sell_recommender", run_sell, depends_on=["market_analyst"], timeout_s=300),
         DAGNode("portfolio_builder", run_portfolio, depends_on=["sell_recommender"], timeout_s=60),
-        DAGNode("link_topics", link_topics, depends_on=["portfolio_builder"], timeout_s=60),
+        DAGNode(
+            "materialize_decisions",
+            run_materialize,
+            depends_on=["portfolio_builder"],
+            timeout_s=60,
+        ),
+        DAGNode(
+            "magi_verify",
+            run_magi_verify,
+            depends_on=["materialize_decisions"],
+            timeout_s=600,
+        ),
+        DAGNode("link_topics", link_topics, depends_on=["magi_verify"], timeout_s=60),
         DAGNode("summary", summary, depends_on=["link_topics"], timeout_s=30),
         DAGNode("notify", notify, depends_on=["summary"], timeout_s=30),
     ]

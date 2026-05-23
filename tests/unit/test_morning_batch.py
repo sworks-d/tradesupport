@@ -22,6 +22,8 @@ from trading_agent.mcp_tools.news import NewsInput, NewsOutput
 from trading_agent.mcp_tools.screening import ScreeningTool
 from trading_agent.mcp_tools.technicals import TechnicalsInput, TechnicalsOutput
 from trading_agent.models.batch import BatchState
+from trading_agent.models.decisions import Decision
+from trading_agent.models.magi import CommanderRec, JudgeVerdict, SplitPattern, Verification
 from trading_agent.models.portfolio import Portfolio, PortfolioSnapshot
 from trading_agent.models.signals import Scenario, ScreeningResult, SellSignal
 from trading_agent.models.topics import Topic
@@ -166,14 +168,37 @@ class TestMorningBatch:
         batch = await run_morning_batch(engine, host=_mock_host(engine))
 
         assert batch.status in {"success", "partial"}
-        assert len(batch.node_status) == 10  # 全ノード実行
+        assert len(batch.node_status) == 12  # 全ノード実行（A-4で +materialize/+magi_verify）
         assert batch.node_status["screening"] == "success"
+        assert batch.node_status["materialize_decisions"] == "success"
+        assert batch.node_status["magi_verify"] == "success"
 
         with Session(engine) as s:
             assert len(list(s.exec(select(ScreeningResult)))) >= 2
             assert len([t for t in s.exec(select(Topic))]) >= 1
             assert len(list(s.exec(select(Scenario).where(col(Scenario.ticker) == "AAPL")))) == 1
             assert len(list(s.exec(select(SellSignal).where(col(SellSignal.is_active))))) >= 1
+
+    async def test_magi_pipeline_persisted(self, tmp_path: Path) -> None:
+        """A-4：MAGI が DAG を貫通し、decision＋検証4表が decision_id 付きで残る。"""
+        engine = _engine(tmp_path)
+        await run_morning_batch(engine, host=_mock_host(engine))
+        with Session(engine) as s:
+            decisions = list(s.exec(select(Decision)))
+            assert decisions, "MAGI候補から decision が生成されていない"
+            # 検証完了で verifying を脱している（awaiting）
+            assert all(d.status == "awaiting" for d in decisions)
+            assert all(d.verified_at is not None for d in decisions)
+            assert all(d.gendo_stance for d in decisions)
+
+            did = decisions[0].id
+            verdicts = list(
+                s.exec(select(JudgeVerdict).where(col(JudgeVerdict.decision_id) == did))
+            )
+            assert {v.judge for v in verdicts} == {"MELCHIOR", "BALTHASAR", "CASPER"}
+            assert s.exec(select(SplitPattern).where(col(SplitPattern.decision_id) == did)).first()
+            assert s.exec(select(Verification).where(col(Verification.decision_id) == did)).first()
+            assert s.exec(select(CommanderRec).where(col(CommanderRec.decision_id) == did)).first()
 
     async def test_batch_state_persisted(self, tmp_path: Path) -> None:
         engine = _engine(tmp_path)

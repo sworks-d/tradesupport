@@ -7,6 +7,10 @@ judge_verdict×3／split_pattern／verification／commander_rec（→P4 decision
 **フェーズのハルシネ防止方針**：R1〜R7 全部。特に R5（LLMは読む役）・R6（決裁前ゲート）・SCORE: NONE。
 
 > 状態：✅実装済 / 🟡部分 / ❌未 / 🔵要判断 ／ コード：`trading_agent/magi/`、`models/magi.py`
+> **貫通（A-4・2026-05-23）**：MAGIは build_snapshot 経由（UI）だけでなく **朝バッチDAGにも接続済**
+> （`magi/persist.py`＋morning_batch の materialize_decisions→magi_verify）。候補→Decision生成→3審判→防御→
+> 統合→碇を回し、judge_verdict×3／split_pattern／verification／commander_rec を decision_id 付きで永続化。
+> status: verifying→awaiting、default_hold を gendo_stance に反映。これで P6（評価）が読む実データが貯まる。
 
 ### P3-1 MELCHIOR（業績審判）  〔✅ 多面化済（成長×収益性×健全性×CF）／一次情報深掘りはP1-5(b)〕
 - 全体ゴール：業績（ファンダ）の裏付けの可否を独立に出す。
