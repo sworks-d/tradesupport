@@ -200,6 +200,27 @@ class TestMorningBatch:
             assert s.exec(select(Verification).where(col(Verification.decision_id) == did)).first()
             assert s.exec(select(CommanderRec).where(col(CommanderRec.decision_id) == did)).first()
 
+    async def test_credibility_flows_when_financials_provided(self, tmp_path: Path) -> None:
+        """run_morning_batch に financials_fetcher を渡すと信用性が MELCHIOR 反証に乗る（弾ON）。"""
+        from trading_agent.screening.financials import Financials, PeriodFinancials
+
+        def fin_stub(_ticker: str) -> Financials:
+            # 倒産リスク域（Z risk）→ credibility warn → MELCHIOR反証
+            cur = PeriodFinancials(
+                period="2026", working_capital=-100.0, total_assets=1000.0,
+                retained_earnings=50.0, ebit=10.0, total_liabilities=900.0, revenue=300.0,
+            )
+            return Financials(ticker="X", current=cur, prior=None, market_cap=100.0)
+
+        engine = _engine(tmp_path)
+        await run_morning_batch(
+            engine, host=_mock_host(engine), financials_fetcher=fin_stub
+        )
+        with Session(engine) as s:
+            mels = list(s.exec(select(JudgeVerdict).where(col(JudgeVerdict.judge) == "MELCHIOR")))
+            assert mels, "MELCHIOR の判定が無い"
+            assert any(m.counter_within_domain for m in mels)  # 信用性反証が乗る
+
     async def test_batch_state_persisted(self, tmp_path: Path) -> None:
         engine = _engine(tmp_path)
         await run_morning_batch(engine, host=_mock_host(engine))

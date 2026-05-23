@@ -114,7 +114,7 @@ td code, .code { font-family: ui-monospace, "SF Mono", Menlo, monospace; backgro
   <div class="parrow">→</div>
   <div class="pstage done">P4 提案生成<span class="st-done">✅ decision＋規律</span></div>
   <div class="parrow">→</div>
-  <div class="pstage partial">P5 決裁・発注<span class="st-part">🟡 ロジック済/UI待</span></div>
+  <div class="pstage partial">P5 決裁・発注<span class="st-part">🟡 発注リスト済/決裁手動</span></div>
   <div class="parrow">→</div>
   <div class="pstage todo">P6 評価・学習<span class="st-todo">❌ 解禁済</span></div>
 </div>
@@ -151,7 +151,8 @@ td code, .code { font-family: ui-monospace, "SF Mono", Menlo, monospace; backgro
   <tr><td><code>bb5256a</code></td><td>D 統合</td><td><span class="st-done">✅</span></td><td>screening候補に 信用性/V字/相対力 を付与（enrich_candidates）。信用性warnは composite を減点して再ランク（opt-in）</td></tr>
   <tr><td><code>04c3b47</code></td><td>C UI描画</td><td><span class="st-done">✅</span></td><td>詳細パネルの各審判の根拠文に反証(counter)を併記（LiveData.tsx・要素は増やさず）。信用性flagは既存描画でwarn表示</td></tr>
   <tr><td><code>efa87fa</code></td><td>doc同期</td><td><span class="st-done">✅</span></td><td>§0 を最新化：Cの確定ハッシュ反映＋パイプラインのバッジを弾(V字/信用性/相対力)反映に更新</td></tr>
-  <tr><td>（本コミット）</td><td>EDINET配線</td><td><span class="st-done">✅</span></td><td>EDINETキー稼働確認（公式・228件live・訂正有報を検知）。開示(TDnet/EDINET)をMAGI信用性に配線＝GC注記/訂正がdecisionの保留要因に</td></tr>
+  <tr><td><code>4f83f02</code></td><td>EDINET配線</td><td><span class="st-done">✅</span></td><td>EDINETキー稼働確認（公式・228件live・訂正有報を検知）。開示(TDnet/EDINET)をMAGI信用性に配線＝GC注記/訂正がdecisionの保留要因に</td></tr>
+  <tr><td>（本コミット）</td><td>朝バッチCLI</td><td><span class="st-done">✅</span></td><td>run_morning_batch の実行入口（scripts/run_morning_batch.py）。弾ON（信用性/EDINET）で pipeline を端から端まで実行＝実運用の入口</td></tr>
 </table>
 <div class="legend">
   <b>最初の貫通が通った</b>：universe→screening→MAGI(3審判→防御→統合→碇)→decision→決裁→<b>規律を効かせた発注リスト</b>。

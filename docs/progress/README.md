@@ -40,3 +40,4 @@
 - `0032-c-dashboard-counter-render.md` — C：詳細パネルの審判根拠文に反証(counter)を併記（LiveData.tsx・非破壊）
 - `0033-architecture-sync.md` — architecture.html §0 を最新化（C確定ハッシュ＋パイプラインバッジを弾反映に）
 - `0034-edinet-key-live-disclosure-wiring.md` — EDINETキー稼働確認(公式・228件live)＋開示をMAGI信用性に配線（GC注記/訂正→保留）
+- `0035-morning-batch-cli-entrypoint.md` — 朝バッチ実行CLI（scripts/run_morning_batch.py・弾ON）＝実運用の入口
