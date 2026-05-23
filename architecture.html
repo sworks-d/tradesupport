@@ -98,19 +98,19 @@ td code, .code { font-family: ui-monospace, "SF Mono", Menlo, monospace; backgro
 <h2>0. 実装進捗（MAGI再構築 / branch feat/magi-rebuild）</h2>
 
 <div class="note note-update">
-  <strong>到達点（2026-05-23）</strong>：判断層を「孤立（build_snapshot だけ）」から
-  <b>パイプライン貫通＋永続化</b>へ。3審判が厚い根拠を持ち（CASPER=実ニュース＋Sonnet解釈／MELCHIOR=14指標／
-  BALTHASAR=反証付き）、朝バッチDAGで decision＋検証4表が DB に貯まる。
-  方針転換：研究（docs/research）に基づき <b>「貫通→餌→弾」</b>の順へ。MAGIの外側に
-  <b>規律層（外骨格）</b>を被せる（元本¥100k・リスク2%・R-mult・集中/DD規律）。
+  <strong>到達点（2026-05-23）</strong>：判断層を「孤立」から <b>貫通＋永続化＋規律＋弾</b>へ。
+  3審判が厚い根拠（CASPER=実ニュース＋Sonnet／MELCHIOR=14指標／BALTHASAR=反証付き）、朝バッチDAGで
+  decision＋検証4表を永続化。研究（docs/research）の <b>「貫通→餌→弾」</b>順で、MAGIの外側に
+  <b>規律層（外骨格・¥100k/R-mult/集中・DD）</b>、内側に <b>弾（信用性 M/F/Z＋反証・V字・相対力）</b>を実装。
+  弾のライブ供給ON化（朝バッチ/snapshot）と P6評価・EDINET深掘りが残り。
 </div>
 
 <div class="pipeline">
-  <div class="pstage done">P1 収集<span class="st-done">✅ 拡充（news/財務）</span></div>
+  <div class="pstage done">P1 収集<span class="st-done">✅ news/2-3期財務</span></div>
   <div class="parrow">→</div>
-  <div class="pstage done">P2 一次選抜<span class="st-done">✅ universe投入</span></div>
+  <div class="pstage done">P2 一次選抜<span class="st-done">✅ universe＋V字/信用性/相対力</span></div>
   <div class="parrow">→</div>
-  <div class="pstage done">P3 MAGI判断<span class="st-done">✅ 3審判＋反証</span></div>
+  <div class="pstage done">P3 MAGI判断<span class="st-done">✅ 3審判＋反証＋信用性</span></div>
   <div class="parrow">→</div>
   <div class="pstage done">P4 提案生成<span class="st-done">✅ decision＋規律</span></div>
   <div class="parrow">→</div>
@@ -149,7 +149,8 @@ td code, .code { font-family: ui-monospace, "SF Mono", Menlo, monospace; backgro
   <tr><td><code>5669100</code></td><td>S7c テーマ</td><td><span class="st-done">✅</span></td><td>相対力(対市場)＋4象限（Leading/Weakening/Lagging/Improving）。Improving＝テーマV字。市場proxy=^GSPC/^N225</td></tr>
   <tr><td><code>6182af2</code></td><td>S4b 開示信用性</td><td><span class="st-done">✅</span></td><td>開示(TDnet/EDINET)のD-14レッドフラグ走査（GC注記/訂正/上場廃止/特設/監査意見）→ credibility warn。EDINET一覧は既存・キー時に充実</td></tr>
   <tr><td><code>bb5256a</code></td><td>D 統合</td><td><span class="st-done">✅</span></td><td>screening候補に 信用性/V字/相対力 を付与（enrich_candidates）。信用性warnは composite を減点して再ランク（opt-in）</td></tr>
-  <tr><td>（本コミット）</td><td>C UI描画</td><td><span class="st-done">✅</span></td><td>詳細パネルの各審判の根拠文に反証(counter)を併記（LiveData.tsx・要素は増やさず）。信用性flagは既存描画でwarn表示</td></tr>
+  <tr><td><code>04c3b47</code></td><td>C UI描画</td><td><span class="st-done">✅</span></td><td>詳細パネルの各審判の根拠文に反証(counter)を併記（LiveData.tsx・要素は増やさず）。信用性flagは既存描画でwarn表示</td></tr>
+  <tr><td>（本コミット）</td><td>doc同期</td><td><span class="st-done">✅</span></td><td>§0 を最新化：Cの確定ハッシュ反映＋パイプラインのバッジを弾(V字/信用性/相対力)反映に更新</td></tr>
 </table>
 <div class="legend">
   <b>最初の貫通が通った</b>：universe→screening→MAGI(3審判→防御→統合→碇)→decision→決裁→<b>規律を効かせた発注リスト</b>。
