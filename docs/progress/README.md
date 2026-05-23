@@ -24,3 +24,4 @@
 - `0016-b4-b5-commander-aggregation-internal-unease.md` — B-4/B-5 碇が反証を束ねる＋統合「全会一致でも内在不安」。architecture.html進捗運用を開始
 - `0017-exoskeleton-params-capital-100k.md` — 規律層(外骨格)§1：リスク8数値の整合版確定＋元本¥100k（研究の貫通→餌→弾に転換）
 - `0018-exoskeleton-universe-jp-first.md` — 規律層(外骨格)§2：universe を日本株主体に再編（JP14+US6・外れた銘柄は自動非活性）
+- `0019-exoskeleton-rmult-sizing.md` — 規律層(外骨格)§3：R-multサイジング（1R=口座2%・anti-martingale・stop逆算・JP単元未満）
