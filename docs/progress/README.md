@@ -41,3 +41,4 @@
 - `0033-architecture-sync.md` — architecture.html §0 を最新化（C確定ハッシュ＋パイプラインバッジを弾反映に）
 - `0034-edinet-key-live-disclosure-wiring.md` — EDINETキー稼働確認(公式・228件live)＋開示をMAGI信用性に配線（GC注記/訂正→保留）
 - `0035-morning-batch-cli-entrypoint.md` — 朝バッチ実行CLI（scripts/run_morning_batch.py・弾ON）＝実運用の入口
+- `0036-p6a-evaluation-core.md` — P6-a：評価メトリクス（R-multiple/hit-miss/Track Record・先読み回避・provisional）
