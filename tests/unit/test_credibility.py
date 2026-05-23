@@ -9,6 +9,7 @@ from trading_agent.screening.credibility import (
     altman_z_score,
     assess_credibility,
     beneish_m_score,
+    melchior_accrual_counter,
     melchior_credibility_counter,
     piotroski_f_score,
     scan_disclosure_red_flags,
@@ -163,6 +164,32 @@ class TestDisclosureRedFlags:
         # MELCHIOR反証にも開示フラグが出る
         counter = melchior_credibility_counter(res)
         assert any("開示レッドフラグ" in c["claim"] for c in counter)
+
+
+class TestMelchiorAccrualCounter:
+    def test_cfo_below_ni(self) -> None:
+        # 純利益250・営業CF100（<80%・発生高(250-100)/1000=0.15>0.10）→ 両方の反証
+        t = _pf("2026", net_income=250.0, operating_cashflow=100.0, total_assets=1000.0)
+        flags = melchior_accrual_counter(_fin(t, None))
+        assert any("営業CF" in c["claim"] for c in flags)
+        assert any("発生高" in c["claim"] for c in flags)
+
+    def test_dso_deterioration(self) -> None:
+        # 売掛/売上が前年比+20%超 → DSO悪化
+        t = _pf("2026", receivables=300.0, revenue=1000.0)
+        p = _pf("2025", receivables=100.0, revenue=1000.0)
+        assert any("売掛金回転" in c["claim"] for c in melchior_accrual_counter(_fin(t, p)))
+
+    def test_inventory_outpaces_sales(self) -> None:
+        t = _pf("2026", inventory=200.0, revenue=1000.0)
+        p = _pf("2025", inventory=100.0, revenue=1000.0)  # 在庫+100% 売上+0%
+        assert any("在庫" in c["claim"] for c in melchior_accrual_counter(_fin(t, p)))
+
+    def test_clean_no_accrual_flags(self) -> None:
+        t = _pf("2026", net_income=100.0, operating_cashflow=120.0, total_assets=1000.0,
+                receivables=100.0, revenue=1000.0, inventory=100.0)
+        p = _pf("2025", receivables=100.0, revenue=1000.0, inventory=100.0)
+        assert melchior_accrual_counter(_fin(t, p)) == []
 
 
 class TestMelchiorCredibilityCounter:

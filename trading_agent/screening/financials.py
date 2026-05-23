@@ -29,6 +29,7 @@ _LABELS: dict[str, tuple[str, ...]] = {
     "current_liabilities": ("Current Liabilities",),
     "ppe": ("Net PPE", "Net Property Plant And Equipment"),
     "receivables": ("Accounts Receivable", "Receivables"),
+    "inventory": ("Inventory",),
     "total_liabilities": ("Total Liabilities Net Minority Interest", "Total Liabilities"),
     "long_term_debt": ("Long Term Debt", "Long Term Debt And Capital Lease Obligation"),
     "retained_earnings": ("Retained Earnings",),
@@ -53,6 +54,7 @@ class PeriodFinancials:
     current_liabilities: float | None = None
     ppe: float | None = None
     receivables: float | None = None
+    inventory: float | None = None
     total_liabilities: float | None = None
     long_term_debt: float | None = None
     retained_earnings: float | None = None

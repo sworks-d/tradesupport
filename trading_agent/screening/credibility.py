@@ -258,3 +258,52 @@ def melchior_credibility_counter(
     for flag in cred.disclosure_flags:
         out.append({"claim": f"開示レッドフラグ：{flag}", "source_refs": refs})
     return out
+
+
+def melchior_accrual_counter(
+    fin: Financials, *, source_refs: list[dict] | None = None
+) -> list[dict]:
+    """S6：利益の質（earnings quality）の赤を2期財務からコード摘出。RESEARCH 領域2-B。
+
+    MELCHIOR の自領域反証：増益でも「現金裏付け弱／売掛・在庫が売上より速い／発生高が高い」を出す。
+    全てコード（R1）・データに基づく摘出（R5）。欠損は出さない（R4）。
+    """
+    refs = source_refs or [{"source": "yfinance", "ref": "financial-statements"}]
+    t, p = fin.current, fin.prior
+    out: list[dict] = []
+
+    def add(claim: str) -> None:
+        out.append({"claim": claim, "source_refs": refs})
+
+    # ① CFO < 純利益（利益が営業CFで裏付かない）
+    if t.operating_cashflow is not None and t.net_income is not None and t.net_income > 0:
+        if t.operating_cashflow < t.net_income * 0.8:
+            add("営業CFが純利益を下回る（現金裏付けが弱い）")
+
+    # ② 発生高（accruals=(NI−CFO)/総資産）が高い＝Sloan系の質低下
+    if t.net_income is not None and t.operating_cashflow is not None and t.total_assets:
+        if (t.net_income - t.operating_cashflow) / t.total_assets > 0.10:
+            add("発生高が高い（純利益−営業CF/総資産が大）")
+
+    if p is not None:
+        # ③ DSO悪化（売掛金/売上 が前年より上昇＝売上計上先行の疑い）
+        dso_t = _safe_div(t.receivables, t.revenue)
+        dso_p = _safe_div(p.receivables, p.revenue)
+        if dso_t is not None and dso_p is not None and dso_t > dso_p * 1.2:
+            add("売掛金回転の悪化（計上前倒しの疑い）")
+
+        # ④ 在庫が売上より速く増加（滞留・需要鈍化の疑い）
+        inv_g = _growth(t.inventory, p.inventory)
+        rev_g = _growth(t.revenue, p.revenue)
+        if inv_g is not None and rev_g is not None and inv_g > rev_g + 0.10:
+            add("在庫が売上より速く増加（滞留の疑い）")
+
+    return out
+
+
+def _safe_div(a: float | None, b: float | None) -> float | None:
+    return None if a is None or b is None or b == 0 else a / b
+
+
+def _growth(cur: float | None, prev: float | None) -> float | None:
+    return None if cur is None or prev is None or prev == 0 else (cur - prev) / abs(prev)

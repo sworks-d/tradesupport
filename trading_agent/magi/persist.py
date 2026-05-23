@@ -35,6 +35,7 @@ from trading_agent.models.magi import CommanderRec, JudgeVerdict, SplitPattern, 
 from trading_agent.screening import (
     Financials,
     assess_credibility,
+    melchior_accrual_counter,
     melchior_credibility_counter,
 )
 from trading_agent.utils.logger import get_logger
@@ -258,7 +259,8 @@ def _apply_credibility(
     if fin is None:
         return "ok"
     cred = assess_credibility(fin, sector=sector, disclosures=disclosures)
-    counter = melchior_credibility_counter(cred)
+    # 信用性ゾーン由来＋利益の質(accrual)由来の反証を MELCHIOR に併記（S6）
+    counter = [*melchior_credibility_counter(cred), *melchior_accrual_counter(fin)]
     if counter:
         for v in verdicts:
             if v.judge == "MELCHIOR":
