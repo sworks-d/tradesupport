@@ -157,16 +157,20 @@ C群：OSS借用（着手条件＝A-5後。decisionが生成される状態。�
 > TradingAgents の Bear Researcher（反対論拠の組み立て方）を翻案。**別Bear体は置かない**（領域横断で独立性を壊す）。
 > 反証は「予測・懸念の創作」ではなく「**既存データ内の不都合な事実の摘出**」＝R5を守る。
 
-## B-1 反証フィールド追加
+## B-1 反証フィールド追加  〔✅ 完了 2026-05-23〕
 - **対象**：`models/magi.py`（JudgeVerdict）。
 - **実装**：`counter_within_domain: list[dict]`（各項目に claim と source_refs）。
 - **受入**：JudgeVerdict が反証配列を保持・保存できる。**規模**：小。**依存**：A-3/A-4。
+- **実績**：JudgeVerdict に JSON カラム追加。`persist_bundle` 経由で decision_id 付き永続化（roundtripテスト済）。
 
-## B-2 BALTHASAR 反証（コード・LLM不使用）
+## B-2 BALTHASAR 反証（コード・LLM不使用）  〔✅ 完了 2026-05-23〕
 - **対象**：`magi/judges.py::balthasar`。
 - **実装**：buy寄りでも「RSI過熱/ダイバージェンス/出来高減少」等の逆向きシグナルを既存technicalsから**コードで**摘出。
 - **ハルシネ防止**：R1 全てコード／無ければ「反証なし（データ上は一貫）」とR4で正直に。
 - **受入**：golden_crossでもoverbought等があれば反証に出る。**規模**：小。**依存**：B-1。
+- **実績**：`_balthasar_counter`。buy→過熱/弱気ダイバージェンス/上限突破(割高)/デッドクロス併存、warn→売られすぎ/
+  GC/macd強気を摘出（出典付き）。新規テスト5＋永続roundtrip1。ライブ：AAPL=warnでも「MACD強気」を反証提示。
+  ※出来高は technicals に未供給のため対象外（R4）。
 
 ## B-3 MELCHIOR / CASPER 反証（LLM摘出＋コード照合）★原則的に最も繊細
 - **対象**：`magi/judges.py`（melchior/casper）、`magi/defense.py`（反証照合）、`mcp_tools/llm_call.py` 経由。

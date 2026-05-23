@@ -89,8 +89,9 @@ judge_verdict×3／split_pattern／verification／commander_rec（→P4 decision
 ## 反証層（B群）〔❌ 未／詳細は `../IMPROVEMENT_PLAN_FOR_CODE.md` B群〕
 三権独立を**壊さず**、各審判が自領域データ内で「判定と逆向きの事実」を**摘出**する（創作でなくR5順守）。
 TradingAgents の Bear論拠の組み立て方を翻案（別Bear体は置かない）。着手条件＝A-4（DAG接続）完了後。
-- **P3-8 反証フィールド**：`JudgeVerdict.counter_within_domain: list[dict]`（claim＋source_refs）。
-- **P3-9 BALTHASAR反証（コード）**：buy寄りでも過熱/ダイバージェンス/出来高減を technicals から摘出。
+- **P3-8 反証フィールド**〔✅ 2026-05-23〕：`JudgeVerdict.counter_within_domain: list[dict]`（claim＋source_refs）。永続化・冪等保存も対応。
+- **P3-9 BALTHASAR反証（コード）**〔✅ 2026-05-23〕：buy寄り→過熱(RSI≥70)/弱気ダイバージェンス(macd_bearish)/上限突破(割高)/
+  デッドクロス併存を摘出。warn寄り→売られすぎ(RSI≤30)/ゴールデンクロス/macd強気を摘出。全てコード・出典付き(R1/R5)、無ければ空(R4)。
 - **P3-10 MELCHIOR/CASPER反証（LLM摘出＋コード照合）**：「逆向きの事実をデータから選べ・創作禁止」。
   予測語を弾き source_refs 必須、防御層で実在照合（不通過は捨てる）。
 - **P3-11 碇が反証を束ねる**：碇の独自生成→各審判の counter_within_domain 集約に。

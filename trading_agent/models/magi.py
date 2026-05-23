@@ -91,4 +91,10 @@ class JudgeVerdict(SQLModel, table=True):
     source_refs: list[dict[str, Any]] = Field(default_factory=list, sa_column=Column(JSON))
     data_asof: dt.datetime | None = None
 
+    # 反証層（B群）：自領域データ内の「判定と逆向きの事実」。創作でなく摘出（R5）。
+    # 各項目 {"claim": str, "source_refs": [...]}。無ければ空＝データ上は一貫（R4）。
+    counter_within_domain: list[dict[str, Any]] = Field(
+        default_factory=list, sa_column=Column(JSON)
+    )
+
     created_at: dt.datetime = Field(default_factory=utcnow)

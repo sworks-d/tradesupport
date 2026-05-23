@@ -20,3 +20,4 @@
 - `0012-a3-decisions-schema-magi-fit.md` — A-3 decisionsスキーマをMAGI適合（status/gendo_stance/verified_at追加・予測値nullable化）
 - `0013-a1-universe-auto-define.md` — A-1 universe自動定義（US18+JP8の実在大型株を26件upsert・出所yfinance）
 - `0014-a4-magi-dag-throughput.md` — A-4 MAGIをDAGに貫通（materialize→magi_verify・decision＋検証4表を永続化・冪等）
+- `0015-b1-b2-counter-evidence-balthasar.md` — B-1/B-2 反証層土台（BALTHASARが自領域の逆向き事実をコード摘出・確証バイアス対策）

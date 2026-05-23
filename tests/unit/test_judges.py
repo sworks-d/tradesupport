@@ -121,6 +121,46 @@ def test_balthasar_na_on_missing_data() -> None:
     assert v.verdict == "na"
 
 
+# --- BALTHASAR 反証（B-2：自領域の逆向き事実をコード摘出） ------------------
+def _claims(v) -> str:
+    return " / ".join(c["claim"] for c in v.counter_within_domain)
+
+
+def test_balthasar_counter_macd_divergence_on_buy() -> None:
+    # ゴールデンクロスで buy だが MACD は弱気＝弱気ダイバージェンスの反証
+    v = balthasar("NVDA", _tech({"rsi": 60.0}, ["golden_cross", "macd_bearish"]))
+    assert v.verdict == "buy"
+    assert "ダイバージェンス" in _claims(v)
+    # 反証は出典付き（創作でなく摘出＝R5）
+    assert v.counter_within_domain[0]["source_refs"]
+
+
+def test_balthasar_counter_overextended_on_buy() -> None:
+    v = balthasar("NVDA", _tech({"rsi": 62.0}, ["golden_cross", "bollinger_breakout_up"]))
+    assert v.verdict == "buy"
+    assert "平均回帰" in _claims(v)
+
+
+def test_balthasar_counter_oversold_rebound_on_warn() -> None:
+    # デッドクロスで warn だが RSI は売られすぎ＝反発余地の反証
+    v = balthasar("NVDA", _tech({"rsi": 25.0}, ["death_cross"]))
+    assert v.verdict == "warn"
+    assert "売られすぎ" in _claims(v)
+
+
+def test_balthasar_counter_momentum_on_warn() -> None:
+    v = balthasar("NVDA", _tech({"rsi": 78.0}, ["overbought_rsi", "macd_bullish"]))
+    assert v.verdict == "warn"
+    assert "強気" in _claims(v)
+
+
+def test_balthasar_no_counter_when_consistent() -> None:
+    # 強気一色＝反証なし（データ上は一貫・捏造しない＝R4）
+    v = balthasar("NVDA", _tech({"rsi": 55.0}, ["golden_cross", "macd_bullish"]))
+    assert v.verdict == "buy"
+    assert v.counter_within_domain == []
+
+
 # --- CASPER（文脈） ---------------------------------------------------------
 def test_casper_warn_on_negative_keywords() -> None:
     v = casper("TSLA", news=_news([{"title": "Tesla、FSD収益化が遅延", "summary": "下方修正"}]))

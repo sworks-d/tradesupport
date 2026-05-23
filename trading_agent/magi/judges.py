@@ -188,6 +188,38 @@ def melchior(ticker: str, fundamentals: Any) -> JudgeVerdict:
     )
 
 
+def _balthasar_counter(
+    verdict: str, data: dict[str, Any], signals: list[str], refs: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """BALTHASAR の判定と逆向きの事実を technicals から摘出（B-2）。
+
+    創作はしない（R5）：実シグナル・実RSIに基づく事実のみ。無ければ空（R4）。
+    """
+    rsi = data.get("rsi")
+    claims: list[str] = []
+    if verdict == "buy":  # 買い寄りに対する弱気の事実
+        if isinstance(rsi, int | float) and rsi >= 70:
+            claims.append(f"RSI{rsi:.0f}が過熱圏（70超）で反落リスク")
+        if "macd_bearish" in signals:
+            claims.append("MACDヒストグラムが弱気（勢いの鈍化＝弱気ダイバージェンスの疑い）")
+        if "death_cross" in signals:
+            claims.append("デッドクロスが併存（中期トレンドは下向き）")
+        if "bollinger_breakout_up" in signals:
+            claims.append("ボリンジャー上限突破＝割高で平均回帰リスク")
+        if "bollinger_breakout_down" in signals:
+            claims.append("ボリンジャー下限割れが併存（買い判断と矛盾）")
+    elif verdict in ("warn", "sell"):  # 弱気寄りに対する強気の事実
+        if isinstance(rsi, int | float) and rsi <= 30:
+            claims.append(f"RSI{rsi:.0f}が売られすぎ圏（30未満）で反発余地")
+        if "golden_cross" in signals:
+            claims.append("ゴールデンクロスが併存（上昇転換の兆し）")
+        if "macd_bullish" in signals:
+            claims.append("MACDヒストグラムが強気（勢いは改善）")
+        if "bollinger_breakout_up" in signals:
+            claims.append("ボリンジャー上限突破（強い上昇圧力）")
+    return [{"claim": c, "source_refs": refs} for c in claims]
+
+
 def balthasar(ticker: str, technicals: Any) -> JudgeVerdict:
     """株価審判：technicals のコード計算結果（シグナル/指標）だけで可否を出す。"""
     data = getattr(technicals, "data", {}) or {}
@@ -226,6 +258,7 @@ def balthasar(ticker: str, technicals: Any) -> JudgeVerdict:
         reason=f"{rsi_s}{sig_s}。",
         source_refs=refs,
         data_asof=asof,
+        counter_within_domain=_balthasar_counter(verdict, data, signals, refs),
     )
 
 

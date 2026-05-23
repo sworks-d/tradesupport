@@ -130,6 +130,25 @@ class TestMagiVerify:
             assert s.exec(select(Verification).where(col(Verification.decision_id) == did)).first()
             assert s.exec(select(CommanderRec).where(col(CommanderRec.decision_id) == did)).first()
 
+    async def test_counter_within_domain_persisted(self, engine) -> None:
+        """B-1：審判の反証（counter_within_domain）が decision_id 付きで永続化される。"""
+        ids = materialize_decisions(engine, ["NVDA"])
+        bal = _verdict("BALTHASAR", "buy")
+        bal.counter_within_domain = [{"claim": "RSI過熱", "source_refs": [{"source": "computed"}]}]
+
+        async def judge_fn(_ticker: str) -> JudgeBundle:
+            return _bundle(verdicts=[_verdict("MELCHIOR", "buy"), bal, _verdict("CASPER", "buy")])
+
+        await magi_verify(engine, ids, judge_fn)
+        with Session(engine) as s:
+            row = s.exec(
+                select(JudgeVerdict)
+                .where(col(JudgeVerdict.decision_id) == ids[0])
+                .where(col(JudgeVerdict.judge) == "BALTHASAR")
+            ).one()
+            assert row.counter_within_domain
+            assert row.counter_within_domain[0]["claim"] == "RSI過熱"
+
     async def test_default_hold_counts_as_held(self, engine) -> None:
         ids = materialize_decisions(engine, ["NVDA"])
 
