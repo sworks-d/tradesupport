@@ -29,3 +29,4 @@
 - `0021-s3-decision-order-list-throughput.md` — S3(A-5) 決裁→発注リスト。最初の貫通完成（規律を効かせた発注リスト・AAPLがセクター枠で自動縮小）
 - `0022-s4a-two-period-financials.md` — S4a(餌)：2期分財務（yfinance諸表・キー不要）＝M/F/Z・MELCHIOR反証の前提
 - `0023-s5-credibility-mfz.md` — S5(弾)：信用性フィルタ Beneish M / Piotroski F / Altman Z（独立warn・コード計算・定性ゾーン）
+- `0024-track-research-docs.md` — 研究3doc(RESEARCH_METHODS/RESEARCH_TO_IMPLEMENTATION/RISK_EXOSKELETON)をリポジトリに格納
