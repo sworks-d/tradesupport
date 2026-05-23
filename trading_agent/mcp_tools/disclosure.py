@@ -178,7 +178,8 @@ def _fetch_edinet(tool_input: DisclosureInput) -> list[Disclosure]:
         disclosures.append(
             {
                 "ticker": sec_code[:4] if sec_code else "",
-                "title": doc.get("docDescription", ""),
+                # 実データでは docDescription が None のことがある → "" に正規化
+                "title": doc.get("docDescription") or "",
                 "url": base + str(doc.get("docID", "")),
                 "published_at": doc.get("submitDateTime", ""),
                 "source": "EDINET",

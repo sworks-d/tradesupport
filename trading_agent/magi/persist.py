@@ -25,6 +25,7 @@ from trading_agent.magi.commander import CommanderResult
 from trading_agent.magi.defense import VerificationResult
 from trading_agent.magi.integration import SplitResult
 from trading_agent.mcp_tools.base import MCPToolInput, MCPToolOutput
+from trading_agent.mcp_tools.disclosure import DisclosureInput
 from trading_agent.mcp_tools.fundamentals import FundamentalsInput
 from trading_agent.mcp_tools.llm_call import LLMCallTool
 from trading_agent.mcp_tools.news import NewsInput
@@ -218,7 +219,10 @@ def make_live_judge_fn(
         credibility_flag = "ok"
         if financials_fetcher is not None:
             sector = sector_lookup(ticker) if sector_lookup is not None else None
-            credibility_flag = _apply_credibility(ticker, verdicts, financials_fetcher, sector)
+            disclosures = await _fetch_disclosures(call_tool, ticker)  # S4b：開示レッドフラグ
+            credibility_flag = _apply_credibility(
+                ticker, verdicts, financials_fetcher, sector, disclosures
+            )
 
         split = classify_split(verdicts)
         vr = verify(verdicts, credibility_flag=credibility_flag)
@@ -228,13 +232,24 @@ def make_live_judge_fn(
     return judge
 
 
+async def _fetch_disclosures(call_tool: CallTool, ticker: str) -> list[dict] | None:
+    """開示（TDnet/EDINET）を best-effort 取得（D-14 レッドフラグ用・S4b）。失敗は None。"""
+    try:
+        out = await call_tool("disclosure", DisclosureInput(tickers=[ticker]))
+    except Exception as exc:
+        _log.warning("magi_disclosure_failed", ticker=ticker, error=str(exc))
+        return None
+    return getattr(out, "disclosures", None)
+
+
 def _apply_credibility(
     ticker: str,
     verdicts: list[JudgeVerdict],
     fetcher: FinancialsFetcher,
     sector: str | None,
+    disclosures: list[dict] | None = None,
 ) -> str:
-    """2期財務→信用性。MELCHIOR の counter_within_domain を更新し、credibility_flag を返す。"""
+    """2期財務＋開示→信用性。MELCHIOR の counter_within_domain を更新し credibility_flag を返す。"""
     try:
         fin = fetcher(ticker)
     except Exception as exc:  # 取得失敗は信用性スキップ（ok・graceful）
@@ -242,7 +257,7 @@ def _apply_credibility(
         return "ok"
     if fin is None:
         return "ok"
-    cred = assess_credibility(fin, sector=sector)
+    cred = assess_credibility(fin, sector=sector, disclosures=disclosures)
     counter = melchior_credibility_counter(cred)
     if counter:
         for v in verdicts:

@@ -39,3 +39,4 @@
 - `0031-d-screening-quality-integration.md` — D：screening候補に信用性/V字/相対力を付与（enrich_candidates）・信用性warnは減点再ランク
 - `0032-c-dashboard-counter-render.md` — C：詳細パネルの審判根拠文に反証(counter)を併記（LiveData.tsx・非破壊）
 - `0033-architecture-sync.md` — architecture.html §0 を最新化（C確定ハッシュ＋パイプラインバッジを弾反映に）
+- `0034-edinet-key-live-disclosure-wiring.md` — EDINETキー稼働確認(公式・228件live)＋開示をMAGI信用性に配線（GC注記/訂正→保留）

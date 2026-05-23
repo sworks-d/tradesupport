@@ -203,6 +203,44 @@ class TestMagiVerify:
         mel = next(v for v in verdicts if v.judge == "MELCHIOR")
         assert any("倒産リスク" in c["claim"] for c in mel.counter_within_domain)
 
+    async def test_disclosure_red_flag_feeds_credibility(self, engine) -> None:
+        """S4b：開示のGC注記が credibility warn＋MELCHIOR反証に乗る（call_tool経由）。"""
+        from trading_agent.magi.persist import make_live_judge_fn
+        from trading_agent.mcp_tools.disclosure import DisclosureOutput
+        from trading_agent.mcp_tools.fundamentals import FundamentalsOutput
+        from trading_agent.mcp_tools.news import NewsOutput
+        from trading_agent.mcp_tools.technicals import TechnicalsOutput
+        from trading_agent.screening.financials import Financials, PeriodFinancials
+
+        async def call_tool(name: str, _inp):
+            if name == "fundamentals":
+                return FundamentalsOutput(
+                    success=True, data={"revenue_growth": 0.2, "operating_margin": 0.2}
+                )
+            if name == "technicals":
+                return TechnicalsOutput(success=True, data={"rsi": 50.0}, signals=[])
+            if name == "disclosure":
+                disc = [{"title": "継続企業の前提に関する注記", "description": ""}]
+                return DisclosureOutput(success=True, disclosures=disc)
+            return NewsOutput(success=True, articles=[])
+
+        def fin_fetcher(_ticker: str) -> Financials:
+            # 財務は健全（M/F/Z は warn でない）→ warn は開示由来のみ
+            cur = PeriodFinancials(
+                period="2026", working_capital=500.0, total_assets=1000.0,
+                retained_earnings=600.0, ebit=300.0, total_liabilities=400.0, revenue=1000.0,
+                net_income=200.0, operating_cashflow=205.0, current_assets=500.0,
+                current_liabilities=300.0, receivables=120.0, ppe=300.0, gross_profit=600.0,
+                shares=10.0, long_term_debt=100.0,
+            )
+            return Financials(ticker="X", current=cur, prior=None, market_cap=3000.0)
+
+        judge = make_live_judge_fn(call_tool, financials_fetcher=fin_fetcher)
+        verdicts, _s, vr, _c = await judge("X")
+        assert vr.credibility_flag == "warn"  # 開示GC注記で warn
+        mel = next(v for v in verdicts if v.judge == "MELCHIOR")
+        assert any("開示レッドフラグ" in c["claim"] for c in mel.counter_within_domain)
+
     async def test_failure_is_isolated(self, engine) -> None:
         ids = materialize_decisions(engine, ["NVDA"])
 
