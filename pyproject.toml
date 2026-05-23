@@ -76,3 +76,4 @@ plugins = ["pydantic.mypy"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 addopts = "-ra -q"
+pythonpath = ["."]  # scripts/ をテストから import 可能に（A-1 load_universe 等のロジック検証）

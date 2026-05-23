@@ -89,13 +89,17 @@ C群：OSS借用（着手条件＝A-5後。decisionが生成される状態。�
   新規テスト2（verifying最小生成／verifying→verified遷移）。Decision生成箇所が無いため既存テストは無改変で green。
   **これで A-4（DAG接続）の保存先が用意できた**。
 
-## A-1 universe 投入  [要ユーザー判断：銘柄リストの出所]
+## A-1 universe 投入  〔✅ 完了 2026-05-23（自動定義を採用）〕
 - **目的**：母集団を入れてスクリーニングを起動可能に（NVDA決め打ち脱却）。
 - **対象**：新規 `scripts/load_universe.py`。`models/universe.py`（定義済）。
-- **データソース**：銘柄リスト。**[要ユーザー判断]**＝手元リスト or 自動定義（¥1M端株前提でUS主要＋安価JP）。
-- **実装**：universeへ upsert（ticker/market/name/sector/market_cap/avg_volume_30d…）。`screening_agent._load_universe` が既に読む。
+- **データソース（ユーザー決定＝自動定義）**：¥1M端株前提で **US主要18＋安価JP8** の実在・検証可能な大型株を
+  キュレーション（発明しない）。メタ（社名/セクター/時価総額/出来高）は yfinance から取得（出所明確）。
+- **実装**：`build_rows`（メタ取得→Universe行・US時価総額はUSDJPY換算）＋`upsert_universe`（ticker主キーで冪等）。
+  `screening_agent._load_universe` が market_cap_jpy 降順で読む。
 - **ハルシネ防止**：R7 出所の明確な銘柄のみ登録。勝手に発明しない。
-- **受入**：universe に N 件入り、`screening_agent` が母集団を読める。
+- **実績（2026-05-23）**：`data/trading.sqlite` に **26件 upsert**（fetched 26/26・usdjpy=159.2）。
+  上位＝NVDA/GOOGL/AAPL/MSFT/AMZN。新規テスト7（キュレーション健全性・JPY換算・冪等upsert・降順読取）。
+  pytest に `pythonpath=["."]` を追加し scripts/ のロジックを検証可能に。
 - **依存**：なし。**規模**：小。
 
 ## A-2 news 実装（yfinance + Google News RSS）★最優先穴  〔✅ 完了 2026-05-23〕
