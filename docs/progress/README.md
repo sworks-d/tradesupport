@@ -14,3 +14,4 @@
 - `0006-spec-depth-exemplar-p1-6.md` — specを実装レベルへ深掘り（見本P1-6）
 - `0007-consolidate-plans-and-reuse-inventory.md` — 計画docs集約＋外部OSS棚卸し取り込み
 - `0008-oss-borrow-policy.md` — 外部OSS借用方針(自前実装＋考え方補完)確定
+- `0009-a2-news-self-build-casper-unblock.md` — A-2ニュース自前実装でCASPER解放（NVDA53件・CASPER=buy／D-22精度最優先）

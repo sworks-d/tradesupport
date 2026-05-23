@@ -93,7 +93,7 @@ C群：OSS借用（着手条件＝A-5後。decisionが生成される状態。�
 - **受入**：universe に N 件入り、`screening_agent` が母集団を読める。
 - **依存**：なし。**規模**：小。
 
-## A-2 news 実装（yfinance + Google News RSS）★最優先穴
+## A-2 news 実装（yfinance + Google News RSS）★最優先穴  〔✅ 完了 2026-05-23〕
 - **目的**：CASPERの目隠しを解除（銘柄別ニュース0件を解消）。
 - **対象**：`mcp_tools/news.py`（fetcher追加）、`tests/unit/test_news.py`。
 - **データソース（無料・キー不要）**：
@@ -103,6 +103,7 @@ C群：OSS借用（着手条件＝A-5後。decisionが生成される状態。�
 - **ハルシネ防止**：R2 各記事に url＋published(as_of)必須／R4 0件はna（捏造しない）／R5 summaryはソース提供文のまま。
 - **受入**：NVDA・7203 で記事≥1、`casper()` が na を脱して方向を返す。新規テスト＋既存 green。
 - **依存**：なし。**規模**：小。
+- **実績（2026-05-23）**：`_fetch_yf_news`（旧/新yf両形対応）＋`_fetch_gnews_rss`（社名补完・`companies` 引数）を新設、`_default_fetchers()`先頭2枠に。実測 NVDA=53件・7203=48件（failures=0）、CASPER=buy（na脱出）。新規17テスト・全スイートgreen。コミット参照：progress/0009。
 
 ## A-4 MAGI を DAG に接続（materialize_decisions + magi_verify）★貫通の核
 - **目的**：孤立しているMAGIを実行経路に繋ぐ。候補→decision生成→3審判→防御→統合→碇→保存。

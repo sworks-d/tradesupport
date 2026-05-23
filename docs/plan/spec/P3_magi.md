@@ -26,14 +26,14 @@ judge_verdict×3／split_pattern／verification／commander_rec（→P4 decision
 - ハルシネ防止：R1 計算はコード／R7 technicals以外見ない。
 - 受入：golden_cross→buy・overbought→warn・欠損→na（既存テスト green）。
 
-### P3-3 CASPER（文脈審判）  〔❌ 入力欠（ニュース0）〕
+### P3-3 CASPER（文脈審判）  〔🟡 入力解放済（A-2）／本格判定はP3-7 LLM待ち〕
 - 全体ゴール：文脈・イベント（なぜ動くか）の可否を独立に出す。
 - 前からの引き継ぎ：**news/disclosure/manual/macro のみ**（P1-6/7/8/11）。
 - 目的：材料の方向（ポジ/ネガ）から可否。**本格判定はLLM解釈（P3-7）で補完**。
 - 実装：`magi/judges.py::casper`（現状：決定論キーワード＝確信度低）。
 - 次への引き渡し：`JudgeVerdict(CASPER,...)`＋記事の出典。
 - ハルシネ防止：R4 材料0なら na（埋めない＝現状そうなっている）／R2 各主張に記事URL/時点を紐付け。
-- 受入：P1-6実装後、NVDA等で材料>0→naを脱し方向を出す。**今の穴の本体はP1-6**。
+- 受入：P1-6実装後、NVDA等で材料>0→naを脱し方向を出す。**今の穴の本体はP1-6**。→ **A-2で解放（2026-05-23）：NVDA53件でCASPER=buy（na脱出）**。残るのは確信度（決定論=低）→P3-7でLLM解釈に格上げ。
 
 ### P3-4 防御層（機械照合・決裁前ゲート）  〔✅〕
 - 全体ゴール：混入した嘘の数字・古い時点・未照合を決裁直前に検出・遮断。

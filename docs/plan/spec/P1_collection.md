@@ -53,7 +53,7 @@ LLMはこのフェーズで一切使わない（収集はすべてAPI/コード�
 - ハルシネ防止：R2 出典URL実在確認／R5 LLMで要約する場合も数値はXBRL値のみ／R4 取得不能はna。
 - 受入：1銘柄でEDGAR/EDINETの一次情報が取得され、監査意見/GC注記が判定できる。
 
-### P1-6 ニュース収集（銘柄別）  〔❌ 0件（最優先穴）／★本書の"深さ"の見本〕
+### P1-6 ニュース収集（銘柄別）  〔✅ A-2実装済（yfinance＋GoogleNews自前）／★本書の"深さ"の見本〕
 - **全体ゴール**：CASPER（文脈審判）に"なぜ動くか"の一次材料を供給し、MAGIを3脚で立たせる。
 - **前からの引き継ぎ（入力契約）**：
   `NewsInput{ tickers:list[str], topics:list[str]|None, since:datetime|None(既定 now-72h), sources:list[str]|None }`。
@@ -72,6 +72,7 @@ LLMはこのフェーズで一切使わない（収集はすべてAPI/コード�
 - **エッジ・失敗**：記事0→`articles=[]`（CASPERはna）。JP記事→language=ja。要約空(paywall)→titleのみで判定。yf/gnews片方失敗→他方で継続(graceful)。両方失敗→NetworkError→baseリトライ。
 - **テスト（tests/unit/test_news.py 追加）**：①`_fetch_yf_news` 正規化 ②`_fetch_gnews_rss` 正規化 ③銘柄フィルタがNVDA記事を残す ④yf+gnens横断の重複除去 ⑤0件→CASPER na維持 ⑥(結合)news>0→CASPER verdict。
 - **受入条件（計測可能）**：NVDAで記事≥1、7203（社名トヨタ補完）で記事≥1、`casper()` が na を脱し方向を返す。新規6テスト＋既存 green。
+  - **実測（2026-05-23 A-2）**：NVDA=53件・7203=48件（source_failures=0）、`casper('NVDA')`=buy（na脱出）。新規テスト17・全スイート green。日本語ソース（株探/Yahoo!ファイナンス/ダイヤモンド等）も取得。
 - **ハルシネ防止**：R2 各記事に url＋published(as_of)必須／R4 0件はna（記事を捏造しない）／R5 summaryはソース提供文のまま（LLM生成しない）。
 - **依存**：なし（無料・キー不要）。**規模**：小〜中。**想定差分**：`mcp_tools/news.py`, `tests/unit/test_news.py`。
 
