@@ -24,6 +24,7 @@ type JudgeMini = {
   color: string;
   dim: boolean;
   reason: string;
+  counter?: string[]; // 自領域の反証（B群／信用性）
 };
 type Sizing = {
   amount_display: string;
@@ -242,7 +243,13 @@ export default function LiveData() {
                 vd.className = `magi-jverdict ${m.cls}`;
               }
               const reason = row.querySelector(".magi-jreason");
-              if (reason) reason.textContent = j.reason;
+              if (reason) {
+                // 反証（自領域の逆向き事実）があれば根拠文に併記（要素は増やさない）
+                const counter = j.counter && j.counter.length
+                  ? `　／反証：${j.counter.join("・")}`
+                  : "";
+                reason.textContent = `${j.reason}${counter}`;
+              }
             });
             const mfState = panel.querySelector(".mf-state");
             if (mfState) mfState.textContent = cand.split;

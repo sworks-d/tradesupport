@@ -148,7 +148,8 @@ td code, .code { font-family: ui-monospace, "SF Mono", Menlo, monospace; backgro
   <tr><td><code>90b6c36</code></td><td>S7b（弾）</td><td><span class="st-done">✅</span></td><td>screening の V字スコアに Value×Momentum を適用：点火なしの底は満額にせず value_trap フラグ（底だけは拾わない）</td></tr>
   <tr><td><code>5669100</code></td><td>S7c テーマ</td><td><span class="st-done">✅</span></td><td>相対力(対市場)＋4象限（Leading/Weakening/Lagging/Improving）。Improving＝テーマV字。市場proxy=^GSPC/^N225</td></tr>
   <tr><td><code>6182af2</code></td><td>S4b 開示信用性</td><td><span class="st-done">✅</span></td><td>開示(TDnet/EDINET)のD-14レッドフラグ走査（GC注記/訂正/上場廃止/特設/監査意見）→ credibility warn。EDINET一覧は既存・キー時に充実</td></tr>
-  <tr><td>（本コミット）</td><td>D 統合</td><td><span class="st-done">✅</span></td><td>screening候補に 信用性/V字/相対力 を付与（enrich_candidates）。信用性warnは composite を減点して再ランク（opt-in）</td></tr>
+  <tr><td><code>bb5256a</code></td><td>D 統合</td><td><span class="st-done">✅</span></td><td>screening候補に 信用性/V字/相対力 を付与（enrich_candidates）。信用性warnは composite を減点して再ランク（opt-in）</td></tr>
+  <tr><td>（本コミット）</td><td>C UI描画</td><td><span class="st-done">✅</span></td><td>詳細パネルの各審判の根拠文に反証(counter)を併記（LiveData.tsx・要素は増やさず）。信用性flagは既存描画でwarn表示</td></tr>
 </table>
 <div class="legend">
   <b>最初の貫通が通った</b>：universe→screening→MAGI(3審判→防御→統合→碇)→decision→決裁→<b>規律を効かせた発注リスト</b>。

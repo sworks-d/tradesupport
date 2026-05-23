@@ -37,3 +37,4 @@
 - `0029-s7c-theme-relative-strength.md` — S7c(テーマ)：相対力＋4象限（Improving＝テーマV字・市場proxy ^GSPC/^N225）
 - `0030-s4b-disclosure-credibility.md` — S4b：開示(TDnet/EDINET)のD-14レッドフラグ走査→credibility warn（GC注記/訂正/上場廃止等）
 - `0031-d-screening-quality-integration.md` — D：screening候補に信用性/V字/相対力を付与（enrich_candidates）・信用性warnは減点再ランク
+- `0032-c-dashboard-counter-render.md` — C：詳細パネルの審判根拠文に反証(counter)を併記（LiveData.tsx・非破壊）
