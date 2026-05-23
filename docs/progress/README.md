@@ -21,3 +21,4 @@
 - `0013-a1-universe-auto-define.md` — A-1 universe自動定義（US18+JP8の実在大型株を26件upsert・出所yfinance）
 - `0014-a4-magi-dag-throughput.md` — A-4 MAGIをDAGに貫通（materialize→magi_verify・decision＋検証4表を永続化・冪等）
 - `0015-b1-b2-counter-evidence-balthasar.md` — B-1/B-2 反証層土台（BALTHASARが自領域の逆向き事実をコード摘出・確証バイアス対策）
+- `0016-b4-b5-commander-aggregation-internal-unease.md` — B-4/B-5 碇が反証を束ねる＋統合「全会一致でも内在不安」。architecture.html進捗運用を開始

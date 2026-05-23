@@ -15,6 +15,13 @@ def _v(judge: str, verdict: str, reason: str = "x") -> JudgeVerdict:
     )
 
 
+def _vc(judge: str, verdict: str, claim: str) -> JudgeVerdict:
+    """反証（counter_within_domain）付きの審判判定。"""
+    v = _v(judge, verdict)
+    v.counter_within_domain = [{"claim": claim, "source_refs": [{"source": "computed"}]}]
+    return v
+
+
 # --- B4 統合機構 ---------------------------------------------------------
 def test_split_unanimous_buy() -> None:
     s = classify_split([_v("MELCHIOR", "buy"), _v("BALTHASAR", "buy"), _v("CASPER", "buy")])
@@ -56,3 +63,47 @@ def test_commander_holds_when_split_or_na() -> None:
     rec = command(verdicts, s, vr)
     assert "保留" in rec.recommendation
     assert rec.counter_argument.startswith("反対するなら：")
+
+
+# --- B-5 統合：全会一致でも内在不安 -------------------------------------------
+def test_split_unanimous_buy_with_internal_unease() -> None:
+    verdicts = [
+        _vc("MELCHIOR", "buy", "PERが割高"),
+        _vc("BALTHASAR", "buy", "RSI過熱"),
+        _v("CASPER", "buy"),
+    ]
+    s = classify_split(verdicts)
+    assert s.agree_count == 3
+    assert "内在不安" in s.interpretation
+
+
+def test_split_unanimous_buy_single_counter_stays_confident() -> None:
+    # 反証が1審判だけなら従来どおり（内在不安にはしない）
+    verdicts = [_vc("BALTHASAR", "buy", "RSI過熱"), _v("MELCHIOR", "buy"), _v("CASPER", "buy")]
+    s = classify_split(verdicts)
+    assert "内在不安" not in s.interpretation
+    assert "確信度は高い" in s.interpretation
+
+
+# --- B-4 碇が各審判の反証を束ねる -------------------------------------------
+def test_commander_aggregates_counters() -> None:
+    verdicts = [
+        _vc("MELCHIOR", "buy", "営業赤字"),
+        _vc("BALTHASAR", "buy", "RSI過熱"),
+        _v("CASPER", "buy"),
+    ]
+    s = classify_split(verdicts)
+    vr = verify(verdicts)
+    rec = command(verdicts, s, vr)
+    assert "内在反証＝" in rec.counter_argument
+    assert "RSI過熱" in rec.counter_argument
+    assert "営業赤字" in rec.counter_argument
+    assert rec.magi_compliant is True  # 審判の摘出を束ねるだけ＝MAGI内
+
+
+def test_commander_no_counter_suffix_when_none() -> None:
+    verdicts = [_v("MELCHIOR", "buy"), _v("BALTHASAR", "buy"), _v("CASPER", "buy")]
+    s = classify_split(verdicts)
+    vr = verify(verdicts)
+    rec = command(verdicts, s, vr)
+    assert "内在反証＝" not in rec.counter_argument

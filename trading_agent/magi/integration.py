@@ -42,8 +42,18 @@ def classify_split(verdicts: list[JudgeVerdict]) -> SplitResult:
     def not_buy(v: JudgeVerdict | None) -> bool:
         return v is not None and v.verdict != "buy"
 
+    # B-5：全会一致でも複数審判が自領域内に逆向きの事実を摘出＝内在不安
+    judges_with_counter = sum(1 for v in verdicts if v.counter_within_domain)
+    internal_unease = n == total and judges_with_counter >= 2
+
     if actionable and n == total and top == "buy":
-        interp = "3審判一致（買い）。確信度は高い。ただし全員が同方向に誤った可能性も残る。"
+        if internal_unease:
+            interp = (
+                "3審判一致（買い）だが、複数審判が自領域内に逆向きの事実を摘出＝内在不安。"
+                "全会一致でも確信度は割り引くべき。"
+            )
+        else:
+            interp = "3審判一致（買い）。確信度は高い。ただし全員が同方向に誤った可能性も残る。"
     elif is_buy(m) and not_buy(b):
         interp = "業績◯・株価✕。業績は良いが株価の勢いがない/下落中。タイミング尚早の疑い。"
     elif is_buy(b) and not_buy(m):

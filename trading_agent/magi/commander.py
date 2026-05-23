@@ -50,21 +50,35 @@ def command(
     # 反対論拠（必ず併記）
     if buys and dissent:
         d = dissent[0]
-        counter = (
-            f"反対するなら：{d.judge}（{_ROLE.get(d.judge, '')}）が{_WORD.get(d.verdict, d.verdict)}。"
-            f"{d.reason}"
-        )
+        word = _WORD.get(d.verdict, d.verdict)
+        counter = f"反対するなら：{d.judge}（{_ROLE.get(d.judge, '')}）が{word}。{d.reason}"
     elif unanimous_buy:
         extra = f"さらに{'・'.join(na_judges)}は判定不能で死角が残る。" if na_judges else ""
-        counter = "反対するなら：全会一致は逆に全員が同方向に見落としている可能性も残す。" + extra
+        counter = "反対するなら：全会一致は全員が同方向に見落とす可能性も残す。" + extra
     elif not buys:
-        counter = "反対するなら：現状の判定は買いを支持していないが、見送れば上昇を逃す可能性もある。"
+        counter = "反対するなら：判定は買いを支持しないが、見送れば上昇機会を逃す恐れもある。"
     else:
         counter = "反対するなら：判断材料が不足しており、確信のある反論も難しい。"
+
+    # B-4：各審判が自領域内で摘出した「逆向きの事実」を束ねて反対論拠に足す（MAGI内・R5）
+    counter += _aggregate_counters(verdicts)
 
     return CommanderResult(
         recommendation=rec,
         counter_argument=counter,
-        magi_compliant=True,  # 決定論生成＝MAGI外の新事実なし
-        src_note="根拠：3審判の判定のみ。新たな事実は加えていない。予測値は推奨の根拠にしていない。",
+        magi_compliant=True,  # 決定論生成＝MAGI外の新事実なし（反証も審判の摘出を束ねるだけ）
+        src_note="根拠：3審判の判定と各審判の内在反証のみ。新たな事実は加えていない。予測値は推奨の根拠にしていない。",
     )
+
+
+def _aggregate_counters(verdicts: list[JudgeVerdict]) -> str:
+    """各審判の counter_within_domain を束ねた一文（B-4）。無ければ空文字。"""
+    facts: list[str] = []
+    for v in verdicts:
+        for c in v.counter_within_domain or []:
+            claim = str(c.get("claim", "")).strip()
+            if claim:
+                facts.append(f"{_ROLE.get(v.judge, v.judge)}：{claim}")
+    if not facts:
+        return ""
+    return " 各審判の内在反証＝" + "／".join(facts) + "。"
