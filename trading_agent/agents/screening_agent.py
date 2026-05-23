@@ -11,6 +11,7 @@ Phase 1 の制約：90日高安・四半期 EPS・銘柄別ニュース件数は
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Callable
 from typing import Any
 
 from pydantic import Field
@@ -24,7 +25,57 @@ from trading_agent.mcp_tools.market_data import MarketDataInput
 from trading_agent.mcp_tools.screening import ScreeningInput, ScreeningTickerData
 from trading_agent.mcp_tools.technicals import TechnicalsInput
 from trading_agent.models.universe import Universe
+from trading_agent.screening import (
+    Financials,
+    assess_credibility,
+    assess_turnaround,
+    relative_strength_live,
+)
 from trading_agent.utils.logger import get_logger
+
+# 品質エンリッチ用の注入フェッチャ（テストはスタブ・ライブは yfinance）
+FinancialsFetcher = Callable[[str], Financials | None]
+PriceHistory = Callable[[str], list[float]]
+_CREDIBILITY_PENALTY = 0.7  # 信用性warn の composite 減点率
+
+
+def enrich_candidates(
+    results: list[dict[str, Any]],
+    *,
+    financials_fetcher: FinancialsFetcher,
+    price_history: PriceHistory,
+) -> list[dict[str, Any]]:
+    """上位候補に 信用性(S5)/V字(S7a)/相対力(S7c) を付与し、信用性warnは減点して再ランク。
+
+    弾を実スクリーニングに乗せる（純粋関数・注入でテスト可能）。各銘柄の取得失敗は graceful。
+    """
+    for r in results:
+        ticker = str(r.get("ticker", ""))
+        market = str(r.get("market") or "US")
+        sector = r.get("sector")
+        try:
+            fin = financials_fetcher(ticker)
+        except Exception:
+            fin = None
+        if fin is not None:
+            cred = assess_credibility(fin, sector=sector)
+            r["credibility_flag"] = cred.credibility_flag
+            r["credibility_warnings"] = cred.warnings
+            r["turnaround_zone"] = assess_turnaround(fin, signals=[], credibility=cred).zone
+            if cred.credibility_flag == "warn":
+                base = r.get("composite_score", 0.0)
+                r["composite_score"] = round(base * _CREDIBILITY_PENALTY, 1)
+                r["quality_penalty"] = "信用性warn→減点"
+        try:
+            rs = relative_strength_live(ticker, market, history=price_history)
+            r["rs_quadrant"] = rs.quadrant
+        except Exception:
+            r["rs_quadrant"] = "na"
+
+    results.sort(
+        key=lambda r: (r.get("composite_score", 0.0), r.get("market_cap") or 0.0), reverse=True
+    )
+    return results
 
 
 class ScreeningAgentInput(AgentInput):
@@ -48,9 +99,18 @@ class ScreeningAgent(Agent[ScreeningAgentInput]):
     required_tools = ["screening", "market_data", "technicals", "fundamentals"]
     default_routing = "hot"
 
-    def __init__(self, context: AgentContext) -> None:
+    def __init__(
+        self,
+        context: AgentContext,
+        *,
+        financials_fetcher: FinancialsFetcher | None = None,
+        price_history: PriceHistory | None = None,
+    ) -> None:
         self._ctx = context
         self._log = get_logger("agent").bind(agent=self.name)
+        # 渡されたら 信用性/V字/相対力 で候補をエンリッチ（既定OFF＝ネット非依存・テスト用）
+        self._financials_fetcher = financials_fetcher
+        self._price_history = price_history
 
     async def execute(self, agent_input: ScreeningAgentInput) -> AgentOutput:
         universe = self._load_universe(self._ctx.engine, agent_input.universe_size)
@@ -68,6 +128,14 @@ class ScreeningAgent(Agent[ScreeningAgentInput]):
         )
         results: list[dict[str, Any]] = getattr(sout, "results", []) or []
         total: int = getattr(sout, "total_screened", 0)
+
+        # 弾を実スクリーニングに乗せる（フェッチャがある時のみ・上位候補のみ＝負荷限定）
+        if self._financials_fetcher is not None and self._price_history is not None:
+            results = enrich_candidates(
+                results,
+                financials_fetcher=self._financials_fetcher,
+                price_history=self._price_history,
+            )
 
         breakdown: Counter[str] = Counter()
         for r in results:
