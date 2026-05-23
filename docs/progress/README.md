@@ -25,3 +25,4 @@
 - `0017-exoskeleton-params-capital-100k.md` — 規律層(外骨格)§1：リスク8数値の整合版確定＋元本¥100k（研究の貫通→餌→弾に転換）
 - `0018-exoskeleton-universe-jp-first.md` — 規律層(外骨格)§2：universe を日本株主体に再編（JP14+US6・外れた銘柄は自動非活性）
 - `0019-exoskeleton-rmult-sizing.md` — 規律層(外骨格)§3：R-multサイジング（1R=口座2%・anti-martingale・stop逆算・JP単元未満）
+- `0020-exoskeleton-portfolio-guard.md` — 規律層(外骨格)§4：ポートフォリオ規律ゲート（同時保有≤5・セクター≤2/≤30%・DD−15%停止）
