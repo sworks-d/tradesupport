@@ -10,6 +10,11 @@ from trading_agent.screening.credibility import (
     piotroski_f_score,
     scan_disclosure_red_flags,
 )
+from trading_agent.screening.edinet_xbrl import (
+    detect_disclosure_flags_from_xbrl,
+    edinet_csv_downloader,
+    fetch_document_flags,
+)
 from trading_agent.screening.financials import (
     Financials,
     PeriodFinancials,
@@ -35,6 +40,9 @@ __all__ = [
     "assess_turnaround",
     "beneish_m_score",
     "compute_relative_strength",
+    "detect_disclosure_flags_from_xbrl",
+    "edinet_csv_downloader",
+    "fetch_document_flags",
     "fetch_financials",
     "market_proxy",
     "melchior_credibility_counter",

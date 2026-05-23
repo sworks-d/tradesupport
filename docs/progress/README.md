@@ -44,3 +44,4 @@
 - `0036-p6a-evaluation-core.md` — P6-a：評価メトリクス（R-multiple/hit-miss/Track Record・先読み回避・provisional）
 - `0037-p6b-evaluation-job.md` — P6-b：評価ジョブ（評価期日到来分を実価格で採点・先読み回避・冪等）＋decisionにentry/stop/benchmark
 - `0038-scheduling-and-eval-cli.md` — 定期実行：評価CLI（run_evaluation.py）＋launchd雛形（朝7:00/評価7:30）＋設置doc
+- `0039-edinet-xbrl-deepparse.md` — S4b深掘り：EDINET本文(type=5)からGC注記/監査意見を検出（検出器＋DL・hermetic）
