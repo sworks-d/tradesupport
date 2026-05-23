@@ -112,9 +112,9 @@ td code, .code { font-family: ui-monospace, "SF Mono", Menlo, monospace; backgro
   <div class="parrow">→</div>
   <div class="pstage done">P3 MAGI判断<span class="st-done">✅ 3審判＋反証</span></div>
   <div class="parrow">→</div>
-  <div class="pstage partial">P4 提案生成<span class="st-part">🟡 decision永続</span></div>
+  <div class="pstage done">P4 提案生成<span class="st-done">✅ decision＋規律</span></div>
   <div class="parrow">→</div>
-  <div class="pstage todo">P5 決裁・発注<span class="st-todo">❌ A-5</span></div>
+  <div class="pstage partial">P5 決裁・発注<span class="st-part">🟡 ロジック済/UI待</span></div>
   <div class="parrow">→</div>
   <div class="pstage todo">P6 評価・学習<span class="st-todo">❌ 解禁済</span></div>
 </div>
@@ -137,12 +137,13 @@ td code, .code { font-family: ui-monospace, "SF Mono", Menlo, monospace; backgro
   <tr><td><code>f75c5d9</code></td><td>外骨格§1</td><td><span class="st-done">✅</span></td><td>規律層パラメータ確定（制約系で整合）＋元本¥1M→¥100k反映（risk/params.py）</td></tr>
   <tr><td><code>5e97953</code></td><td>外骨格§2</td><td><span class="st-done">✅</span></td><td>universe を日本株主体に再編（JP14+US6・為替対策・外れた銘柄は自動非活性）</td></tr>
   <tr><td><code>eb6500f</code></td><td>外骨格§3</td><td><span class="st-done">✅</span></td><td>R-multサイジング（stop逆算・1R=口座2%・anti-martingale・20%上限/現金下限・JP単元未満）</td></tr>
-  <tr><td>（本コミット）</td><td>外骨格§4</td><td><span class="st-done">✅</span></td><td>ポートフォリオ規律ゲート（同時保有≤5・セクター≤2かつ≤30%・DD−15%新規停止）</td></tr>
+  <tr><td><code>ba60b7b</code></td><td>外骨格§4</td><td><span class="st-done">✅</span></td><td>ポートフォリオ規律ゲート（同時保有≤5・セクター≤2かつ≤30%・DD−15%新規停止）</td></tr>
+  <tr><td>（本コミット）</td><td>S3</td><td><span class="st-done">✅</span></td><td>決裁→発注リスト（出口）。承認decisionにサイジング+規律を適用しstop/想定損失付き発注リスト＝<b>最初の貫通完成</b></td></tr>
 </table>
 <div class="legend">
-  方針転換（研究反映）：B-3は<b>コード反証</b>に再設計し2期財務(S4)後へ。次は<b>規律層（外骨格）</b>＝
-  R-multサイジング→集中/DD規律→<b>S3 決裁→発注（出口＝最初の貫通完成）</b>。
-  詳細：<code>docs/research/</code>・<code>docs/plan/spec/G_risk_discipline.md</code>・<code>docs/progress/</code>。
+  <b>最初の貫通が通った</b>：universe→screening→MAGI(3審判→防御→統合→碇)→decision→決裁→<b>規律を効かせた発注リスト</b>。
+  ライブ実証：上位3で発注リスト生成、Tech重複のAAPLはセクター30%枠で¥16,667→¥13,333に自動縮小。
+  残り：UI決裁ボタン配線／S4 餌(2期財務+EDINET)→S5-7 弾（M/F/Z・コード反証・V字）／P6評価。
 </div>
 
 <div class="status-bar">

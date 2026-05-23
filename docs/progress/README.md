@@ -26,3 +26,4 @@
 - `0018-exoskeleton-universe-jp-first.md` — 規律層(外骨格)§2：universe を日本株主体に再編（JP14+US6・外れた銘柄は自動非活性）
 - `0019-exoskeleton-rmult-sizing.md` — 規律層(外骨格)§3：R-multサイジング（1R=口座2%・anti-martingale・stop逆算・JP単元未満）
 - `0020-exoskeleton-portfolio-guard.md` — 規律層(外骨格)§4：ポートフォリオ規律ゲート（同時保有≤5・セクター≤2/≤30%・DD−15%停止）
+- `0021-s3-decision-order-list-throughput.md` — S3(A-5) 決裁→発注リスト。最初の貫通完成（規律を効かせた発注リスト・AAPLがセクター枠で自動縮小）
