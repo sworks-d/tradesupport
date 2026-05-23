@@ -40,6 +40,11 @@ from trading_agent.mcp_tools.technicals import (
     TechnicalsTool,
 )
 from trading_agent.portfolio import recommend_position
+from trading_agent.screening import (
+    assess_credibility,
+    fetch_financials,
+    melchior_credibility_counter,
+)
 from trading_agent.utils.logger import get_logger
 from trading_agent.utils.time_utils import utcnow
 
@@ -146,7 +151,38 @@ def _fmt_price(ticker: str, price: float) -> str:
     return f"¥ {price:,.0f}" if _is_jp(ticker) else f"$ {price:,.2f}"
 
 
-def _serialize_candidate(verdicts: list, sizing: dict[str, object]) -> dict[str, object]:
+def _market_cap(ticker: str) -> float | None:
+    """yfinance fast_info の時価総額（Altman Z 用・best-effort）。"""
+    try:
+        import yfinance as yf
+
+        sym = f"{ticker}.T" if _is_jp(ticker) else ticker
+        return float(yf.Ticker(sym).fast_info.market_cap)
+    except Exception:
+        return None
+
+
+def _credibility_flag(ticker: str, verdicts: list) -> str:
+    """2期財務→信用性(S5)。MELCHIOR反証(S6)を付与し credibility_flag を返す（失敗はok）。"""
+    try:
+        fin = fetch_financials(ticker, market_cap=_market_cap(ticker))
+    except Exception as exc:
+        _log.warning("credibility_failed", ticker=ticker, error=str(exc))
+        return "ok"
+    if fin is None:
+        return "ok"
+    cred = assess_credibility(fin)
+    counter = melchior_credibility_counter(cred)
+    if counter:
+        for v in verdicts:
+            if v.judge == "MELCHIOR":
+                v.counter_within_domain = [*v.counter_within_domain, *counter]
+    return cred.credibility_flag
+
+
+def _serialize_candidate(
+    verdicts: list, sizing: dict[str, object], *, credibility_flag: str = "ok"
+) -> dict[str, object]:
     judges = []
     for v in verdicts:
         word, color = _VD_DISPLAY.get(v.verdict, ("—", "var(--ink-3)"))
@@ -160,14 +196,15 @@ def _serialize_candidate(verdicts: list, sizing: dict[str, object]) -> dict[str,
                 "color": color,
                 "dim": v.verdict == "na",
                 "reason": v.reason,
+                "counter": [c.get("claim", "") for c in (v.counter_within_domain or [])],
             }
         )
     buys = sum(1 for v in verdicts if v.verdict == "buy")
     gendo = "推し" if buys == len(verdicts) else ("要検討" if buys >= 1 else "静観")
 
-    # 統合機構(B4)・防御層(B3)・碇司令(B5)
+    # 統合機構(B4)・防御層(B3・信用性S5)・碇司令(B5)
     split = classify_split(verdicts)
-    vr = verify(verdicts)
+    vr = verify(verdicts, credibility_flag=credibility_flag)
     cmd = command(verdicts, split, vr)
     verification = {
         "default_decision": "保留" if vr.default_hold else "可",
@@ -251,6 +288,9 @@ async def _build_candidates(
             upgraded = await casper_llm(ticker, news=news, llm_tool=llm_tool)
             verdicts = [upgraded if v.judge == "CASPER" else v for v in verdicts]
 
+        # S5b/S6：信用性フィルタ→MELCHIOR反証＋credibility_flag（live のみ）
+        credibility_flag = _credibility_flag(ticker, verdicts) if live else "ok"
+
         # 予算内サイジング（米株は端株可。JP は単元）
         is_jp = _is_jp(ticker)
         price_jpy = (price_usd or 0.0) * (1.0 if is_jp else usdjpy)
@@ -267,7 +307,7 @@ async def _build_candidates(
             "price_jpy": round(price_jpy),
             "note": rec.note,
         }
-        out[card_id] = _serialize_candidate(verdicts, sizing)
+        out[card_id] = _serialize_candidate(verdicts, sizing, credibility_flag=credibility_flag)
     return out
 
 
