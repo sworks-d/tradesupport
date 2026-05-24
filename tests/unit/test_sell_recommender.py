@@ -1,4 +1,8 @@
-"""sell-recommender の単体テスト（Task 1.4.4）。スコアは固定値、エージェントはモック注入。"""
+"""sell-recommender の単体テスト（出口設計 B' = 2026-05-24 改訂）。
+
+利確でサイズを刻むのは廃止。サイズを減らす出口は固定stopと保有期限(time-exit)のみ。
+日付依存を避けるため、buy_date/target_date は utcnow 基準の相対日付で組む。
+"""
 
 from __future__ import annotations
 
@@ -16,11 +20,8 @@ from trading_agent.agents.sell_recommender import (
     determine_sell_recommendation,
     discipline_reasons,
     loss_magnitude,
-    profit_taking_score,
     status_from_health,
     stop_loss_score,
-    target_achievement,
-    technical_warning,
 )
 from trading_agent.db import create_all, get_engine
 from trading_agent.mcp_tools.base import MCPHost, MCPTool
@@ -29,23 +30,13 @@ from trading_agent.mcp_tools.market_data import MarketDataInput, MarketDataOutpu
 from trading_agent.mcp_tools.technicals import TechnicalsInput, TechnicalsOutput
 from trading_agent.models.portfolio import Portfolio
 from trading_agent.models.signals import Scenario, SellSignal
+from trading_agent.utils.time_utils import utcnow
 
 
 class TestComponents:
-    def test_target_achievement(self) -> None:
-        assert target_achievement(110, 100, 0.2) == pytest.approx(0.5)
-
-    def test_technical_warning(self) -> None:
-        assert technical_warning(75) == 1.0
-        assert technical_warning(65) == 0.5
-        assert technical_warning(50) == 0.0
-
     def test_loss_magnitude(self) -> None:
         assert loss_magnitude(92, 100, -0.08) == pytest.approx(1.0)
         assert loss_magnitude(96, 100, -0.08) == pytest.approx(0.5)
-
-    def test_profit_score(self) -> None:
-        assert profit_taking_score(0.5, 0.5, 0.5, 0.5) == pytest.approx(50.0)
 
     def test_stop_score(self) -> None:
         assert stop_loss_score(0.5, 0.5, 0.5, 0.5) == pytest.approx(50.0)
@@ -55,10 +46,15 @@ class TestComponents:
         assert status_from_health(0.5) == "weakening"
         assert status_from_health(0.3) == "broken"
 
-    def test_recommendation_half_full(self) -> None:
-        assert determine_sell_recommendation("profit_taking", 95, 10, 100)["qty"] == 10
-        assert determine_sell_recommendation("profit_taking", 75, 10, 100)["qty"] == 5
-        assert determine_sell_recommendation("stop_loss", 80, 10, 100)["type"] == "market"
+    def test_recommendation_full_exit(self) -> None:
+        # B'：利確で刻まない。stop_loss=全量成行、time_exit=全量指値。半量は存在しない。
+        sl = determine_sell_recommendation("stop_loss", 10, 100)
+        assert sl["type"] == "market"
+        assert sl["qty"] == 10
+        assert sl["qty_label"] == "全量（成行）"
+        te = determine_sell_recommendation("time_exit", 10, 100)
+        assert te["qty"] == 10
+        assert te["qty_label"] == "全量"
 
     def test_discipline_reasons(self) -> None:
         rs = discipline_reasons(100, -0.08, 90)
@@ -98,14 +94,16 @@ class _LLM(MCPTool[LLMCallInput]):
         )
 
 
-def _engine(tmp_path: Path, buy_date: dt.date):
+def _engine(tmp_path: Path, *, buy_offset_days: int, target_offset_days: int):
+    """utcnow 基準の相対日付で 1 銘柄の保有を作る（日付依存を避ける）。"""
+    today = utcnow().date()
     eng = get_engine(tmp_path / "sell.sqlite")
     create_all(eng)
     with Session(eng) as s:
         s.add(
             Portfolio(
                 ticker="AAPL",
-                buy_date=buy_date,
+                buy_date=today - dt.timedelta(days=buy_offset_days),
                 buy_price=100.0,
                 qty=10,
                 currency="USD",
@@ -113,7 +111,7 @@ def _engine(tmp_path: Path, buy_date: dt.date):
                 target_period_days=90,
                 target_pct=0.2,
                 stop_loss_pct=-0.08,
-                target_date=dt.date(2026, 8, 1),
+                target_date=today + dt.timedelta(days=target_offset_days),
                 thesis="t",
                 status="active",
             )
@@ -122,45 +120,70 @@ def _engine(tmp_path: Path, buy_date: dt.date):
     return eng
 
 
-def _ctx(tmp_path: Path, price: float, health: float, buy_date: dt.date, with_llm: bool = True):
-    engine = _engine(tmp_path, buy_date)
+def _ctx(
+    tmp_path: Path,
+    price: float,
+    health: float,
+    *,
+    buy_offset_days: int = 30,
+    target_offset_days: int = 90,
+):
+    engine = _engine(
+        tmp_path, buy_offset_days=buy_offset_days, target_offset_days=target_offset_days
+    )
     host = MCPHost()
     host.register(_MD(price))
     host.register(_TECH())
-    if with_llm:
-        host.register(_LLM(health))
+    host.register(_LLM(health))
     return AgentContext(host=host, engine=engine, invocation_id="inv")
 
 
 class TestAgent:
-    async def test_profit_taking(self, tmp_path: Path) -> None:
-        ctx = _ctx(tmp_path, price=130.0, health=0.6, buy_date=dt.date(2026, 3, 1))
+    async def test_winner_held_not_trimmed(self, tmp_path: Path) -> None:
+        # 含み益・固定stop未到達・期限前 → 利確で刻まない＝売りシグナル無し（勝ち放任）
+        ctx = _ctx(tmp_path, price=130.0, health=0.6)
         out = await SellRecommenderAgent(ctx).execute(SellRecommenderInput(invocation_id="inv"))
         assert out.success is True
+        assert out.sell_signals == []
+        with Session(ctx.engine) as s:
+            assert s.exec(select(SellSignal).where(col(SellSignal.is_active))).all() == []
+
+    async def test_time_exit_at_target_date(self, tmp_path: Path) -> None:
+        # 保有期限到達（target_date 過去）→ 全量手仕舞い（time_exit）
+        ctx = _ctx(tmp_path, price=130.0, health=0.6, target_offset_days=-1)
+        await SellRecommenderAgent(ctx).execute(SellRecommenderInput(invocation_id="inv"))
         with Session(ctx.engine) as s:
             sig = s.exec(select(SellSignal).where(col(SellSignal.is_active))).one()
-        assert sig.signal_type == "profit_taking"
-        assert sig.recommended_action["qty_label"] in {"全量", "半量"}
+        assert sig.signal_type == "time_exit"
+        assert sig.recommended_action["qty_label"] == "全量"
+        assert sig.recommended_action["qty"] == 10
 
     async def test_stop_loss_discipline(self, tmp_path: Path) -> None:
-        # 含み損 + シナリオ崩壊 → 高スコア → 規律メッセージ
-        ctx = _ctx(tmp_path, price=90.0, health=0.05, buy_date=dt.date(2026, 3, 1))
+        # 固定stop到達（-10% <= -8%）→ 全量・成行・規律メッセージ
+        ctx = _ctx(tmp_path, price=90.0, health=0.05)
         await SellRecommenderAgent(ctx).execute(SellRecommenderInput(invocation_id="inv"))
         with Session(ctx.engine) as s:
             sig = s.exec(select(SellSignal).where(col(SellSignal.is_active))).one()
         assert sig.signal_type == "stop_loss"
         assert sig.score >= 70
+        assert sig.recommended_action["type"] == "market"
         assert any(r.get("priority") == "規律" for r in sig.reasons)
 
+    async def test_small_loss_held(self, tmp_path: Path) -> None:
+        # 含み損だが固定stop未到達（-3% > -8%）・期限前 → 売らずに保有（早すぎる損切りをしない）
+        ctx = _ctx(tmp_path, price=97.0, health=0.5)
+        out = await SellRecommenderAgent(ctx).execute(SellRecommenderInput(invocation_id="inv"))
+        assert out.sell_signals == []
+
     async def test_scenario_saved(self, tmp_path: Path) -> None:
-        ctx = _ctx(tmp_path, price=130.0, health=0.6, buy_date=dt.date(2026, 3, 1))
+        ctx = _ctx(tmp_path, price=130.0, health=0.6)
         await SellRecommenderAgent(ctx).execute(SellRecommenderInput(invocation_id="inv"))
         with Session(ctx.engine) as s:
             scn = s.exec(select(Scenario).where(col(Scenario.ticker) == "AAPL")).one()
         assert scn.scenario_status == "weakening"  # health 0.6
 
     async def test_recently_bought_skipped(self, tmp_path: Path) -> None:
-        ctx = _ctx(tmp_path, price=130.0, health=0.6, buy_date=dt.date(2026, 5, 21))
+        ctx = _ctx(tmp_path, price=130.0, health=0.6, buy_offset_days=1)
         out = await SellRecommenderAgent(ctx).execute(SellRecommenderInput(invocation_id="inv"))
         assert out.sell_signals == []
         assert out.scenario_updates == []

@@ -131,7 +131,7 @@ def _engine(tmp_path: Path):
         s.add(
             Portfolio(
                 ticker="AAPL",
-                buy_date=dt.date(2026, 3, 1),
+                buy_date=dt.date(2026, 1, 1),
                 buy_price=100.0,
                 qty=10,
                 currency="USD",
@@ -139,7 +139,7 @@ def _engine(tmp_path: Path):
                 target_period_days=90,
                 target_pct=0.2,
                 stop_loss_pct=-0.08,
-                target_date=dt.date(2026, 6, 1),
+                target_date=dt.date(2026, 4, 1),  # 期限経過 → time_exit 発火（B'）
                 thesis="t",
                 status="active",
             )

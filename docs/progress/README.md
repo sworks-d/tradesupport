@@ -49,3 +49,5 @@
 - `0041-melchior-accrual-counter.md` — MELCHIOR accrual反証（CFO<NI/発生高/DSO/在庫を2期財務からコード摘出）
 - `0042-spec-sync.md` — spec/00_overview の進捗マーカーを実装状態に同期（doc drift解消）
 - `0043-user-runbook.md` — ユーザー手順書（準備→動作確認→自動化→ペーパー→実弾の実行順）
+- `0044-b-prime-exit-and-target-reset.md` — 即効：利確キャップ撤廃（B'出口=固定stop＋time_exit・勝ち放任）＋目標値是正（+30〜50%破棄→リスク調整後パッシブ超え＋生存）
+- `0045-balthasar-non-voting.md` — 心臓：BALTHASAR(株価=コイン投げ)の方向票を合意/確信度/既定保留から除外（反証・価格注記は残す）

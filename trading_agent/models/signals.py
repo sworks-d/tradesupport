@@ -82,7 +82,7 @@ class SellSignal(SQLModel, table=True):
     ticker: str = Field(foreign_key="portfolio.ticker", index=True)
     created_at: dt.datetime = Field(default_factory=utcnow, index=True)
 
-    signal_type: str  # "profit_taking" / "stop_loss"
+    signal_type: str  # "stop_loss" / "time_exit"（利確トリムは廃止・B'）
 
     # スコア
     score: int  # 0-100
