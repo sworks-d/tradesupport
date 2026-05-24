@@ -13,7 +13,9 @@ from trading_agent.models.magi import JudgeVerdict
 _NOW = datetime(2026, 5, 22)
 
 
-def _v(judge: str, verdict: str, *, refs: bool = True, asof: datetime | None = _NOW) -> JudgeVerdict:
+def _v(
+    judge: str, verdict: str, *, refs: bool = True, asof: datetime | None = _NOW
+) -> JudgeVerdict:
     return JudgeVerdict(
         ticker="NVDA",
         judge=judge,
@@ -74,3 +76,12 @@ def test_stale_data_noted() -> None:
         now=_NOW,
     )
     assert any("古い" in n for n in res.notes)
+
+
+def test_balthasar_vote_excluded_from_gate() -> None:
+    # 業績・文脈が買い＋照合済 → 株価(BALTHASAR)が hold でも既定保留にしない（投票外）
+    res = verify([_v("MELCHIOR", "buy"), _v("BALTHASAR", "hold"), _v("CASPER", "buy")], now=_NOW)
+    assert res.default_hold is False
+    # 投票審判(文脈)が na なら、株価が buy でも保留（投票審判のnaは効く）
+    res2 = verify([_v("MELCHIOR", "buy"), _v("BALTHASAR", "buy"), _v("CASPER", "na")], now=_NOW)
+    assert res2.default_hold is True

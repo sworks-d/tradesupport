@@ -15,6 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
+from trading_agent.magi.policy import voting
 from trading_agent.models.magi import JudgeVerdict
 from trading_agent.utils.time_utils import utcnow
 
@@ -45,18 +46,13 @@ def verify(
     now = now or utcnow()
     unverified: list[str] = []
     notes: list[str] = []
-    has_na = False
-    buy_count = 0
     actionable: list[JudgeVerdict] = []
 
     for v in verdicts:
         if v.verdict == "na":
-            has_na = True
             notes.append(f"{v.judge}:判定不能(na)")
             continue
         actionable.append(v)
-        if v.verdict == "buy":
-            buy_count += 1
         # 数値照合＝出典(provenance)が付いているか
         if not v.source_refs:
             unverified.append(f"{v.judge}:出典なし（未照合）")
@@ -72,8 +68,12 @@ def verify(
     if credibility_flag == "warn":
         notes.append("信用性フィルタ警戒（粉飾/倒産の疑い）")
 
-    # 決裁前ゲート：未照合 or 判定不能 or 割れ or 信用性warn → 既定「保留」
-    unanimous_buy = bool(actionable) and buy_count == len(verdicts)
+    # 決裁前ゲート：合意・確信度は投票審判（業績MELCHIOR・文脈CASPER）のみで判定する。
+    # BALTHASAR（株価＝コイン投げ）の方向票は既定保留の判定から外す（票の水増し/過剰ブロック防止）。
+    # 未照合・時点欠落の照合は全 actionable に対し保守的に維持（透明性）。
+    voting_v = voting(verdicts)
+    has_na = any(v.verdict == "na" for v in voting_v)
+    unanimous_buy = bool(voting_v) and all(v.verdict == "buy" for v in voting_v)
     default_hold = (
         (not figures_checked) or has_na or (not unanimous_buy) or (credibility_flag == "warn")
     )

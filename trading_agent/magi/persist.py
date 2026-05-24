@@ -24,6 +24,7 @@ from trading_agent.magi.casper_llm import casper_llm
 from trading_agent.magi.commander import CommanderResult
 from trading_agent.magi.defense import VerificationResult
 from trading_agent.magi.integration import SplitResult
+from trading_agent.magi.policy import voting
 from trading_agent.mcp_tools.base import MCPToolInput, MCPToolOutput
 from trading_agent.mcp_tools.disclosure import DisclosureInput
 from trading_agent.mcp_tools.fundamentals import FundamentalsInput
@@ -92,12 +93,13 @@ def pending_decision_ids(
 
 
 def derive_gendo_stance(verdicts: list[JudgeVerdict], *, default_hold: bool) -> str:
-    """碇の構え。割れ/保留は弱める（推奨はするが決めない）。"""
-    actionable = [v for v in verdicts if v.verdict != "na"]
+    """碇の構え。合意・確信度は投票審判（業績・文脈）のみで数える（株価=投票外）。割れ/保留は弱める。"""
+    voting_v = voting(verdicts)
+    actionable = [v for v in voting_v if v.verdict != "na"]
     buys = sum(1 for v in actionable if v.verdict == "buy")
     if not actionable:
         return "静観"
-    if buys == len(verdicts) and not default_hold:
+    if buys == len(voting_v) and not default_hold:
         return "推し"
     if buys >= 1:
         return "要検討"
