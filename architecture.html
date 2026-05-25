@@ -89,7 +89,7 @@ td code, .code { font-family: ui-monospace, "SF Mono", Menlo, monospace; backgro
 
 <h1>Trading Agent — アーキテクチャ接続図</h1>
 <div class="subtitle">
-最終更新 2026-05-23 / MAGI再構築の進捗を反映（§0） / 関連：docs/plan/spec, docs/progress, new_dashboard.html
+最終更新 2026-05-25 / 目的を再定義（売買で勝つ予測機→「持ち続けさせる規律監督=Core-Satellite」。利確キャップ撤廃B'・BALTHASAR投票外・逓減）／ 関連：docs/plan/spec, docs/progress, docs/reports/GENDO_v001, docs/MORNING_REVIEW.md
 </div>
 
 <!-- =============================================================== -->
@@ -159,7 +159,11 @@ td code, .code { font-family: ui-monospace, "SF Mono", Menlo, monospace; backgro
   <tr><td><code>666c0c4</code></td><td>XBRL深掘り</td><td><span class="st-done">✅</span></td><td>EDINET書類本文(type=5 ZIP/CSV)から GC注記・監査意見を検出（メタ走査の先。要キー・DL注入でhermetic）</td></tr>
   <tr><td><code>57a5d8f</code></td><td>バックテスト</td><td><span class="st-done">✅</span></td><td>価格ベース・先読みなしバックテスト（GC＋R-mult＋損切りを過去株価で再生→Track Record）。CLI付。資産成長検証の最速手段（生存者バイアス注意）</td></tr>
   <tr><td><code>2b10363</code></td><td>MELCHIOR accrual反証</td><td><span class="st-done">✅</span></td><td>利益の質の赤を2期財務からコード摘出（CFO<純利益／発生高高／DSO悪化／在庫増）→MELCHIOR反証に併記</td></tr>
-  <tr><td>（本コミット）</td><td>spec同期</td><td><span class="st-done">✅</span></td><td>spec/00_overview の INDEX と各Pヘッダを実装状態に同期（doc drift解消）。P2/P3/P4/P5/P6 の✅反映</td></tr>
+  <tr><td>（旧コミット）</td><td>spec同期</td><td><span class="st-done">✅</span></td><td>spec/00_overview の INDEX と各Pヘッダを実装状態に同期（doc drift解消）。P2/P3/P4/P5/P6 の✅反映</td></tr>
+  <tr><td><code>d7b065a</code></td><td>即効/B'出口</td><td><span class="st-done">✅</span></td><td>利確キャップ撤廃＝固定stop＋target_date(time_exit)・勝ち放任。BTで利確が収益の約2/3を破壊→撤廃で+132%→+406%。目標を+30〜50%→「リスク調整後パッシブ超え＋生存」に是正</td></tr>
+  <tr><td><code>2e75051</code></td><td>心臓/偽確信度除去</td><td><span class="st-done">✅</span></td><td>BALTHASAR(株価=コイン投げ)を投票外に。合意・確信度・既定保留は業績×文脈のみで算定。反証(counter)・価格注記は残す（magi/policy.py）</td></tr>
+  <tr><td><code>e355742</code></td><td>構造/逓減＋Core-Sat</td><td><span class="st-done">✅</span></td><td>逓減スケジュール(口座→risk%↓/銘柄数↑・params_for_account)＋Core-Satellite比率0.85/0.15。spec G-7/G-8 明文化</td></tr>
+  <tr><td><code>aa78a38</code></td><td>評価/予算ロールアウト</td><td><span class="st-done">✅</span></td><td>ポートフォリオBT(NaN修正)＋予算別(10/100/1000万・逓減適用)。逓減でSharpe1.16→1.53/DD−25→−17%だがbuy&holdに大敗(αなし)。docs/reports/GENDO_v001</td></tr>
 </table>
 <div class="legend">
   <b>最初の貫通が通った</b>：universe→screening→MAGI(3審判→防御→統合→碇)→decision→決裁→<b>規律を効かせた発注リスト</b>。
