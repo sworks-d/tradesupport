@@ -52,3 +52,4 @@
 - `0044-b-prime-exit-and-target-reset.md` — 即効：利確キャップ撤廃（B'出口=固定stop＋time_exit・勝ち放任）＋目標値是正（+30〜50%破棄→リスク調整後パッシブ超え＋生存）
 - `0045-balthasar-non-voting.md` — 心臓：BALTHASAR(株価=コイン投げ)の方向票を合意/確信度/既定保留から除外（反証・価格注記は残す）
 - `0046-taper-and-core-satellite-params.md` — 構造：逓減スケジュール(口座→risk%/銘柄数)＋Core-Satellite比率(0.85/0.15) を params.py/G-0 へ
+- `0047-portfolio-backtest-budget-rollout.md` — ポートフォリオBT(NaN修正)＋予算別ロールアウト(逓減適用)＋docs/reports/GENDO_v001 定型レポート
