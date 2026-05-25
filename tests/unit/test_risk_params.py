@@ -5,7 +5,12 @@
 
 from __future__ import annotations
 
-from trading_agent.risk.params import DEFAULT_RISK, RiskParams
+from trading_agent.risk.params import (
+    DEFAULT_RISK,
+    TAPER_SCHEDULE,
+    RiskParams,
+    params_for_account,
+)
 
 
 def test_capital_100k_one_r_is_2000() -> None:
@@ -48,3 +53,48 @@ def test_invariants_sane() -> None:
     assert 0 < p.cash_floor < 1
     assert 0 < p.max_theme_weight <= 1
     assert p.max_per_theme <= p.max_positions
+
+
+# --- C1 Core-Satellite -----------------------------------------------------
+def test_core_satellite_fractions_sum_to_one() -> None:
+    p = RiskParams()
+    assert abs(p.core_fraction + p.satellite_fraction - 1.0) < 1e-9
+    assert p.core_fraction >= 0.8  # コアは8割以上（稼ぎ=所有×時間×複利）
+    assert p.satellite_fraction <= 0.2  # サテライトは2割以下（小さく隔離）
+
+
+def test_core_satellite_budgets() -> None:
+    p = RiskParams()
+    assert p.core_budget_jpy(100_000.0) == 85_000.0
+    assert p.satellite_budget_jpy(100_000.0) == 15_000.0
+
+
+# --- C2 逓減スケジュール ----------------------------------------------------
+def test_taper_100k_is_base() -> None:
+    p = params_for_account(100_000.0)
+    assert p.risk_per_trade == 0.020
+    assert p.max_positions == 5
+
+
+def test_taper_grows_diversification_and_shrinks_risk() -> None:
+    small = params_for_account(100_000.0)
+    mid = params_for_account(1_000_000.0)
+    big = params_for_account(10_000_000.0)
+    # 口座が育つほど risk% は下がり（致命傷回避）、銘柄数は増える（偏った分布で大化けを拾う）
+    assert big.risk_per_trade < mid.risk_per_trade < small.risk_per_trade
+    assert big.max_positions > mid.max_positions > small.max_positions
+
+
+def test_taper_is_monotonic_across_schedule() -> None:
+    last_risk, last_pos = 1.0, 0
+    for t in TAPER_SCHEDULE:
+        p = params_for_account(t.min_account_jpy)
+        assert p.risk_per_trade <= last_risk  # risk% 単調減
+        assert p.max_positions >= last_pos  # 銘柄数 単調増
+        last_risk, last_pos = p.risk_per_trade, p.max_positions
+
+
+def test_taper_preserves_base_stop_and_gates() -> None:
+    p = params_for_account(5_000_000.0)
+    assert p.default_stop_pct == DEFAULT_RISK.default_stop_pct  # stop幅は継承
+    assert p.gate_min_decisions == DEFAULT_RISK.gate_min_decisions  # ゲートは継承
