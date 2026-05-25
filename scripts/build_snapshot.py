@@ -26,6 +26,8 @@ from trading_agent.brokers import StandInBroker, load_positions
 from trading_agent.db import create_all, get_engine
 from trading_agent.llm.anthropic_client import AnthropicClient
 from trading_agent.magi import casper_llm, classify_split, command, run_judges, verify
+from trading_agent.magi.gendo import gendo_recommend
+from trading_agent.magi.persist import derive_gendo_stance
 from trading_agent.mcp_tools.fundamentals import (
     FundamentalsInput,
     FundamentalsOutput,
@@ -40,6 +42,7 @@ from trading_agent.mcp_tools.technicals import (
     TechnicalsTool,
 )
 from trading_agent.portfolio import recommend_position
+from trading_agent.portfolio.sizing import SizeRec
 from trading_agent.screening import (
     assess_credibility,
     fetch_financials,
@@ -181,7 +184,8 @@ def _credibility_flag(ticker: str, verdicts: list) -> str:
 
 
 def _serialize_candidate(
-    verdicts: list, sizing: dict[str, object], *, credibility_flag: str = "ok"
+    verdicts: list, sizing: dict[str, object], *,
+    credibility_flag: str = "ok", sizerec: SizeRec | None = None,
 ) -> dict[str, object]:
     judges = []
     for v in verdicts:
@@ -199,13 +203,17 @@ def _serialize_candidate(
                 "counter": [c.get("claim", "") for c in (v.counter_within_domain or [])],
             }
         )
-    buys = sum(1 for v in verdicts if v.verdict == "buy")
-    gendo = "推し" if buys == len(verdicts) else ("要検討" if buys >= 1 else "静観")
-
     # 統合機構(B4)・防御層(B3・信用性S5)・碇司令(B5)
     split = classify_split(verdicts)
     vr = verify(verdicts, credibility_flag=credibility_flag)
     cmd = command(verdicts, split, vr)
+    # 碇の構え＝投票審判(業績・文脈)のみで算定（BALTHASARは投票外＝非投票の決定に整合）
+    gendo = derive_gendo_stance(verdicts, default_hold=vr.default_hold)
+    # GENDO推奨カード（初心者コーチ・守り主導・攻めは灰色）
+    card = gendo_recommend(
+        verdicts, split, vr, cmd,
+        credibility_flag=credibility_flag, offense_strong=False, sizing=sizerec,
+    )
     verification = {
         "default_decision": "保留" if vr.default_hold else "可",
         "flags": [  # 設計の3フラグ（時点は数値照合に内包）
@@ -230,6 +238,16 @@ def _serialize_candidate(
             "counter": cmd.counter_argument,
             "src_note": cmd.src_note,
             "compliant": cmd.magi_compliant,
+        },
+        "gendo_card": {  # 初心者向けGENDO推奨カード（守り主導・攻めは灰色・決めるのは人間）
+            "action": card.action,
+            "sleeve": card.sleeve,
+            "reason": card.reason,
+            "counter": card.counter,
+            "guardrail": card.guardrail,
+            "defense_confidence": card.defense_confidence,
+            "offense_confidence": card.offense_confidence,
+            "learn_note": card.learn_note,
         },
     }
 
@@ -307,7 +325,9 @@ async def _build_candidates(
             "price_jpy": round(price_jpy),
             "note": rec.note,
         }
-        out[card_id] = _serialize_candidate(verdicts, sizing, credibility_flag=credibility_flag)
+        out[card_id] = _serialize_candidate(
+            verdicts, sizing, credibility_flag=credibility_flag, sizerec=rec
+        )
     return out
 
 
