@@ -44,6 +44,17 @@ type Commander = {
   src_note: string;
   compliant: boolean;
 };
+// GENDO推奨カード（初心者コーチ・守り主導・攻めは灰色）。build_snapshot の gendo_card に対応。
+type GendoCardT = {
+  action: string;
+  sleeve: string;
+  reason: string;
+  counter: string;
+  guardrail: string;
+  defense_confidence: string;
+  offense_confidence: string;
+  learn_note: string;
+};
 type Candidate = {
   judges: JudgeMini[];
   split: string;
@@ -52,6 +63,7 @@ type Candidate = {
   sizing?: Sizing;
   verification?: Verification;
   commander?: Commander;
+  gendo_card?: GendoCardT;
 };
 type Account = {
   cash: number;
@@ -261,6 +273,18 @@ export default function LiveData() {
                 cnt.innerHTML = `<b>反対するなら：</b>${cand.commander.counter.replace(/^反対するなら：/, "")}`;
               const src = panel.querySelector(".cmd-src");
               if (src) src.textContent = cand.commander.src_note;
+            }
+            // GENDO推奨カード：碇ゾーンを初心者向けの「推奨アクション＋ガードレール＋確信度」に格上げ
+            if (cand.gendo_card) {
+              const gc = cand.gendo_card;
+              const sleeve = gc.sleeve !== "—" ? `（${gc.sleeve}）` : "";
+              const rec = panel.querySelector(".cmd-rec");
+              if (rec) rec.textContent = `GENDO推奨：${gc.action}${sleeve}　${gc.reason}`;
+              const src = panel.querySelector(".cmd-src");
+              if (src)
+                src.textContent =
+                  `従うなら：${gc.guardrail}　｜　確信度 守り${gc.defense_confidence}` +
+                  `／攻め${gc.offense_confidence}　｜　${gc.learn_note}`;
             }
             if (cand.verification) {
               const flagEls = panel.querySelectorAll(".magi-flag");

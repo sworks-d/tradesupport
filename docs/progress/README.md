@@ -60,3 +60,4 @@
 - `0052-run-paper-end-to-end.md` — P4-3 一気通貫：operator_view(永続MAGI→GENDOカード)＋run_paper(監視/‑‑fill翌寄り紙約定/‑‑evaluate)。end-to-end 接続
 - `0053-architecture-paper-pipeline.md` — architecture.html に完成後のペーパー運用パイプライン＋§0コミットログ(0049-0052)反映
 - `0054-snapshot-gendo-card-wiring.md` — UI反映#1：build_snapshotに gendo_card 注入＋碇stanceを投票のみに修正（snapshot.jsonにカードのデータ）
+- `0055-ui-gendo-card-render.md` — UI反映#2：ダッシュボード碇ゾーンにGENDO推奨カード描画(LiveData.tsx・tsc/eslint clean)
