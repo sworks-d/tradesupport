@@ -21,6 +21,7 @@ from sqlmodel import Session, col, select
 from trading_agent.brokers.standin import StandInBroker
 from trading_agent.db import create_all, get_engine
 from trading_agent.evaluation.job import evaluate_due_decisions
+from trading_agent.evaluation.paper_review import check_process_adherence
 from trading_agent.models.universe import Universe
 from trading_agent.orchestrator.morning_batch import run_morning_batch
 from trading_agent.portfolio.operator_view import operator_cards, render_card
@@ -88,11 +89,16 @@ def _fill(engine: Engine) -> None:
 
 
 def _evaluate(engine: Engine) -> None:
+    # 守りの本体＝プロセス遵守（規律を守れたか）。ネット不要。
+    print("=== プロセス遵守（守りはリターンでなく規律で測る）===")
+    for f in check_process_adherence(engine, cash_jpy=_cash(engine)):
+        print(f"  {'✓' if f.ok else '✗'} {f.rule}：{f.detail}")
+    # 副次＝命中率/平均R（払戻比の産物になり得る＝過信しない）。
     price, _ = _live_lookups(engine)
     n, tr = evaluate_due_decisions(engine, price_lookup=price)
     label = "暫定" if tr.provisional else "確定"
-    print(f"評価 {n} 件採点 / n={tr.n} 命中率={tr.hit_rate} 平均R={tr.avg_r}（{label}）")
-    print("※P4-4：守りはリターンで測らない。コアの質パッシブ追随＋プロセス遵守の評価は次タスク。")
+    print(f"\n[副次] 評価 {n} 件採点 / n={tr.n} 命中率={tr.hit_rate} 平均R={tr.avg_r}（{label}）")
+    print("※守り(自爆回避)は数ヶ月のリターンに現れない＝正常。履歴が貯まればコアvsパッシブのリスク調整で測る。")
 
 
 def main() -> None:

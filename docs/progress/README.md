@@ -61,3 +61,4 @@
 - `0053-architecture-paper-pipeline.md` — architecture.html に完成後のペーパー運用パイプライン＋§0コミットログ(0049-0052)反映
 - `0054-snapshot-gendo-card-wiring.md` — UI反映#1：build_snapshotに gendo_card 注入＋碇stanceを投票のみに修正（snapshot.jsonにカードのデータ）
 - `0055-ui-gendo-card-render.md` — UI反映#2：ダッシュボード碇ゾーンにGENDO推奨カード描画(LiveData.tsx・tsc/eslint clean)
+- `0056-paper-review-process-adherence.md` — P4-4：守りをリターンでなくプロセス遵守で測る(check_process_adherence)＋リスク調整純関数。run_paper --evaluate を向け直し
