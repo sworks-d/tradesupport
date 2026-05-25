@@ -56,3 +56,4 @@
 - `0048-session-wrap-morning-review.md` — 自走総括：MORNING_REVIEW(残りB1/ペーパー執行を設計集約)＋architecture.html §0 にコミットログ反映
 - `0049-variant-posture-backtest.md` — リスク姿勢3パターン(基本/強気/守り)×予算別BT＋docs/test_result/variant_comparison。守り>基本>強気(リスク調整)・全姿勢buy&hold未達
 - `0050-paper-exec-loop.md` — P4-1 ペーパー執行ループ(approved→翌寄り紙約定→Portfolio→record_entry・守り主導B')＋ロードマップ改訂
+- `0051-gendo-recommendation-card.md` — GENDO推奨カード(守り主導ポリシー・初心者コーチ・推奨アクション+ガードレール+確信度・攻めは灰色)
