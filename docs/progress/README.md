@@ -58,3 +58,4 @@
 - `0050-paper-exec-loop.md` — P4-1 ペーパー執行ループ(approved→翌寄り紙約定→Portfolio→record_entry・守り主導B')＋ロードマップ改訂
 - `0051-gendo-recommendation-card.md` — GENDO推奨カード(守り主導ポリシー・初心者コーチ・推奨アクション+ガードレール+確信度・攻めは灰色)
 - `0052-run-paper-end-to-end.md` — P4-3 一気通貫：operator_view(永続MAGI→GENDOカード)＋run_paper(監視/‑‑fill翌寄り紙約定/‑‑evaluate)。end-to-end 接続
+- `0053-architecture-paper-pipeline.md` — architecture.html に完成後のペーパー運用パイプライン＋§0コミットログ(0049-0052)反映
