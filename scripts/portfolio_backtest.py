@@ -72,9 +72,9 @@ def _mtm(pos: dict, prices: dict, i: int) -> float:
     return sum(p["sh"] * prices[s][i] for s, p in pos.items() if not np.isnan(prices[s][i]))
 
 
-def run_tier(prices, isjp, sig, n, capital) -> dict:
-    """1予算で規律フルのポートフォリオを再生し、指標を返す。"""
-    params = params_for_account(capital)  # 逓減：口座サイズで risk%・枠数・現金下限
+def run_tier(prices, isjp, sig, n, capital, params) -> dict:
+    """指定 RiskParams で規律フルのポートフォリオを再生し、指標を返す。"""
+    stop = params.default_stop_pct  # 出口stop＝サイジングstop＝variantのdefault_stop_pct
     cash = capital
     pos: dict[str, dict] = {}
     eqs: list[float] = []
@@ -92,7 +92,7 @@ def run_tier(prices, isjp, sig, n, capital) -> dict:
                 cash += p["sh"] * px
                 trades.append(px / p["ent"] - 1.0)
                 del pos[s]
-        # 入口：GC→G層サイジング（逓減params）→枠/現金が許せば建てる
+        # 入口：GC→G層サイジング（指定params）→枠/現金が許せば建てる
         for s in syms:
             if len(pos) >= params.max_positions:
                 break
@@ -103,12 +103,12 @@ def run_tier(prices, isjp, sig, n, capital) -> dict:
                 continue
             rec = recommend_position(
                 price_jpy=float(px), total_assets_jpy=eq, cash_jpy=cash,
-                is_jp=isjp[s], stop_pct=STOP_PCT, params=params,
+                is_jp=isjp[s], stop_pct=stop, params=params,
             )
             cost = rec.shares * px
             if rec.shares > 0 and cost <= cash:
                 cash -= cost
-                pos[s] = {"sh": rec.shares, "ent": px, "i": i, "stop": px * (1 - STOP_PCT)}
+                pos[s] = {"sh": rec.shares, "ent": px, "i": i, "stop": px * (1 - stop)}
         eqs.append(cash + _mtm(pos, prices, i))
     e = np.array(eqs)
     days = len(e)
@@ -146,7 +146,7 @@ def main() -> None:
     head = f"{'予算':>12} {'risk%':>6} {'枠':>3} {'総ﾘﾀｰﾝ':>8} {'CAGR':>7} "
     print(head + f"{'最大DD':>7} {'Sharpe':>7} {'勝率':>5} {'取引':>5}")
     for cap in BUDGETS:
-        r = run_tier(prices, isjp, sig, n, cap)
+        r = run_tier(prices, isjp, sig, n, cap, params_for_account(cap))
         row = f"{int(cap):>12,} {r['risk_pct']:>5.1%} {r['max_pos']:>3} "
         row += f"{r['ret']:>+8.0%} {r['cagr']:>+7.1%} {r['dd']:>+7.0%} "
         print(row + f"{r['sharpe']:>+7.2f} {r['win']:>5.0%} {r['ntr']:>5}")
