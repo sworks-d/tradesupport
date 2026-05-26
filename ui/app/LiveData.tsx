@@ -174,6 +174,29 @@ export default function LiveData() {
           });
         }
 
+        // === MAGI 買い候補に推奨サイジングを注入 ===
+        // snapshot.candidates.<id>.sizing を読み、buy-zone の対応 .act に
+        // "推奨 ¥X (Y株・PF比Z%・note)" 行を差し込む。
+        const cands = snap.candidates ?? {};
+        Object.entries(cands).forEach(([id, cand]) => {
+          if (!cand?.sizing) return;
+          const card = document.querySelector(
+            `.buy-zone .act[data-detail="${id}"]`,
+          );
+          if (!card || card.querySelector(".magi-sizing")) return;
+          const meta = card.querySelector(".forecast .forecast-meta");
+          if (!meta) return;
+          const sz = cand.sizing;
+          const sizingDiv = document.createElement("div");
+          sizingDiv.className = "magi-sizing";
+          sizingDiv.innerHTML = `
+            <span class="ms-label">推奨</span>
+            <span class="ms-jpy">${sz.amount_display}</span>
+            <span class="ms-detail">(${sz.shares}株・PF比 ${sz.weight_pct}%・${sz.note})</span>
+          `;
+          meta.parentNode?.insertBefore(sizingDiv, meta.nextSibling);
+        });
+
         // === 保有 ↔ 売り注視の連動視覚化 ===
         // 売り Zone（推奨＋mini-act 注視）から ticker を集め、対応する保有カードに
         // MAGI 推奨バッジを足す。保有 = 守られているのか／売り推奨が来ているかを
