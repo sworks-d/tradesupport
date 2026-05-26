@@ -133,11 +133,67 @@ function Sparkline({
   );
 }
 
+// watchlist 昇格の localStorage キー。次セッションで thesis_store に
+// 移行する際の橋渡し（X-2A ingest 完成時にバックエンドが取り込む）。
+const LS_KEY_PROMOTED = "tradesupport:zeele:promoted";
+
+type PromotedEntry = { ticker: string; at: string }; // at: ISO datetime
+
+function loadPromotedFromLS(): Map<string, string> {
+  if (typeof window === "undefined") return new Map();
+  try {
+    const raw = window.localStorage.getItem(LS_KEY_PROMOTED);
+    if (!raw) return new Map();
+    const arr = JSON.parse(raw) as PromotedEntry[];
+    return new Map(arr.map((e) => [e.ticker, e.at]));
+  } catch {
+    return new Map();
+  }
+}
+
+function savePromotedToLS(m: Map<string, string>) {
+  if (typeof window === "undefined") return;
+  try {
+    const arr: PromotedEntry[] = Array.from(m.entries()).map(([ticker, at]) => ({
+      ticker,
+      at,
+    }));
+    window.localStorage.setItem(LS_KEY_PROMOTED, JSON.stringify(arr));
+  } catch {
+    // quota/プライベートモード等は静かに失敗
+  }
+}
+
+function formatSince(at: string): string {
+  try {
+    const d = new Date(at).getTime();
+    const now = Date.now();
+    const sec = Math.floor((now - d) / 1000);
+    if (sec < 60) return "今";
+    const min = Math.floor(sec / 60);
+    if (min < 60) return `${min}分前`;
+    const hr = Math.floor(min / 60);
+    if (hr < 24) return `${hr}時間前`;
+    const day = Math.floor(hr / 24);
+    return `${day}日前`;
+  } catch {
+    return "—";
+  }
+}
+
 export default function ZeelePanel() {
   const [data, setData] = useState<Snapshot | null>(null);
   const [mount, setMount] = useState<HTMLElement | null>(null);
-  const [promotedLocal, setPromotedLocal] = useState<Set<string>>(new Set());
+  // ticker → 昇格時刻（ISO）。localStorage から起動時にロード。
+  const [promotedMap, setPromotedMap] = useState<Map<string, string>>(
+    () => new Map(),
+  );
   const [expanded, setExpanded] = useState(false);
+
+  // 起動時に localStorage から復元
+  useEffect(() => {
+    setPromotedMap(loadPromotedFromLS());
+  }, []);
 
   // dashboard.html 内の #zeele-zone-mount を React Portal ターゲットに使う。
   useEffect(() => {
@@ -178,15 +234,29 @@ export default function ZeelePanel() {
   const collapsed = candidates.slice(VISIBLE_COUNT);
 
   const handlePromote = (ticker: string) => {
-    setPromotedLocal((prev) => {
-      const next = new Set(prev);
-      next.add(ticker);
+    setPromotedMap((prev) => {
+      if (prev.has(ticker)) return prev;
+      const next = new Map(prev);
+      next.set(ticker, new Date().toISOString());
+      savePromotedToLS(next);
+      return next;
+    });
+  };
+
+  const handleUnpromote = (ticker: string) => {
+    setPromotedMap((prev) => {
+      if (!prev.has(ticker)) return prev;
+      const next = new Map(prev);
+      next.delete(ticker);
+      savePromotedToLS(next);
       return next;
     });
   };
 
   const isPromoted = (c: Candidate): boolean =>
-    !!c.promoted || promotedLocal.has(c.ticker);
+    !!c.promoted || promotedMap.has(c.ticker);
+
+  const promotedAt = (c: Candidate): string | undefined => promotedMap.get(c.ticker);
 
   const fmtPrice = (t: string, p: number | undefined): string => {
     if (p === undefined) return "";
@@ -287,14 +357,37 @@ export default function ZeelePanel() {
         </div>
 
         <div className="zeele-actions">
-          <button
-            type="button"
-            className={`zeele-btn-promote${promoted ? " promoted" : ""}`}
-            onClick={() => !promoted && handlePromote(c.ticker)}
-            disabled={promoted}
-          >
-            {promoted ? "✓ 昇格済" : "→ watchlist 昇格"}
-          </button>
+          {!promoted ? (
+            <button
+              type="button"
+              className="zeele-btn-promote"
+              onClick={() => handlePromote(c.ticker)}
+            >
+              → watchlist 昇格
+            </button>
+          ) : (
+            <>
+              <span
+                className="zeele-promoted-tag"
+                title={`昇格 ${promotedAt(c) ?? ""}`}
+              >
+                ✓ 昇格済
+                {promotedAt(c) && (
+                  <span className="zeele-promoted-since">
+                    （{formatSince(promotedAt(c)!)}）
+                  </span>
+                )}
+              </span>
+              <button
+                type="button"
+                className="zeele-btn-unpromote"
+                onClick={() => handleUnpromote(c.ticker)}
+                title="昇格を取り消す"
+              >
+                解除
+              </button>
+            </>
+          )}
         </div>
       </article>
     );
