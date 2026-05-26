@@ -85,34 +85,29 @@ function Sparkline({
   returnPct?: number;
 }) {
   if (!values || values.length < 2) return null;
-  const W = 110;
-  const H = 28;
+  // 内部 viewBox は固定・CSS で card 幅にストレッチ。preserveAspectRatio=none で歪み許容。
+  const W = 400;
+  const H = 56;
   const { line, area } = buildSparklinePath(values, W, H);
   const positive = (returnPct ?? values[values.length - 1] - values[0]) >= 0;
   const stroke = positive ? "var(--up)" : "var(--down)";
-  const fill = positive ? "rgba(74,222,128,0.12)" : "rgba(248,113,113,0.12)";
+  const fill = positive ? "rgba(74,222,128,0.14)" : "rgba(248,113,113,0.14)";
+  const lastY =
+    H -
+    ((values[values.length - 1] - Math.min(...values)) /
+      (Math.max(...values) - Math.min(...values) || 1)) *
+      H;
   return (
     <div className="zeele-spark">
       <svg
-        width={W}
-        height={H}
         viewBox={`0 0 ${W} ${H}`}
+        preserveAspectRatio="none"
         className="zeele-spark-svg"
         aria-hidden
       >
         <path d={area} fill={fill} />
-        <path d={line} stroke={stroke} strokeWidth={1.4} fill="none" />
-        <circle
-          cx={W}
-          cy={
-            H -
-            ((values[values.length - 1] - Math.min(...values)) /
-              (Math.max(...values) - Math.min(...values) || 1)) *
-              H
-          }
-          r={2.2}
-          fill={stroke}
-        />
+        <path d={line} stroke={stroke} strokeWidth={2} fill="none" vectorEffect="non-scaling-stroke" />
+        <circle cx={W - 2} cy={lastY} r={3} fill={stroke} />
       </svg>
       {returnPct !== undefined && (
         <div className={`zeele-return ${positive ? "up" : "down"}`}>
