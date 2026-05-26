@@ -20,6 +20,7 @@
  *   - 構造的根拠（structural_thesis）を narrative の補強として表示
  */
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -441,6 +442,13 @@ export default function ZeelePanel() {
                 )}
               </>
             )}
+
+            <Link href="/zeele" className="zeele-explore-link">
+              <span>→ ZEELE 探索で深掘り</span>
+              <span className="zeele-explore-sub">
+                16プリセット全件 / narrative / X トレンド
+              </span>
+            </Link>
           </>
         )}
       </div>

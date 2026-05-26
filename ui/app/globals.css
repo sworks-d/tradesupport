@@ -3100,3 +3100,32 @@ svg[preserveAspectRatio="none"] :is(line, path, polyline, polygon, rect, circle)
   border-radius: 3px;
   letter-spacing: 0.05em;
 }
+
+/* ZEELE ゾーンから F5 探索画面への動線 */
+.zeele-explore-link {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: var(--zeele-bg);
+  border: 1px dashed var(--zeele-border);
+  border-radius: 6px;
+  color: var(--zeele);
+  text-decoration: none;
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 600;
+  transition: background 0.15s, border-color 0.15s;
+}
+.zeele-explore-link:hover {
+  background: var(--zeele-bg-2);
+  border-color: var(--zeele);
+}
+.zeele-explore-sub {
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--ink-3);
+  font-family: var(--mono);
+  letter-spacing: 0.05em;
+}
