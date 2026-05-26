@@ -2461,3 +2461,301 @@ svg[preserveAspectRatio="none"] :is(line, path, polyline, polygon, rect, circle)
   font-family: var(--serif);
   line-height: 1.5;
 }
+
+/* ============================================================ */
+/* ZEELE Panel — 攻めの銘柄レコメンド（左スライドアウト）          */
+/* MAGI 詳細パネル（右）の鏡像対称。紫アクセント＋破線で         */
+/* 「参考・未照合」を視覚的に常時主張する。                       */
+/* ============================================================ */
+
+:root {
+  /* ZEELE 紫トークン（既存パレットを濁さないため独立変数） */
+  --zeele: #a78bfa;
+  --zeele-2: #8b5cf6;
+  --zeele-bg: rgba(167, 139, 250, 0.08);
+  --zeele-bg-2: rgba(167, 139, 250, 0.16);
+  --zeele-border: rgba(167, 139, 250, 0.32);
+}
+
+/* 左端のトリガー（常時可視・控えめ） */
+.zeele-trigger {
+  position: fixed;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 80;
+  background: var(--bg-1);
+  border: 1px solid var(--zeele-border);
+  border-left: none;
+  border-radius: 0 8px 8px 0;
+  padding: 14px 8px;
+  cursor: pointer;
+  color: var(--zeele);
+  font-family: var(--sans);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  transition: background 0.2s, color 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.zeele-trigger:hover {
+  background: var(--zeele-bg);
+  color: var(--zeele-2);
+}
+.zeele-trigger-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--zeele);
+  box-shadow: 0 0 6px var(--zeele);
+}
+
+/* 左パネル本体（DetailPanel の鏡像） */
+.zeele-panel {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: min(520px, 92vw);
+  height: 100vh;
+  background: var(--bg);
+  border-right: 1px dashed var(--zeele-border);
+  z-index: 91;
+  transform: translateX(-100%);
+  transition: transform 0.35s cubic-bezier(0.32, 0.72, 0.34, 1);
+  overflow-y: auto;
+  box-shadow: 20px 0 60px rgba(0, 0, 0, 0.5);
+}
+.zeele-panel.show {
+  transform: translateX(0);
+}
+
+/* バックドロップ（右パネルの detail-backdrop と独立） */
+.zeele-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 90;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s;
+}
+.zeele-backdrop.show {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* ヘッダ */
+.zeele-header {
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+  border-bottom: 1px dashed var(--zeele-border);
+  padding: 18px 24px 14px;
+  z-index: 1;
+}
+.zeele-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.zeele-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  color: var(--zeele);
+  font-family: var(--sans);
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: 0.02em;
+}
+.zeele-title-sub {
+  color: var(--ink-3);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.05em;
+}
+.zeele-close-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--ink-2);
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+}
+.zeele-close-btn:hover {
+  background: var(--bg-2);
+  color: var(--ink);
+}
+.zeele-warning {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--zeele-bg);
+  border: 1px dashed var(--zeele-border);
+  color: var(--zeele);
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 10.5px;
+  font-family: var(--mono);
+}
+
+/* セグメント（プリセット切替の枠） */
+.zeele-segs {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+.zeele-seg {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--ink-2);
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  cursor: pointer;
+  font-family: var(--sans);
+}
+.zeele-seg.active {
+  background: var(--zeele-bg);
+  border-color: var(--zeele-border);
+  color: var(--zeele);
+}
+.zeele-seg:hover:not(.active) {
+  border-color: var(--border-hi);
+  color: var(--ink);
+}
+
+/* 本体・カードリスト */
+.zeele-body {
+  padding: 16px 24px 32px;
+}
+.zeele-card {
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--zeele);
+  border-radius: var(--r);
+  padding: 14px 16px;
+  margin-bottom: 10px;
+  transition: border-color 0.2s;
+}
+.zeele-card:hover {
+  border-color: var(--zeele-border);
+}
+.zeele-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 6px;
+}
+.zeele-ticker {
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.zeele-name {
+  color: var(--ink-2);
+  font-size: 11px;
+  margin-left: 8px;
+}
+.zeele-preset {
+  background: var(--zeele-bg);
+  color: var(--zeele);
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  letter-spacing: 0.05em;
+}
+.zeele-narrative {
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 4px 0 8px;
+}
+.zeele-meta {
+  display: flex;
+  gap: 14px;
+  color: var(--ink-3);
+  font-size: 10.5px;
+  font-family: var(--mono);
+  margin-bottom: 8px;
+}
+.zeele-meta b {
+  color: var(--ink-2);
+  font-weight: 600;
+}
+.zeele-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 10px;
+}
+.zeele-btn-promote {
+  background: var(--zeele-bg);
+  border: 1px solid var(--zeele-border);
+  color: var(--zeele);
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-family: var(--sans);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.zeele-btn-promote:hover {
+  background: var(--zeele-bg-2);
+}
+.zeele-btn-promote.promoted {
+  background: var(--bg-2);
+  color: var(--ink-3);
+  border-color: var(--border);
+  cursor: default;
+}
+.zeele-card-note {
+  color: var(--ink-3);
+  font-size: 10.5px;
+  font-style: italic;
+}
+
+/* セクション見出し */
+.zeele-section-label {
+  color: var(--ink-3);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  font-weight: 700;
+  margin: 18px 0 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+.zeele-section-label:first-child {
+  margin-top: 0;
+}
+
+/* フッタ：北極星 + 市場対象 */
+.zeele-footer {
+  margin-top: 22px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  font-size: 10.5px;
+  color: var(--ink-3);
+  line-height: 1.7;
+  font-family: var(--mono);
+}
+.zeele-footer a {
+  color: var(--ink-2);
+  text-decoration: none;
+}
+.zeele-footer a:hover {
+  color: var(--zeele);
+}
+.zeele-footer .key {
+  color: var(--zeele);
+}

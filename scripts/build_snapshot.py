@@ -418,6 +418,11 @@ async def build(*, live: bool, prefer_moomoo: bool) -> dict[str, object]:
     # メイン DB（~/.trading-agent/db.sqlite）から theses 表を読む。
     theses_summary = _build_theses_summary()
 
+    # === ZEELE 攻めレコメンド枠（D-24/D-25・X-2 ZEELE 車線） ===
+    # screening pipeline → ZEELE 移植は次セッション以降。
+    # 現状はプレースホルダ候補で UI 構造を整える（mode=demo で固定セット）。
+    zeele = _build_zeele_section(mode_is_live=live)
+
     return {
         "generated_at": utcnow().strftime("%Y-%m-%d %H:%M"),
         "mode": "live" if live else "demo",
@@ -461,6 +466,79 @@ async def build(*, live: bool, prefer_moomoo: bool) -> dict[str, object]:
         },
         "holdings": holdings,
         "candidates": candidates,
+        "zeele": zeele,
+    }
+
+
+def _build_zeele_section(*, mode_is_live: bool) -> dict[str, object]:
+    """ZEELE 攻めレコメンド枠（暫定プレースホルダ）。
+
+    本配線は次セッション以降（screening_agent / topics_collector → ZEELE への
+    ingest アダプタ完成時）。それまでは UI 構造確認用の固定セットを返す。
+    候補は universe の TOPIX 中型銘柄から選び、narrative は仮テキスト。
+    """
+    candidates: list[dict[str, object]] = [
+        {
+            "ticker": "8035",
+            "name": "東京エレクトロン",
+            "preset": "momentum",
+            "narrative": "半導体製造装置の回復局面。AI 設備投資の追い風と国内メモリ需要復活がドライバ。",
+            "reference_score": 72,
+            "x_sentiment": "ポジティブ・出来高増",
+            "promoted": False,
+        },
+        {
+            "ticker": "6857",
+            "name": "アドバンテスト",
+            "preset": "growth",
+            "narrative": "HBM/AI チップテスタ需要拡大。受注残高は過去最高水準を更新中。",
+            "reference_score": 68,
+            "x_sentiment": "ポジティブ",
+            "promoted": False,
+        },
+        {
+            "ticker": "4452",
+            "name": "花王",
+            "preset": "contrarian",
+            "narrative": "中国市場の構造的逆風で割安水準。配当継続性◎、原材料価格反落で利益率回復余地。",
+            "reference_score": 61,
+            "x_sentiment": "中立",
+            "promoted": False,
+        },
+        {
+            "ticker": "9101",
+            "name": "商船三井",
+            "preset": "value",
+            "narrative": "PER 4倍台・配当利回り 5%超。市況懸念で売られているが BS 健全・自社株買い継続。",
+            "reference_score": 65,
+            "x_sentiment": "中立",
+            "promoted": False,
+        },
+    ]
+    narrative_themes: list[dict[str, str]] = [
+        {
+            "title": "AI 設備投資の継続",
+            "summary": "NVDA / 東エレ / アドバンテストに追い風。HBM・先端パッケージ向け装置の受注が伸びる",
+            "source": "（テーマ仮）",
+        },
+        {
+            "title": "JP 配当株の再評価",
+            "summary": "東証 PBR1倍割れ改善要請を受け、配当・自社株買いの強化が継続",
+            "source": "（テーマ仮）",
+        },
+    ]
+    x_trends: list[dict[str, str]] = [
+        {
+            "title": "#半導体",
+            "summary": "東エレ・アドバンテスト・SUMCO 言及増加（仮）",
+        },
+    ]
+    return {
+        "candidates": candidates,
+        "narrative_themes": narrative_themes,
+        "x_trends": x_trends,
+        "note": "screening pipeline → ZEELE の ingest 配線は次セッション。現状はプレースホルダ。",
+        "generated_at": utcnow().strftime("%Y-%m-%d %H:%M"),
     }
 
 
