@@ -9,7 +9,7 @@
 
 ## 0. ひとことで
 
-**tradesupport はペーパー稼働可能な状態です**。コードは `feat/magi-rebuild` ブランチ・最新コミット `b379772`。
+**tradesupport はペーパー稼働可能な状態です**。コードは `feat/magi-rebuild` ブランチ・最新コミット `7c849d1`。
 朝5分のダッシュボードと資金配分・規律監督・ZEELE 攻めレコメンドが揃った状態で、常駐機に持っていって `build_snapshot.py` を朝バッチで回せば運用が始まります。
 
 **実機検証済（2026-05-26）**：`scripts/run_morning_batch.py --no-quality` を実行し、
@@ -156,10 +156,11 @@ launchctl list | grep tradesupport
 
 ```
 ブランチ      : feat/magi-rebuild
-最新コミット  : 083ef06 (docs(deployment): 別 PC...)
+最新コミット  : 7c849d1 (docs: 朝バッチの実機検証結果を HANDOFF/DEPLOYMENT に追記)
 全テスト      : 471 passed
 UI build      : ✓
-未コミット差分: なし（このノート上の作業はクリーン）
+朝バッチ実機  : ✓ end-to-end 動作確認済（decisions 10件 materialize）
+未コミット差分: セッション前からの docs 整理（ver* 削除 + docs/old/）と .claude/settings.json のみ
 
 主要ドキュメント:
   docs/plan/DECISIONS.md          (D-01〜D-26 確定)
