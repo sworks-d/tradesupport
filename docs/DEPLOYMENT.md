@@ -92,6 +92,16 @@ uv run python scripts/run_morning_batch.py
 ```
 - [ ] エラー無く完走する（Ollama 未導入なら警告は出る・無視可）
 
+**実機検証済の出力例**（2026-05-26 開発機で `--no-quality` 実行）:
+```
+status: partial（topics_collector が timeout 以外は全 success）
+✓ universe_refresh / screening / market_analyst / sell_recommender /
+  portfolio_builder / materialize_decisions / magi_verify / link_topics / summary / notify
+決裁待ち decision: 10 件（META=推し / 他は要検討・静観）
+```
+→ 本流（universe → MAGI → decisions）は完走する。topics_collector timeout は
+ネット遅延 / NewsAPI 未設定時の既知挙動（graceful degradation 設計）。
+
 ### 2.3 評価ジョブ（P6-1 既実装）
 ```bash
 uv run python scripts/run_evaluation.py

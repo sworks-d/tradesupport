@@ -9,8 +9,12 @@
 
 ## 0. ひとことで
 
-**tradesupport はペーパー稼働可能な状態です**。コードは `feat/magi-rebuild` ブランチ・最新コミット `083ef06`。
+**tradesupport はペーパー稼働可能な状態です**。コードは `feat/magi-rebuild` ブランチ・最新コミット `b379772`。
 朝5分のダッシュボードと資金配分・規律監督・ZEELE 攻めレコメンドが揃った状態で、常駐機に持っていって `build_snapshot.py` を朝バッチで回せば運用が始まります。
+
+**実機検証済（2026-05-26）**：`scripts/run_morning_batch.py --no-quality` を実行し、
+universe → screening → MAGI 4段判定 → decisions 10件 materialize まで **end-to-end で動作確認済**。
+（topics_collector のみ timeout だが graceful degradation で本流は完走）
 
 ただし以下 3 つは**未完です**：
 
