@@ -418,6 +418,14 @@ async def build(*, live: bool, prefer_moomoo: bool) -> dict[str, object]:
     # メイン DB（~/.trading-agent/db.sqlite）から theses 表を読む。
     theses_summary = _build_theses_summary()
 
+    # === D-26 資金配分（Core / Satellite / Cash）===
+    allocation = _build_allocation(
+        positions=positions,
+        cash_jpy=float(cash),
+        total_jpy=float(total) if total else 100000.0,
+        usdjpy=usdjpy,
+    )
+
     # === ZEELE 攻めレコメンド枠（D-24/D-25・X-2 ZEELE 車線） ===
     # screening pipeline → ZEELE 移植は次セッション以降。
     # 現状はプレースホルダ候補で UI 構造を整える（mode=demo で固定セット）。
@@ -471,6 +479,110 @@ async def build(*, live: bool, prefer_moomoo: bool) -> dict[str, object]:
         "holdings": holdings,
         "candidates": candidates,
         "zeele": zeele,
+        "allocation": allocation,
+    }
+
+
+# D-26 資金配分の既定値
+_ALLOC_TARGET_PCT = {"core": 60, "satellite": 20, "cash": 20}
+_MONTHLY_ADD_DEFAULT_JPY = 30000  # ユーザー設定で 30,000-50,000 を想定
+# 月次追加配分（exposure posture で上書き）
+_MONTHLY_ADD_RULES: dict[str, dict[str, int]] = {
+    "NEW_ENTRY_ALLOWED": {"core": 70, "satellite": 10, "cash": 20},
+    "REDUCE_ONLY":       {"core": 70, "satellite": 0,  "cash": 30},
+    "CASH_PRIORITY":     {"core": 30, "satellite": 0,  "cash": 70},
+}
+
+# Core 扱いするティッカー（ETF + 高配当 JP）。実保有判定用。
+_CORE_TICKERS = {
+    # US ETF (D-25)
+    "QQQ", "VOO", "SOXX", "SPY", "DIA", "VTI", "VYM", "SCHD",
+    # JP 高配当主力（暫定）
+    "9433", "9432", "8306", "8316", "8411", "8001", "8058",
+    "9020", "4502", "4503", "4452",
+}
+
+
+def _classify_position(ticker: str) -> str:
+    """ポジションを core / satellite に分類。"""
+    if ticker in _CORE_TICKERS:
+        return "core"
+    return "satellite"
+
+
+def _build_allocation(
+    *,
+    positions: list,
+    cash_jpy: float,
+    total_jpy: float,
+    usdjpy: float,
+) -> dict[str, object]:
+    """D-26 資金配分の計算（current / target / 月次追加配分提案）。
+
+    posture は __init__.py の build() 内で計算済の exposure_decision を参照
+    したいが、現状は循環参照を避けて allocation 内で簡易再計算する。
+    （次セッションで build() の引数として渡す形に整理予定）
+    """
+    # 現状の集計
+    core_jpy = 0.0
+    satellite_jpy = 0.0
+    if positions:
+        for p in positions:
+            qty = getattr(p, "qty", 0) or 0
+            price = getattr(p, "nominal_price", None) or 0
+            currency = getattr(p, "currency", "JPY")
+            value = qty * price
+            if currency == "USD":
+                value *= usdjpy
+            if _classify_position(getattr(p, "code", "")) == "core":
+                core_jpy += value
+            else:
+                satellite_jpy += value
+    current = {
+        "core": round(core_jpy),
+        "satellite": round(satellite_jpy),
+        "cash": round(cash_jpy),
+    }
+
+    target_jpy = {k: round(total_jpy * v / 100) for k, v in _ALLOC_TARGET_PCT.items()}
+    gap_jpy = {k: target_jpy[k] - current[k] for k in target_jpy}
+
+    # 月次追加配分（posture 簡易：cash=total なら NEW_ENTRY_ALLOWED と仮定。
+    # 実際は exposure_coach の結果を参照。今は安全側で "REDUCE_ONLY" 既定とする）
+    posture = "REDUCE_ONLY"  # 暫定：実 exposure_decision と整合させるのは次セッションで
+    rule = _MONTHLY_ADD_RULES.get(posture, _MONTHLY_ADD_RULES["REDUCE_ONLY"])
+    monthly_default = _MONTHLY_ADD_DEFAULT_JPY
+    split = {
+        "core_jpy":      round(monthly_default * rule["core"] / 100),
+        "satellite_jpy": round(monthly_default * rule["satellite"] / 100),
+        "cash_jpy":      round(monthly_default * rule["cash"] / 100),
+    }
+
+    # 配分ガード違反チェック（情報表示用）
+    warnings: list[str] = []
+    if total_jpy > 0:
+        core_pct = current["core"] / total_jpy * 100
+        sat_pct = current["satellite"] / total_jpy * 100
+        cash_pct = current["cash"] / total_jpy * 100
+        if cash_pct < 20:
+            warnings.append("Cash が下限 20% を割っている（D-23 #4）")
+        if sat_pct > 30:
+            warnings.append("Satellite が 30% を超えている（D-23 セクター上限相当）")
+
+    return {
+        "current": current,
+        "target_pct": dict(_ALLOC_TARGET_PCT),
+        "target_jpy": target_jpy,
+        "gap_jpy": gap_jpy,
+        "monthly_addition_default_jpy": monthly_default,
+        "monthly_addition_split": split,
+        "posture_used": posture,
+        "rule_pct": rule,
+        "warnings": warnings,
+        "note": (
+            "月次追加は posture により配分上書き：NEW_ENTRY_ALLOWED→70/10/20 / "
+            "REDUCE_ONLY→70/0/30 / CASH_PRIORITY→30/0/70（D-26）"
+        ),
     }
 
 

@@ -32,6 +32,7 @@
 | D-23 | 規律層（外骨格）＋元本¥100k | ✅ MAGI外側に**リスク規律エンジン**を被せる。8数値（risk2%/5銘柄/30%上限/現金20%/DD-15%停止/増額ゲート/損切12%/JP主体）。`risk/params.py`が正 |
 | **D-24** | **北極星＝claude-trading-skills** | ✅ **2026-05-26**：規律監督OSの参考実装として正式採用。stock_skillsは守り系のみ。詳細仕様は `spec/X2_claude_trading_skills_adoption.md`。JP補完は dexter-jp |
 | **D-25** | **市場対象＝JP 90% / US 10%（ETFサテライト）** | ✅ **2026-05-26**：個別株は JP のみ（TOPIX500中心）／US は ETF 1-2本のみ。D-23 の "JP主体" を比率で具体化。`moomoo_markets="JP,US"`、universe調整、CASPER/dexter-jp/Kanchi の精度向上が利益。半年後にUS個別株を1-2銘柄まで段階拡大検討 |
+| **D-26** | **資金配分=Core60/Sat20/Cash20+月次積立70/10/20** | ✅ **2026-05-26**：¥100k スタート＋月次¥30-50k 追加。Core=ETF＋高配当（長期）、Satellite=ZEELE個別、Cash=20% 下限維持。月次追加は posture（exposure_coach）で配分上書き：REDUCE_ONLY→70/0/30、CASH_PRIORITY→30/0/70 |
 
 ---
 
@@ -119,6 +120,31 @@
   ⑦損切り10–15%(既定12%) ⑧日本株主体・米株従(為替)。コードの正＝`trading_agent/risk/params.py`、仕様＝`spec/G_risk_discipline.md`。
 - **順序**：研究の `RESEARCH_TO_IMPLEMENTATION.md`「貫通→餌→弾」に乗り換え。B-3はLLMでなく**コード反証**（2期財務=S4後）に再設計。
 - **影響**：sizing（R-mult化）・decision（stop/1R保存）・universe（JP主体）・P6（R-mult記録）・A-5（規律を効かせた出口）。
+
+### D-26 資金配分フレームワーク（Core-Satellite三層＋月次積立）  ✅（2026-05-26 確定）
+- **元本**：¥100,000 スタート（D-23 維持）／**月次追加**：~¥30,000-¥50,000（生活費から）
+- **三層構造**：
+  - **Tier 1 Core（60%）**＝US ETF（QQQ/VOO 等）＋JP 高配当株。**長期保持・売却シグナル無き限り売らない**
+  - **Tier 2 Satellite（20%）**＝ZEELE 由来の中期狙い JP 個別株。同時保有 3-5銘柄（D-23 ②）。1R=2%（D-23 ①）
+  - **Tier 3 Cash（20%）**＝D-23 ④ 現金下限と一致。防御余力 + 機会到来時の弾薬
+- **月次追加の既定配分**（合計100%）：
+  - **70% → Core**（DCA／市場タイミング無視で積立）
+  - **10% → Satellite**（攻めの弾薬補充）
+  - **20% → Cash**（バッファ維持）
+- **exposure_coach 状態による上書き**：
+  - `NEW_ENTRY_ALLOWED` → 既定配分（70/10/20）
+  - `REDUCE_ONLY` → Satellite を Cash に振替（**70/0/30**）
+  - `CASH_PRIORITY` → Core も控え（**30/0/70**）
+- **Core への DCA は posture に影響されにくい**（長期積立の本旨）が、CASH_PRIORITY 時は控えめに
+- **「買わない」判断の正当化**：
+  - 候補が無い／conviction 不足 → Satellite 分は Cash 行き
+  - exposure_coach LOW confidence → 控えめ運用がデフォルト
+  - 焦って買うより、現金で待つ＝D-23 整合
+- **配分ガード**：
+  - 1銘柄 20% 上限（D-23）
+  - 1セクター 30% 上限（D-23）
+  - DD-15% で全新規停止（D-23）
+- **影響**：snapshot.allocation / CashFlowPanel.tsx で常時可視化。月次追加履歴は次セッションで thesis_store 相当の永続化を追加。
 
 ### D-25 市場対象＝JP 90% / US 10%（ETFサテライト）  ✅（2026-05-26 確定）
 - **確定**：個別株は **JP のみ**（TOPIX 100〜500 中心）。US は **ETF（QQQ/VOO/SOXL 等）1-2本だけ**をサテライトとして許可。個別米株は**入れない**（情報非対称性で勝てない）。

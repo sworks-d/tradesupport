@@ -3129,3 +3129,337 @@ svg[preserveAspectRatio="none"] :is(line, path, polyline, polygon, rect, circle)
   font-family: var(--mono);
   letter-spacing: 0.05em;
 }
+
+/* ============================================================ */
+/* D-26 Cash Flow / Allocation Panel                            */
+/* ============================================================ */
+.cashflow-panel {
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--sub);
+  border-radius: var(--r-lg);
+  padding: 20px 22px;
+  margin: 0 0 32px;
+  font-family: var(--sans);
+}
+
+.cf-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.cf-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ink);
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.cf-en {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-3);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-weight: 500;
+}
+.cf-total {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.cf-total b {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 700;
+}
+.cf-added {
+  color: var(--ink-3);
+  font-size: 10px;
+  margin-left: 6px;
+}
+
+/* スタック棒 */
+.cf-bar-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+.cf-bar-label {
+  width: 42px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-3);
+  letter-spacing: 0.08em;
+  text-align: right;
+}
+.cf-bar {
+  flex: 1;
+  height: 22px;
+  background: var(--bg-2);
+  border-radius: 4px;
+  overflow: hidden;
+  display: flex;
+}
+.cf-bar-target {
+  background: transparent;
+  border: 1px dashed var(--border-2);
+}
+.cf-seg {
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--bg);
+  overflow: hidden;
+  white-space: nowrap;
+  transition: opacity 0.2s;
+}
+.cf-seg-target {
+  background: transparent !important;
+  color: var(--ink-2);
+  border-right: 1px dashed var(--border-2);
+}
+.cf-seg-target:last-child { border-right: none; }
+.cf-core { background: var(--sub); }       /* teal */
+.cf-satellite { background: var(--zeele); } /* purple */
+.cf-cash { background: var(--ink-4); }     /* dim */
+.cf-seg-label {
+  pointer-events: none;
+}
+
+/* GAP */
+.cf-gaps {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+.cf-gap-item {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 10px;
+  background: var(--bg-2);
+  border-radius: 4px;
+  font-size: 11px;
+}
+.cf-gap-tier {
+  font-family: var(--mono);
+  color: var(--ink-3);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+}
+.cf-gap-amt {
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 12px;
+}
+.cf-gap-up .cf-gap-amt { color: var(--up); }
+.cf-gap-down .cf-gap-amt { color: var(--down); }
+.cf-gap-desc {
+  color: var(--ink-3);
+  font-size: 10px;
+}
+
+/* posture */
+.cf-posture {
+  margin-top: 14px;
+  padding: 8px 12px;
+  background: var(--bg-2);
+  border-radius: 6px;
+}
+.cf-posture-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.cf-posture-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-3);
+  letter-spacing: 0.08em;
+}
+.cf-posture-val {
+  font-weight: 700;
+  font-size: 13px;
+}
+.cf-posture-new_entry_allowed { color: var(--up); }
+.cf-posture-reduce_only { color: var(--warn); }
+.cf-posture-cash_priority { color: var(--down); }
+.cf-posture-sub {
+  color: var(--ink-3);
+  font-size: 11px;
+  font-style: italic;
+}
+
+/* monthly split */
+.cf-monthly {
+  margin-top: 12px;
+}
+.cf-monthly-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.cf-monthly-label {
+  font-size: 12px;
+  color: var(--ink-2);
+  font-weight: 600;
+}
+.cf-monthly-rule {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-3);
+}
+.cf-monthly-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+}
+.cf-monthly-cell {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-left: 3px solid;
+  border-radius: 6px;
+  padding: 8px 12px;
+}
+.cf-monthly-cell.cf-core { border-left-color: var(--sub); background: rgba(78,205,196,0.04); }
+.cf-monthly-cell.cf-satellite { border-left-color: var(--zeele); background: rgba(167,139,250,0.04); }
+.cf-monthly-cell.cf-cash { border-left-color: var(--ink-4); background: var(--bg-2); }
+.cf-monthly-cell.zero { opacity: 0.45; }
+.cf-monthly-tier {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-3);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.cf-monthly-amt {
+  font-family: var(--mono);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ink);
+  margin: 2px 0;
+}
+.cf-monthly-desc {
+  font-size: 10.5px;
+  color: var(--ink-3);
+}
+
+/* warnings */
+.cf-warnings {
+  margin-top: 10px;
+}
+.cf-warn {
+  color: var(--warn);
+  font-size: 11px;
+  font-family: var(--mono);
+  margin: 2px 0;
+}
+
+/* actions: addition input */
+.cf-actions {
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.cf-add-btn {
+  background: transparent;
+  border: 1px dashed var(--sub);
+  color: var(--sub);
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  cursor: pointer;
+  font-family: var(--sans);
+  transition: all 0.15s;
+}
+.cf-add-btn:hover {
+  background: var(--sub-bg);
+  border-style: solid;
+}
+.cf-add-form {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.cf-add-yen {
+  font-family: var(--mono);
+  color: var(--ink-2);
+}
+.cf-add-input {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 13px;
+  padding: 6px 10px;
+  border-radius: 4px;
+  width: 110px;
+}
+.cf-add-input:focus { outline: none; border-color: var(--sub); }
+.cf-add-submit {
+  background: var(--sub);
+  border: none;
+  color: var(--bg);
+  font-weight: 700;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.cf-add-cancel {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--ink-3);
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+/* history */
+.cf-history {
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.cf-history summary {
+  cursor: pointer;
+  color: var(--ink-2);
+}
+.cf-history ul {
+  list-style: none;
+  padding: 6px 0 0 16px;
+  margin: 0;
+}
+.cf-history li {
+  display: flex;
+  gap: 10px;
+  font-family: var(--mono);
+  padding: 2px 0;
+}
+.cf-hist-date { color: var(--ink-3); }
+.cf-hist-amt { color: var(--ink); font-weight: 600; }
+.cf-hist-note { color: var(--ink-3); font-style: italic; }
+
+.cf-note {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+  font-size: 10.5px;
+  color: var(--ink-3);
+  font-family: var(--mono);
+  line-height: 1.5;
+}

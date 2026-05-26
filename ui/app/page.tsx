@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import CashFlowPanel from "./CashFlowPanel";
 import ChartCrispLabels from "./ChartCrispLabels";
 import DashboardInteractions from "./DashboardInteractions";
 import DetailPanels from "./DetailPanels";
@@ -30,6 +31,7 @@ export default function Page() {
       <DashboardInteractions />
       <LiveData />
       <ZeelePanel />
+      <CashFlowPanel />
     </>
   );
 }
