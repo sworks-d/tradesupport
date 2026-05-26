@@ -2803,3 +2803,27 @@ svg[preserveAspectRatio="none"] :is(line, path, polyline, polygon, rect, circle)
   font-size: 10.5px;
   font-family: var(--mono);
 }
+
+/* ZEELE 投入可能額の表示（ヘッダ直下） */
+.zeele-budget {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 6px 10px;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-2);
+}
+.zeele-budget b {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+}
+.zeele-budget-sub {
+  color: var(--ink-3);
+  font-size: 10px;
+}

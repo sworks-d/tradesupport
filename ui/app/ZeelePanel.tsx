@@ -36,16 +36,23 @@ type Candidate = {
   period_return_pct?: number;
   price_history_12w?: number[];
   // 価格・推奨サイジング（D-23 準拠・参考値）
-  last_price?: number;       // 終値（原通貨）
-  last_price_jpy?: number;   // JPY 換算
-  suggested_jpy?: number;    // 推奨投入額（JPY）
-  suggested_shares?: number; // 推奨株数（fractional 可）
-  sizing_constraint?: "risk" | "cap" | "n/a";
+  last_price?: number;
+  last_price_jpy?: number;
+  suggested_jpy?: number;
+  suggested_shares?: number;
+  sizing_constraint?: "risk" | "cap" | "cash" | "n/a";
+  stop_pct_used?: number; // 銘柄毎に変動
   promoted?: boolean;
 };
 
 type Snapshot = {
-  zeele?: { candidates?: Candidate[] };
+  zeele?: {
+    candidates?: Candidate[];
+    account_total_jpy?: number;
+    available_cash_jpy?: number;
+    investable_cash_jpy?: number;
+    cash_floor_jpy?: number;
+  };
 };
 
 const PRESET_LABEL: Record<string, string> = {
@@ -221,9 +228,16 @@ export default function ZeelePanel() {
           <div
             className="zeele-sizing"
             title={
-              c.sizing_constraint === "risk"
-                ? "risk 2% (D-23 #1) で頭打ち"
-                : "1銘柄 20% 上限 (D-23) で頭打ち"
+              `D-23 準拠サイジング\n` +
+              `stop ${(c.stop_pct_used ?? 0.12) * 100}% (${c.preset ?? "default"} 由来)\n` +
+              `risk ¥2,000 / cap ¥20,000 / 投入可能 ¥${(data?.zeele?.investable_cash_jpy ?? 0).toLocaleString()}\n` +
+              `→ ${
+                c.sizing_constraint === "risk"
+                  ? "risk が頭打ち（stop が広い銘柄ほど少なく）"
+                  : c.sizing_constraint === "cap"
+                  ? "1銘柄上限 20% が頭打ち"
+                  : "現金可用額が頭打ち"
+              }`
             }
           >
             <span className="zeele-sizing-label">推奨</span>
@@ -231,7 +245,12 @@ export default function ZeelePanel() {
               ¥{(c.suggested_jpy ?? 0).toLocaleString()}
             </span>
             <span className="zeele-sizing-detail">
-              ({c.suggested_shares}株・{c.sizing_constraint === "risk" ? "risk上限" : "サイズ上限"})
+              ({c.suggested_shares}株・stop{((c.stop_pct_used ?? 0.12) * 100).toFixed(0)}%・
+              {c.sizing_constraint === "risk"
+                ? "risk上限"
+                : c.sizing_constraint === "cap"
+                ? "サイズ上限"
+                : "現金上限"})
             </span>
           </div>
         )}
@@ -282,6 +301,15 @@ export default function ZeelePanel() {
       <div className="zeele-warning">
         ⚠ 参考・未照合 ／ 数週単位で熟成中の候補（毎日は変わらない）
       </div>
+      {data?.zeele?.investable_cash_jpy !== undefined && (
+        <div className="zeele-budget" title="投入可能 = 現金 − 現金下限20%（D-23 #4）">
+          投入可能 <b>¥{(data.zeele.investable_cash_jpy ?? 0).toLocaleString()}</b>
+          <span className="zeele-budget-sub">
+            （現金 ¥{(data.zeele.available_cash_jpy ?? 0).toLocaleString()} − 下限 ¥
+            {(data.zeele.cash_floor_jpy ?? 0).toLocaleString()}）
+          </span>
+        </div>
+      )}
 
       <div className="zeele-body">
         {candidates.length === 0 ? (

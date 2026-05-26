@@ -477,30 +477,68 @@ async def build(*, live: bool, prefer_moomoo: bool) -> dict[str, object]:
 def _suggest_size(
     *,
     account_total_jpy: float,
+    available_cash_jpy: float,
     entry_jpy: float,
-    stop_pct: float = 0.12,
-    risk_pct: float = 0.02,
-    max_pos_pct: float = 0.20,
+    stop_pct: float,                   # 銘柄毎に変動（ボラ・プリセット由来）
+    risk_pct: float = 0.02,            # D-23 #1
+    max_pos_pct: float = 0.20,         # D-23 1銘柄上限
+    cash_floor_pct: float = 0.20,      # D-23 #4 現金下限
 ) -> dict[str, object]:
-    """D-23 8数値準拠の推奨サイジング（ZEELE 候補用・参考値）。
+    """D-23 8数値準拠の推奨サイジング（ZEELE 候補・参考値）。
 
-    - risk_pct = 2%（D-23 #1）
-    - stop_pct = 12%（D-23 #7 既定）
-    - max_pos_pct = 20%（D-23 1銘柄上限）
+    3つの制約の最小値を取る：
+      - risk : 1Rのリスクを stop_pct で吸収する shares 上限
+      - cap  : 1銘柄ポジション率 max_pos_pct の上限
+      - cash : 現金下限 cash_floor_pct を確保した上で **今買える** 上限
     fractional shares 許容（moomoo 1株単元未満手数料0・D-23 ②）。
     """
     if entry_jpy <= 0 or account_total_jpy <= 0:
-        return {"suggested_jpy": 0, "suggested_shares": 0.0, "constraint": "n/a"}
+        return {
+            "suggested_jpy": 0,
+            "suggested_shares": 0.0,
+            "constraint": "n/a",
+            "stop_pct_used": stop_pct,
+            "investable_cash_jpy": 0,
+        }
     risk_jpy = account_total_jpy * risk_pct
-    shares_by_risk = risk_jpy / (entry_jpy * stop_pct)
+    cash_floor_jpy = account_total_jpy * cash_floor_pct
+    investable_cash = max(0.0, available_cash_jpy - cash_floor_jpy)
+
+    shares_by_risk = risk_jpy / (entry_jpy * stop_pct) if stop_pct > 0 else 0
     shares_by_cap = (account_total_jpy * max_pos_pct) / entry_jpy
-    shares = min(shares_by_risk, shares_by_cap)
-    constraint = "risk" if shares_by_risk < shares_by_cap else "cap"
+    shares_by_cash = investable_cash / entry_jpy
+
+    shares = min(shares_by_risk, shares_by_cap, shares_by_cash)
+    # 制約特定（同点は risk > cap > cash の優先順）
+    if shares <= 0:
+        constraint = "cash"  # 投入余地ゼロ
+    elif shares == shares_by_risk:
+        constraint = "risk"
+    elif shares == shares_by_cap:
+        constraint = "cap"
+    else:
+        constraint = "cash"
+
     return {
         "suggested_jpy": round(shares * entry_jpy),
         "suggested_shares": round(shares, 2),
         "constraint": constraint,
+        "stop_pct_used": round(stop_pct, 3),
+        "investable_cash_jpy": round(investable_cash),
     }
+
+
+# プリセット → 既定 stop_pct（ボラ感の差を表現・D-23 10-15%の範囲を中心に）
+_STOP_PCT_BY_PRESET: dict[str, float] = {
+    "momentum": 0.15,      # 高ボラ：広めの stop で許容
+    "growth": 0.13,
+    "alpha": 0.13,
+    "pullback": 0.11,
+    "value": 0.09,         # 低ボラ：狭めの stop で許容
+    "contrarian": 0.10,
+    "growth-value": 0.10,
+    "dividend": 0.08,
+}
 
 
 def _build_zeele_section(
@@ -592,20 +630,36 @@ def _build_zeele_section(
             "summary": "東エレ・アドバンテスト・SUMCO 言及増加（仮）",
         },
     ]
-    # 各候補に推奨サイジングを付与（D-23 準拠・参考値）
+    # 現金可用額：snapshot を作る側でまだ現金を引数化していないため、暫定で口座総額。
+    # ペーパー運用後（実保有のとき）は available_cash を分離して渡す。
+    available_cash_jpy = account_total_jpy  # 現状=現金100%（保有0前提）
+
+    # 各候補に推奨サイジングを付与（D-23 準拠・参考値）。
+    # stop_pct はプリセット由来で **銘柄ごとに変動**。
     for c in candidates:
         history = c.get("price_history_12w") or []
         if not history:
             continue
         last = float(history[-1])
-        is_jp = c["ticker"].isdigit() if isinstance(c["ticker"], str) else False
+        ticker = c["ticker"] if isinstance(c["ticker"], str) else ""
+        is_jp = ticker.isdigit()
         entry_jpy = last if is_jp else last * usdjpy
-        sizing = _suggest_size(account_total_jpy=account_total_jpy, entry_jpy=entry_jpy)
+        preset = c.get("preset", "")
+        preset_key = preset if isinstance(preset, str) else ""
+        stop_pct = _STOP_PCT_BY_PRESET.get(preset_key, 0.12)
+
+        sizing = _suggest_size(
+            account_total_jpy=account_total_jpy,
+            available_cash_jpy=available_cash_jpy,
+            entry_jpy=entry_jpy,
+            stop_pct=stop_pct,
+        )
         c["last_price"] = round(last, 2)
         c["last_price_jpy"] = round(entry_jpy)
         c["suggested_jpy"] = sizing["suggested_jpy"]
         c["suggested_shares"] = sizing["suggested_shares"]
         c["sizing_constraint"] = sizing["constraint"]
+        c["stop_pct_used"] = sizing["stop_pct_used"]
 
     return {
         "candidates": candidates,
@@ -613,7 +667,10 @@ def _build_zeele_section(
         "x_trends": x_trends,
         "note": "screening pipeline → ZEELE の ingest 配線は次セッション。現状はプレースホルダ。",
         "generated_at": utcnow().strftime("%Y-%m-%d %H:%M"),
-        "account_total_jpy": account_total_jpy,
+        "account_total_jpy": round(account_total_jpy),
+        "available_cash_jpy": round(available_cash_jpy),
+        "cash_floor_jpy": round(account_total_jpy * 0.20),
+        "investable_cash_jpy": round(max(0, available_cash_jpy - account_total_jpy * 0.20)),
     }
 
 
