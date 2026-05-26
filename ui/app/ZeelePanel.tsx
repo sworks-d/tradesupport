@@ -31,10 +31,16 @@ type Candidate = {
   structural_thesis?: string;
   reference_score?: number;
   x_sentiment?: string;
-  zeele_entered_at?: string; // ISO date
+  zeele_entered_at?: string;
   zeele_weeks?: number;
-  period_return_pct?: number; // 12週リターン
-  price_history_12w?: number[]; // 12週分の終値
+  period_return_pct?: number;
+  price_history_12w?: number[];
+  // 価格・推奨サイジング（D-23 準拠・参考値）
+  last_price?: number;       // 終値（原通貨）
+  last_price_jpy?: number;   // JPY 換算
+  suggested_jpy?: number;    // 推奨投入額（JPY）
+  suggested_shares?: number; // 推奨株数（fractional 可）
+  sizing_constraint?: "risk" | "cap" | "n/a";
   promoted?: boolean;
 };
 
@@ -123,6 +129,7 @@ export default function ZeelePanel() {
   const [data, setData] = useState<Snapshot | null>(null);
   const [mount, setMount] = useState<HTMLElement | null>(null);
   const [promotedLocal, setPromotedLocal] = useState<Set<string>>(new Set());
+  const [expanded, setExpanded] = useState(false);
 
   // dashboard.html 内の #zeele-zone-mount を React Portal ターゲットに使う。
   useEffect(() => {
@@ -158,7 +165,9 @@ export default function ZeelePanel() {
 
   if (!mount) return null;
   const candidates = data?.zeele?.candidates ?? [];
-  const visible = candidates.slice(0, 4);
+  const VISIBLE_COUNT = 2; // 上位N件のみ初期表示。残りは expand で展開
+  const visibleAlways = candidates.slice(0, VISIBLE_COUNT);
+  const collapsed = candidates.slice(VISIBLE_COUNT);
 
   const handlePromote = (ticker: string) => {
     setPromotedLocal((prev) => {
@@ -170,6 +179,95 @@ export default function ZeelePanel() {
 
   const isPromoted = (c: Candidate): boolean =>
     !!c.promoted || promotedLocal.has(c.ticker);
+
+  const fmtPrice = (t: string, p: number | undefined): string => {
+    if (p === undefined) return "";
+    // JP は 4桁数字、US は英字。¥ or $ で表示。
+    const isJP = /^\d{4}$/.test(t);
+    return isJP
+      ? `¥${Math.round(p).toLocaleString()}`
+      : `$${p.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  };
+
+  const renderCard = (c: Candidate) => {
+    const promoted = isPromoted(c);
+    const last = c.price_history_12w?.[c.price_history_12w.length - 1];
+    return (
+      <article className="zeele-card" key={c.ticker}>
+        <div className="zeele-card-head">
+          <div>
+            <span className="zeele-ticker">{c.ticker}</span>
+            {c.name && <span className="zeele-name">{c.name}</span>}
+          </div>
+          {c.preset && (
+            <span className="zeele-preset">
+              {PRESET_LABEL[c.preset] ?? c.preset}
+            </span>
+          )}
+        </div>
+
+        {c.price_history_12w && (
+          <Sparkline values={c.price_history_12w} returnPct={c.period_return_pct} />
+        )}
+
+        {last !== undefined && (
+          <div className="zeele-price">
+            <span className="zeele-price-now">{fmtPrice(c.ticker, last)}</span>
+            <span className="zeele-price-label">現在値</span>
+          </div>
+        )}
+
+        {c.suggested_jpy !== undefined && c.suggested_jpy > 0 && (
+          <div
+            className="zeele-sizing"
+            title={
+              c.sizing_constraint === "risk"
+                ? "risk 2% (D-23 #1) で頭打ち"
+                : "1銘柄 20% 上限 (D-23) で頭打ち"
+            }
+          >
+            <span className="zeele-sizing-label">推奨</span>
+            <span className="zeele-sizing-jpy">
+              ¥{(c.suggested_jpy ?? 0).toLocaleString()}
+            </span>
+            <span className="zeele-sizing-detail">
+              ({c.suggested_shares}株・{c.sizing_constraint === "risk" ? "risk上限" : "サイズ上限"})
+            </span>
+          </div>
+        )}
+
+        {c.narrative && <div className="zeele-narrative">{c.narrative}</div>}
+        {c.structural_thesis && (
+          <div className="zeele-thesis">{c.structural_thesis}</div>
+        )}
+
+        <div className="zeele-meta">
+          {c.zeele_entered_at && (
+            <span>
+              ZEELE 入り {c.zeele_entered_at.slice(5)} (
+              <b>{c.zeele_weeks ?? 0}週</b>)
+            </span>
+          )}
+          {c.reference_score !== undefined && (
+            <span>
+              参考 <b>{c.reference_score}</b>
+            </span>
+          )}
+        </div>
+
+        <div className="zeele-actions">
+          <button
+            type="button"
+            className={`zeele-btn-promote${promoted ? " promoted" : ""}`}
+            onClick={() => !promoted && handlePromote(c.ticker)}
+            disabled={promoted}
+          >
+            {promoted ? "✓ 昇格済" : "→ watchlist 昇格"}
+          </button>
+        </div>
+      </article>
+    );
+  };
 
   return createPortal(
     <>
@@ -186,71 +284,31 @@ export default function ZeelePanel() {
       </div>
 
       <div className="zeele-body">
-        {visible.length === 0 ? (
+        {candidates.length === 0 ? (
           <div className="zeele-card-note">
             熟成中の候補なし（screening の通算履歴と紐付け配線は次セッション）
           </div>
         ) : (
-          visible.map((c) => {
-            const promoted = isPromoted(c);
-            return (
-              <article className="zeele-card" key={c.ticker}>
-                <div className="zeele-card-head">
-                  <div>
-                    <span className="zeele-ticker">{c.ticker}</span>
-                    {c.name && <span className="zeele-name">{c.name}</span>}
-                  </div>
-                  {c.preset && (
-                    <span className="zeele-preset">
-                      {PRESET_LABEL[c.preset] ?? c.preset}
-                    </span>
-                  )}
-                </div>
+          <>
+            {visibleAlways.map(renderCard)}
 
-                {c.price_history_12w && (
-                  <Sparkline
-                    values={c.price_history_12w}
-                    returnPct={c.period_return_pct}
-                  />
+            {collapsed.length > 0 && (
+              <>
+                <button
+                  type="button"
+                  className={`zeele-more-toggle${expanded ? " open" : ""}`}
+                  onClick={() => setExpanded((v) => !v)}
+                  aria-expanded={expanded}
+                >
+                  <span className="zeele-more-icon">{expanded ? "−" : "+"}</span>
+                  {expanded ? "閉じる" : `他の候補 ${collapsed.length}件を見る`}
+                </button>
+                {expanded && (
+                  <div className="zeele-more-list">{collapsed.map(renderCard)}</div>
                 )}
-
-                {c.narrative && <div className="zeele-narrative">{c.narrative}</div>}
-                {c.structural_thesis && (
-                  <div className="zeele-thesis">{c.structural_thesis}</div>
-                )}
-
-                <div className="zeele-meta">
-                  {c.zeele_entered_at && (
-                    <span>
-                      ZEELE 入り {c.zeele_entered_at.slice(5)} (
-                      <b>{c.zeele_weeks ?? 0}週</b>)
-                    </span>
-                  )}
-                  {c.reference_score !== undefined && (
-                    <span>
-                      参考 <b>{c.reference_score}</b>
-                    </span>
-                  )}
-                </div>
-
-                <div className="zeele-actions">
-                  <button
-                    type="button"
-                    className={`zeele-btn-promote${promoted ? " promoted" : ""}`}
-                    onClick={() => !promoted && handlePromote(c.ticker)}
-                    disabled={promoted}
-                  >
-                    {promoted ? "✓ 昇格済" : "→ watchlist 昇格"}
-                  </button>
-                </div>
-              </article>
-            );
-          })
-        )}
-        {candidates.length > visible.length && (
-          <div className="zeele-card-note" style={{ marginTop: 8 }}>
-            ほか {candidates.length - visible.length} 件 ／ 詳細探索は F5
-          </div>
+              </>
+            )}
+          </>
         )}
       </div>
     </>,

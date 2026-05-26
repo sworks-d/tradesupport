@@ -421,7 +421,11 @@ async def build(*, live: bool, prefer_moomoo: bool) -> dict[str, object]:
     # === ZEELE 攻めレコメンド枠（D-24/D-25・X-2 ZEELE 車線） ===
     # screening pipeline → ZEELE 移植は次セッション以降。
     # 現状はプレースホルダ候補で UI 構造を整える（mode=demo で固定セット）。
-    zeele = _build_zeele_section(mode_is_live=live)
+    zeele = _build_zeele_section(
+        mode_is_live=live,
+        account_total_jpy=float(total) if total else 100000.0,  # D-23 既定¥100k
+        usdjpy=usdjpy,
+    )
 
     return {
         "generated_at": utcnow().strftime("%Y-%m-%d %H:%M"),
@@ -470,12 +474,44 @@ async def build(*, live: bool, prefer_moomoo: bool) -> dict[str, object]:
     }
 
 
-def _build_zeele_section(*, mode_is_live: bool) -> dict[str, object]:
+def _suggest_size(
+    *,
+    account_total_jpy: float,
+    entry_jpy: float,
+    stop_pct: float = 0.12,
+    risk_pct: float = 0.02,
+    max_pos_pct: float = 0.20,
+) -> dict[str, object]:
+    """D-23 8数値準拠の推奨サイジング（ZEELE 候補用・参考値）。
+
+    - risk_pct = 2%（D-23 #1）
+    - stop_pct = 12%（D-23 #7 既定）
+    - max_pos_pct = 20%（D-23 1銘柄上限）
+    fractional shares 許容（moomoo 1株単元未満手数料0・D-23 ②）。
+    """
+    if entry_jpy <= 0 or account_total_jpy <= 0:
+        return {"suggested_jpy": 0, "suggested_shares": 0.0, "constraint": "n/a"}
+    risk_jpy = account_total_jpy * risk_pct
+    shares_by_risk = risk_jpy / (entry_jpy * stop_pct)
+    shares_by_cap = (account_total_jpy * max_pos_pct) / entry_jpy
+    shares = min(shares_by_risk, shares_by_cap)
+    constraint = "risk" if shares_by_risk < shares_by_cap else "cap"
+    return {
+        "suggested_jpy": round(shares * entry_jpy),
+        "suggested_shares": round(shares, 2),
+        "constraint": constraint,
+    }
+
+
+def _build_zeele_section(
+    *, mode_is_live: bool, account_total_jpy: float = 100000.0, usdjpy: float = 150.0
+) -> dict[str, object]:
     """ZEELE 攻めレコメンド枠（暫定プレースホルダ）。
 
     本配線は次セッション以降（screening_agent / topics_collector → ZEELE への
     ingest アダプタ完成時）。それまでは UI 構造確認用の固定セットを返す。
     候補は universe の TOPIX 中型銘柄から選び、narrative は仮テキスト。
+    各候補に **推奨サイジング**（D-23 準拠）を付与する。
     """
     # ZEELE 候補（暫定プレースホルダ）。
     # 「熟成中の攻め候補」framing：1日の bump ではなく数週〜月単位の継続性を示す。
@@ -556,12 +592,28 @@ def _build_zeele_section(*, mode_is_live: bool) -> dict[str, object]:
             "summary": "東エレ・アドバンテスト・SUMCO 言及増加（仮）",
         },
     ]
+    # 各候補に推奨サイジングを付与（D-23 準拠・参考値）
+    for c in candidates:
+        history = c.get("price_history_12w") or []
+        if not history:
+            continue
+        last = float(history[-1])
+        is_jp = c["ticker"].isdigit() if isinstance(c["ticker"], str) else False
+        entry_jpy = last if is_jp else last * usdjpy
+        sizing = _suggest_size(account_total_jpy=account_total_jpy, entry_jpy=entry_jpy)
+        c["last_price"] = round(last, 2)
+        c["last_price_jpy"] = round(entry_jpy)
+        c["suggested_jpy"] = sizing["suggested_jpy"]
+        c["suggested_shares"] = sizing["suggested_shares"]
+        c["sizing_constraint"] = sizing["constraint"]
+
     return {
         "candidates": candidates,
         "narrative_themes": narrative_themes,
         "x_trends": x_trends,
         "note": "screening pipeline → ZEELE の ingest 配線は次セッション。現状はプレースホルダ。",
         "generated_at": utcnow().strftime("%Y-%m-%d %H:%M"),
+        "account_total_jpy": account_total_jpy,
     }
 
 
