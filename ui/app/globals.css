@@ -2905,3 +2905,198 @@ svg[preserveAspectRatio="none"] :is(line, path, polyline, polygon, rect, circle)
   border-color: var(--down);
   color: var(--down);
 }
+
+/* ============================================================ */
+/* Topics の役割タグ（MAGI 守り材料 / ZEELE 攻め材料 / 中立）   */
+/* ============================================================ */
+.topic-role {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  padding: 2px 8px;
+  border-radius: 4px;
+  margin-left: auto;
+  border: 1px solid;
+  font-weight: 600;
+}
+.topic-role.role-magi {
+  color: var(--sub);
+  border-color: rgba(78, 205, 196, 0.32);
+  background: rgba(78, 205, 196, 0.06);
+}
+.topic-role.role-zeele {
+  color: var(--zeele);
+  border-color: var(--zeele-border);
+  background: var(--zeele-bg);
+}
+.topic-role.role-mixed {
+  color: var(--key);
+  border-color: rgba(255, 140, 66, 0.32);
+  background: rgba(255, 140, 66, 0.06);
+}
+.topic-role.role-neutral {
+  color: var(--ink-3);
+  border-color: var(--border);
+  background: transparent;
+}
+/* topic-meta は flex なので role が右寄せされるよう margin-left: auto を活用 */
+.topic-meta {
+  flex-wrap: wrap;
+}
+
+/* ============================================================ */
+/* F5 ZEELE 探索画面（/zeele）                                   */
+/* ============================================================ */
+.zeele-explore {
+  min-height: 100vh;
+  padding: 32px 48px 80px;
+  max-width: 1100px;
+  margin: 0 auto;
+  font-family: var(--sans);
+  color: var(--ink);
+  background: var(--bg);
+}
+
+.ze-header {
+  padding-bottom: 24px;
+  border-bottom: 1px dashed var(--zeele-border);
+  margin-bottom: 32px;
+}
+.ze-back {
+  display: inline-block;
+  color: var(--ink-3);
+  font-size: 12px;
+  text-decoration: none;
+  margin-bottom: 16px;
+  font-family: var(--sans);
+  transition: color 0.15s;
+}
+.ze-back:hover { color: var(--zeele); }
+
+.ze-title-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+.ze-title {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--zeele);
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+.ze-title-en {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-3);
+  letter-spacing: 0.1em;
+  margin-left: 10px;
+  font-weight: 500;
+}
+.ze-status {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--zeele);
+  background: var(--zeele-bg);
+  border: 1px dashed var(--zeele-border);
+  padding: 4px 10px;
+  border-radius: 6px;
+}
+.ze-sub {
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 1.6;
+  margin: 8px 0 0;
+}
+.ze-sub code {
+  background: var(--bg-2);
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 12px;
+}
+
+.ze-section {
+  margin-bottom: 32px;
+}
+.ze-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.ze-section-head h2 {
+  font-size: 15px;
+  font-weight: 700;
+  margin: 0;
+  color: var(--ink);
+}
+.ze-section-meta {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-3);
+  letter-spacing: 0.05em;
+}
+
+.ze-placeholder {
+  background: var(--bg-1);
+  border: 1px dashed var(--zeele-border);
+  border-radius: 10px;
+  padding: 20px 24px;
+}
+.ze-placeholder-title {
+  color: var(--zeele);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  margin-bottom: 8px;
+}
+.ze-placeholder p {
+  margin: 6px 0;
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.ze-placeholder code {
+  background: var(--bg-2);
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 12px;
+  color: var(--ink);
+}
+
+.ze-footer {
+  margin-top: 48px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--ink-3);
+  font-family: var(--mono);
+}
+.ze-footer p { margin: 4px 0; }
+.ze-footer a { color: var(--ink-2); text-decoration: none; }
+.ze-footer a:hover { color: var(--zeele); }
+
+/* サイドバーの ZEELE 探索リンク */
+.nav-item.nav-link {
+  text-decoration: none;
+  color: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.nav-badge-zeele {
+  background: var(--zeele-bg);
+  color: var(--zeele);
+  border: 1px solid var(--zeele-border);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  letter-spacing: 0.05em;
+}
