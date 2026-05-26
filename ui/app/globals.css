@@ -2827,3 +2827,11 @@ svg[preserveAspectRatio="none"] :is(line, path, polyline, polygon, rect, circle)
   color: var(--ink-3);
   font-size: 10px;
 }
+
+/* 保有 ↔ 売り注視の連動バッジ */
+.hold-label.sell-watch-badge {
+  background: rgba(248, 113, 113, 0.12);
+  color: var(--down);
+  border: 1px solid rgba(248, 113, 113, 0.32);
+  font-weight: 600;
+}

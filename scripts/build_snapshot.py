@@ -541,6 +541,41 @@ _STOP_PCT_BY_PRESET: dict[str, float] = {
 }
 
 
+def _stop_pct_for_candidate(
+    history: list[float] | None, preset: str
+) -> tuple[float, str]:
+    """銘柄毎の stop_pct と算出根拠を返す。
+
+    手法：preset 既定値と **実現ボラ×4σ** の max（広い方）を採用。
+    実現ボラ = 12週終値から計算した weekly returns の標準偏差。
+    D-23 8-20% にクランプ。
+    """
+    preset_base = _STOP_PCT_BY_PRESET.get(preset)
+
+    vol_based: float | None = None
+    if history and len(history) >= 3:
+        returns: list[float] = []
+        for i in range(1, len(history)):
+            prev = history[i - 1]
+            if prev > 0:
+                returns.append(history[i] / prev - 1)
+        if len(returns) >= 2:
+            mean_r = sum(returns) / len(returns)
+            var_r = sum((r - mean_r) ** 2 for r in returns) / len(returns)
+            std_r = var_r ** 0.5
+            vol_based = max(0.08, min(0.20, std_r * 4))
+
+    if preset_base is not None and vol_based is not None:
+        if vol_based > preset_base:
+            return round(vol_based, 3), "vol"
+        return preset_base, "preset"
+    if preset_base is not None:
+        return preset_base, "preset"
+    if vol_based is not None:
+        return round(vol_based, 3), "vol"
+    return 0.12, "default"
+
+
 def _build_zeele_section(
     *, mode_is_live: bool, account_total_jpy: float = 100000.0, usdjpy: float = 150.0
 ) -> dict[str, object]:
@@ -646,7 +681,10 @@ def _build_zeele_section(
         entry_jpy = last if is_jp else last * usdjpy
         preset = c.get("preset", "")
         preset_key = preset if isinstance(preset, str) else ""
-        stop_pct = _STOP_PCT_BY_PRESET.get(preset_key, 0.12)
+
+        # 動的 stop：preset 既定 と 実現ボラ×4σ の max（広い方 = 保守的）
+        history_f = [float(v) for v in history if v is not None]
+        stop_pct, stop_source = _stop_pct_for_candidate(history_f, preset_key)
 
         sizing = _suggest_size(
             account_total_jpy=account_total_jpy,
@@ -660,6 +698,7 @@ def _build_zeele_section(
         c["suggested_shares"] = sizing["suggested_shares"]
         c["sizing_constraint"] = sizing["constraint"]
         c["stop_pct_used"] = sizing["stop_pct_used"]
+        c["stop_pct_source"] = stop_source  # "preset" | "vol" | "default"
 
     return {
         "candidates": candidates,

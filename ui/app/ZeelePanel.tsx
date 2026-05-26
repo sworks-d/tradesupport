@@ -41,7 +41,8 @@ type Candidate = {
   suggested_jpy?: number;
   suggested_shares?: number;
   sizing_constraint?: "risk" | "cap" | "cash" | "n/a";
-  stop_pct_used?: number; // 銘柄毎に変動
+  stop_pct_used?: number;
+  stop_pct_source?: "preset" | "vol" | "default";
   promoted?: boolean;
 };
 
@@ -229,7 +230,14 @@ export default function ZeelePanel() {
             className="zeele-sizing"
             title={
               `D-23 準拠サイジング\n` +
-              `stop ${(c.stop_pct_used ?? 0.12) * 100}% (${c.preset ?? "default"} 由来)\n` +
+              `stop ${((c.stop_pct_used ?? 0.12) * 100).toFixed(0)}% ` +
+              `(${
+                c.stop_pct_source === "vol"
+                  ? "12週ボラ × 4σ"
+                  : c.stop_pct_source === "preset"
+                  ? `${c.preset ?? "default"} 既定`
+                  : "既定 12%"
+              })\n` +
               `risk ¥2,000 / cap ¥20,000 / 投入可能 ¥${(data?.zeele?.investable_cash_jpy ?? 0).toLocaleString()}\n` +
               `→ ${
                 c.sizing_constraint === "risk"
@@ -245,7 +253,11 @@ export default function ZeelePanel() {
               ¥{(c.suggested_jpy ?? 0).toLocaleString()}
             </span>
             <span className="zeele-sizing-detail">
-              ({c.suggested_shares}株・stop{((c.stop_pct_used ?? 0.12) * 100).toFixed(0)}%・
+              ({c.suggested_shares}株・stop{((c.stop_pct_used ?? 0.12) * 100).toFixed(0)}%
+              {c.stop_pct_source === "vol" && (
+                <span className="zeele-sizing-vol" title="実現ボラから動的算出"> ボラ由来</span>
+              )}
+              ・
               {c.sizing_constraint === "risk"
                 ? "risk上限"
                 : c.sizing_constraint === "cap"

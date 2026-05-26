@@ -174,6 +174,45 @@ export default function LiveData() {
           });
         }
 
+        // === 保有 ↔ 売り注視の連動視覚化 ===
+        // 売り Zone（推奨＋mini-act 注視）から ticker を集め、対応する保有カードに
+        // MAGI 推奨バッジを足す。保有 = 守られているのか／売り推奨が来ているかを
+        // 一目で見えるようにする。
+        const sellMap = new Map<string, string>();
+        document
+          .querySelectorAll<HTMLElement>(".sell-zone .act")
+          .forEach((act) => {
+            const ticker = act
+              .querySelector(".act-ticker")
+              ?.textContent?.trim();
+            const word =
+              act.querySelector(".g-word")?.textContent?.trim() ?? "売り";
+            if (ticker) sellMap.set(ticker, word);
+          });
+        document
+          .querySelectorAll<HTMLElement>(".sell-zone .mini-act")
+          .forEach((m) => {
+            const ticker = m
+              .querySelector(".mini-act-ticker")
+              ?.textContent?.trim();
+            if (ticker && !sellMap.has(ticker)) sellMap.set(ticker, "注視");
+          });
+        document.querySelectorAll<HTMLElement>(".hold").forEach((card) => {
+          const ticker = card
+            .querySelector(".hold-ticker")
+            ?.textContent?.trim();
+          if (!ticker || !sellMap.has(ticker)) return;
+          const action = sellMap.get(ticker)!;
+          const labels = card.querySelector(".hold-labels");
+          if (labels && !labels.querySelector(".sell-watch-badge")) {
+            const badge = document.createElement("span");
+            badge.className = "hold-label sell-watch-badge";
+            badge.textContent = `⚠ MAGI ${action}`;
+            badge.title = `売り Zone と連動：MAGI が ${action} を推奨中。詳細パネルで根拠を確認`;
+            labels.appendChild(badge);
+          }
+        });
+
         // 口座サマリ（現金・総資産）を反映
         if (snap.account) {
           const eq = document.querySelector(".sb-equity-value");
