@@ -27,6 +27,11 @@
 | D-12 / D-13 | 許容誤差 / 割れ方類型 | ✅ 暫定（±0.5% / 4類型）。B1・B4で調整可 |
 | D-15 | 碇MAGI準拠の判定 | ⏳ B5で設計（製品分岐でない） |
 | D-20 | チャート：左右フル幅・文字/線幅は不変 | ✅ ユーザー要望。チャートは左右フル幅・高さ固定のまま、線/点線の太さは`vector-effect:non-scaling-stroke`で一定、文字とマーカーは逆スケールJS（`ChartCrispLabels`／masterは末尾IIFE）でサイズ一定。実装/基準の両方に。経緯：当初height:auto→比率拡大が不評→フル幅維持＋文字/マーカー逆スケールに変更 |
+| D-21 | 外部OSS借用方針 | ✅ **自前実装が基本**。考え方・ロジックのみ借りる。コードの直輸入はしない。着想元はコメント/ADRに記録 |
+| D-22 | 個人利用・精度最優先 | ✅ 外部非公開・精度ドライバー優先（ニュース/MELCHIOR深掘り/評価/反証層）。LICENSE等公開向け作業は後回し |
+| D-23 | 規律層（外骨格）＋元本¥100k | ✅ MAGI外側に**リスク規律エンジン**を被せる。8数値（risk2%/5銘柄/30%上限/現金20%/DD-15%停止/増額ゲート/損切12%/JP主体）。`risk/params.py`が正 |
+| **D-24** | **北極星＝claude-trading-skills** | ✅ **2026-05-26**：規律監督OSの参考実装として正式採用。stock_skillsは守り系のみ。詳細仕様は `spec/X2_claude_trading_skills_adoption.md`。JP補完は dexter-jp |
+| **D-25** | **市場対象＝JP 90% / US 10%（ETFサテライト）** | ✅ **2026-05-26**：個別株は JP のみ（TOPIX500中心）／US は ETF 1-2本のみ。D-23 の "JP主体" を比率で具体化。`moomoo_markets="JP,US"`、universe調整、CASPER/dexter-jp/Kanchi の精度向上が利益。半年後にUS個別株を1-2銘柄まで段階拡大検討 |
 
 ---
 
@@ -114,6 +119,31 @@
   ⑦損切り10–15%(既定12%) ⑧日本株主体・米株従(為替)。コードの正＝`trading_agent/risk/params.py`、仕様＝`spec/G_risk_discipline.md`。
 - **順序**：研究の `RESEARCH_TO_IMPLEMENTATION.md`「貫通→餌→弾」に乗り換え。B-3はLLMでなく**コード反証**（2期財務=S4後）に再設計。
 - **影響**：sizing（R-mult化）・decision（stop/1R保存）・universe（JP主体）・P6（R-mult記録）・A-5（規律を効かせた出口）。
+
+### D-25 市場対象＝JP 90% / US 10%（ETFサテライト）  ✅（2026-05-26 確定）
+- **確定**：個別株は **JP のみ**（TOPIX 100〜500 中心）。US は **ETF（QQQ/VOO/SOXL 等）1-2本だけ**をサテライトとして許可。個別米株は**入れない**（情報非対称性で勝てない）。
+- **根拠**：①ユーザーは初心者で日本語・JP市場文脈に強い ②CASPER（narrative）が日本語ニュース直読で精度大幅向上（英訳ロス排除）③EDINET+dexter-jp の真価が出る ④ Kanchi T1-T5 が本来の文脈で機能 ⑤ 月次LLMコスト約-15%（英訳・US news 削減）⑥ 朝5分レビューが JP時間帯（07:00 JST）に最適
+- **D-23 との整合**：D-23「JP 主体・米株従(為替)」を**比率で具体化**＝主体→主軸（90%）／従→ETFサテライト（10%）。
+- **段階拡大**：ペーパー運用半年で JP規律が機能していれば、US 個別株（NVDA/AAPL クラス）を 1-2 銘柄まで追加検討。**当面は freeze ではなく "freeze except ETF"**。
+- **実装影響**：
+  - `config.py` `moomoo_markets = "JP,US"` (順序入れ替え＝主軸明示)
+  - `screening_agent` の universe を TOPIX500 中心に調整（次のセッションで）
+  - SEC EDGAR の MCP ツールは保持するが**通常 OFF**（ETF 採用銘柄の必要時のみ）
+  - `topics_collector` の情報源を日経・Bloomberg JP 等に絞る（次のセッションで）
+  - claude-trading-skills 翻案（X-2）は **JP-first** で進める（Kanchi T1-T5 は最初から日本配当株向け）
+  - dexter-jp 借用のウェイトを上げる（EDINET 統合パターンを優先採用）
+- **失うもの（許容）**：①AI/半導体最先端の米個別株（東エレ・アドバンテスト等で代替）②US ETF の豊富なファクター系（QUAL/MOAT 等）— ETF 1-2 本に絞れば吸収可
+- **影響**：B0〜B6・X-2A〜D・universe・topics_collector・data sources。
+
+### D-24 北極星＝claude-trading-skills（規律監督OSの参考実装）  ✅（2026-05-26 確定）
+- **確定**：tradesupport の**設計北極星**を [tradermonty/claude-trading-skills](https://github.com/tradermonty/claude-trading-skills)（MIT）に置く。同リポジトリは "**Decision-process OS**" "**Plan → Trade → Record → Review → Improve**" "**not to outsource buy/sell decisions to AI**" を明示しており、memory「持ち続けさせる機・Core-Satellite規律監督」と**英訳と言える整合**。
+- **stock_skillsの位置づけ変更**：当初想定の北極星から**守り系モジュール提供源に格下げ**（value_trap / shareholder_yield / health_check / 調整アドバイザー / 複利シミュ / ストレステスト / HHIのみ採用）。攻め系（16プリセット探索／0-100スコア／Grok生成見通し）は不採用。
+- **採用範囲**：5ワークフロー骨格（market-regime-daily / core-portfolio-weekly / trade-memory-loop / monthly-performance-review / swing-opportunity-daily）と5キースキル（exposure-coach / kanchi-dividend-review-monitor / trader-memory-core / signal-postmortem / trade-performance-coach）。詳細スペックは `spec/X2_claude_trading_skills_adoption.md`。
+- **借用方針**：D-21 維持（自前実装・コード非直輸入）。「考え方の蒸留→自前実装」のみ。各モジュール先頭に "Inspired by claude-trading-skills/{skill_name}" コメント。
+- **D-23 との関係**：D-23「規律層（外骨格）」の**コンクリート実装スペック**＝D-24。8数値は維持、claude-trading-skills の T1-T5 / Exposure Coach 等で外骨格を具体化。
+- **着手順**：X-2A thesis_store（最優先・B0〜B6 並走可）→ X-2B holding_health → X-2C exposure_coach → X-2D postmortem+performance_coach（ペーパー運用後）。詳細は X2 §4。
+- **JP補完**：claude-trading-skills は米株中心。日本株対応は dexter-jp（EDINET+J-Quants 自律エージェント）から借用（X1 §6.2）。
+- **影響**：X1（北極星更新）／X2新設（実装スペック）／architecture.html §7（描画更新）／pipeline.html（外部リポ枠更新）／既存 [agents/market_analyst.py](../../trading_agent/agents/market_analyst.py) の SCORE:NONE 違反箇所を `discipline/` 配下へ分解再構成。
 
 ## 更新の仕方
 - 決定したら該当行を ✅ にし、決定内容を「確定済み」表へ移すか追記する。

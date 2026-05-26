@@ -21,13 +21,17 @@ import tempfile
 from pathlib import Path
 
 from sqlalchemy.engine import Engine
+from sqlmodel import Session, col, select
 
 from trading_agent.brokers import StandInBroker, load_positions
 from trading_agent.db import create_all, get_engine
+from trading_agent.discipline.exposure_coach import ExposureInputs, decide_exposure
+from trading_agent.discipline.holding_health import check_all_holdings
 from trading_agent.llm.anthropic_client import AnthropicClient
 from trading_agent.magi import casper_llm, classify_split, command, run_judges, verify
 from trading_agent.magi.gendo import gendo_recommend
 from trading_agent.magi.persist import derive_gendo_stance
+from trading_agent.models.thesis import Thesis, ThesisStatus
 from trading_agent.mcp_tools.fundamentals import (
     FundamentalsInput,
     FundamentalsOutput,
@@ -372,12 +376,82 @@ async def build(*, live: bool, prefer_moomoo: bool) -> dict[str, object]:
     candidates = await _build_candidates(live, total, cash, usdjpy, llm_tool=llm_tool)
 
     holdings_source = "moomoo ペーパー" if broker_src == "moomoo" else "サンプル/未接続"
+
+    # === X-2C exposure_coach: 今日のポスチャー ===
+    # 実 breadth/uptrend データは未配線（X-2C 完成で接続）。LOW confidence → REDUCE_ONLY フォールバック。
+    # D-23 DD-15% gate のため PF DD を渡す（cash=total なら DD=0）。
+    portfolio_dd_pct = 0.0 if total > 0 and cash == total else None
+    exposure_decision = decide_exposure(
+        ExposureInputs(
+            # 環境スコアは未配線（X-2C 完成時に market-breadth-analyzer 等から流す）
+            portfolio_dd_pct=portfolio_dd_pct,
+        )
+    )
+
+    # === X-2B holding_health: 保有銘柄の T1-T5 ===
+    # 現状の holdings に補助データ（dividend / perf / filings_text）は未配線。
+    # T4 のみ topics 経由で本来配線可能（次セッション以降）。
+    health_inputs = [
+        {"ticker": ticker, **(h.get("health_inputs") or {})}
+        for ticker, h in holdings.items()
+    ]
+    health_report = check_all_holdings(
+        health_inputs, data_asof=utcnow().strftime("%Y-%m-%d %H:%M")
+    )
+    # holdings に health バッジを足す（UI 描画用）
+    for finding in health_report.findings:
+        if finding.ticker in holdings:
+            holdings[finding.ticker]["health"] = {
+                "state": finding.state,
+                "triggers_fired": finding.triggers_fired,
+                "evidence": [
+                    {
+                        "trigger_id": e.trigger_id,
+                        "state": e.state,
+                        "reason": e.reason,
+                    }
+                    for e in finding.evidence
+                ],
+            }
+
+    # === X-2A theses_summary: 投資テーゼのライフサイクル統計 ===
+    # メイン DB（~/.trading-agent/db.sqlite）から theses 表を読む。
+    theses_summary = _build_theses_summary()
+
     return {
         "generated_at": utcnow().strftime("%Y-%m-%d %H:%M"),
         "mode": "live" if live else "demo",
         "broker": broker_src,
         "holdings_source": holdings_source,
         "usdjpy": round(usdjpy, 2),
+        # D-24 北極星 / D-25 市場対象（脳裏チップ表示用）
+        "north_star": {
+            "name": "claude-trading-skills",
+            "url": "https://github.com/tradermonty/claude-trading-skills",
+            "mantra": "Plan → Trade → Record → Review → Improve",
+        },
+        "market_focus": {
+            "primary": "JP",
+            "primary_weight_pct": 90,
+            "satellite": "US ETF (QQQ/VOO)",
+            "satellite_weight_pct": 10,
+            "decision_id": "D-25",
+        },
+        # X-2C exposure_coach 出力（今日のポスチャー）
+        "exposure": {
+            "recommendation": exposure_decision.recommendation,
+            "bias": exposure_decision.bias,
+            "participation": exposure_decision.participation,
+            "confidence": exposure_decision.confidence,
+            "ceiling_pct": exposure_decision.ceiling_pct,
+            "rationale": exposure_decision.rationale,
+            "inputs_provided": exposure_decision.inputs_provided,
+            "inputs_missing": exposure_decision.inputs_missing,
+        },
+        # X-2B holding_health サマリ
+        "holding_health_summary": dict(health_report.summary),
+        # X-2A theses_summary
+        "theses_summary": theses_summary,
         "account": {
             "cash": round(cash),
             "total_assets": round(total),
@@ -388,6 +462,31 @@ async def build(*, live: bool, prefer_moomoo: bool) -> dict[str, object]:
         "holdings": holdings,
         "candidates": candidates,
     }
+
+
+def _build_theses_summary() -> dict[str, object]:
+    """投資テーゼのライフサイクル統計を取得（X-2A）。"""
+    try:
+        from trading_agent.config import load_settings
+
+        settings = load_settings()
+        settings.ensure_directories()
+        engine = get_engine(settings.db_path)
+        create_all(engine)
+        counts: dict[str, int] = {s.value: 0 for s in ThesisStatus}
+        with Session(engine) as s:
+            for status in ThesisStatus:
+                n = len(list(s.exec(select(Thesis).where(col(Thesis.status) == status)).all()))
+                counts[status.value] = n
+        return {
+            "counts": counts,
+            "total": sum(counts.values()),
+            "active": counts.get("ACTIVE", 0),
+        }
+    except Exception as exc:  # noqa: BLE001
+        # 設定欠落・DB未作成等は静かに空サマリを返す（UI は "—" 表示）
+        _log.warning("theses_summary_failed", error=str(exc))
+        return {"counts": {}, "total": 0, "active": 0}
 
 
 async def main() -> None:

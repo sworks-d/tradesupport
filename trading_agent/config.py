@@ -54,7 +54,7 @@ class Settings(BaseSettings):
     moomoo_trading_pwd: str
     moomoo_account_id: str
     moomoo_security_firm: str = "FUTUJP"  # moomoo JP（US主体口座なら FUTUINC）
-    moomoo_markets: str = "US,JP"  # カンマ区切り。位置情報取得対象の市場
+    moomoo_markets: str = "JP,US"  # カンマ区切り。位置情報取得対象の市場（D-25: JP主軸90%・US ETFサテライト10%）
 
     # === モード ===
     trading_mode: Literal["paper", "live"] = "paper"

@@ -14,6 +14,21 @@ type Holding = {
   as_of: string | null;
   source: string | null;
   pnl: { ratio_display: string; direction: string } | null; // 含み損益（取得単価×実価格）
+  // X-2B holding_health（Kanchi T1-T5 翻案）
+  health?: {
+    state: "OK" | "WARN" | "REVIEW";
+    triggers_fired: string[];
+    evidence: { trigger_id: string; state: string; reason: string }[];
+  };
+};
+
+const HEALTH_BADGE: Record<
+  "OK" | "WARN" | "REVIEW",
+  { text: string; cls: string; color: string }
+> = {
+  OK: { text: "規律OK", cls: "vb-ok", color: "#16a085" },
+  WARN: { text: "規律WARN", cls: "vb-warn", color: "#e67e22" },
+  REVIEW: { text: "規律REVIEW", cls: "vb-warn", color: "#c0392b" },
 };
 type JudgeMini = {
   judge: string;
@@ -140,6 +155,20 @@ export default function LiveData() {
             badge.className = `hold-label verify-badge ${meta.cls}`;
             badge.textContent = meta.text;
             badge.title = `出典:${h.source ?? "-"} / 時点:${h.as_of ?? "-"} / 照合:${h.reconciliation}`;
+            labels.appendChild(badge);
+          }
+          // X-2B holding_health バッジ（Kanchi T1-T5 翻案）
+          if (labels && h.health && !labels.querySelector(".health-badge")) {
+            const meta = HEALTH_BADGE[h.health.state] ?? HEALTH_BADGE.OK;
+            const badge = document.createElement("span");
+            badge.className = `hold-label health-badge ${meta.cls}`;
+            badge.textContent = meta.text;
+            badge.style.color = meta.color;
+            badge.style.borderColor = meta.color;
+            const triggerSummary = h.health.evidence
+              .map((e) => `${e.trigger_id}:${e.reason}`)
+              .join("\n");
+            badge.title = `T1-T5: ${h.health.triggers_fired.join(", ") || "発火なし"}${triggerSummary ? "\n" + triggerSummary : ""}`;
             labels.appendChild(badge);
           }
           });

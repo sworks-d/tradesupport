@@ -34,13 +34,17 @@ from trading_agent.utils.time_utils import utcnow
 # 1記事を表す正規化済み dict
 Article = dict[str, Any]
 
-# 既定 RSS フィード（SYSTEM_DESIGN §3.2 / STEP_A データソース）
+# 既定 RSS フィード（D-25: JP 90%・JPソース優先）。
+# JP 銘柄の narrative は **TDnet RSS + EDINET（disclosure MCP）** が主軸で、
+# news MCP はマクロ・テーマ・米ETF（QQQ/VOO）文脈の補助として使う。
 DEFAULT_RSS_FEEDS: tuple[str, ...] = (
-    "https://feeds.bloomberg.com/markets/news.rss",
-    "https://feeds.reuters.com/reuters/businessNews",
-    "https://techcrunch.com/feed/",
-    "https://9to5mac.com/feed/",
-    "https://www.nikkei.com/rss/",
+    # === JP 主軸（D-25） ===
+    "https://www.nikkei.com/rss/",                              # 日経（JP マーケット・企業）
+    # === マクロ・US ETF（QQQ/VOO）文脈用の補助ソース ===
+    "https://feeds.bloomberg.com/markets/news.rss",             # マクロ・米株市場
+    "https://feeds.reuters.com/reuters/businessNews",           # 国際ビジネス
+    "https://techcrunch.com/feed/",                             # テック・QQQ 構成銘柄関連
+    "https://9to5mac.com/feed/",                                # Apple 中心テック
 )
 
 _FUZZY_DUP_THRESHOLD = 0.90

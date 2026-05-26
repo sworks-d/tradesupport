@@ -21,6 +21,12 @@ from trading_agent.models.signals import (
     ScreeningResult,
     SellSignal,
 )
+from trading_agent.models.thesis import (
+    THESIS_STATUS_ORDER,
+    Thesis,
+    ThesisStatus,
+    ThesisType,
+)
 from trading_agent.models.topics import ManualInput, Topic
 from trading_agent.models.universe import Universe
 
@@ -45,6 +51,10 @@ __all__ = [
     "SellSignal",
     "Setting",
     "SplitPattern",
+    "THESIS_STATUS_ORDER",
+    "Thesis",
+    "ThesisStatus",
+    "ThesisType",
     "Topic",
     "Universe",
     "Verification",

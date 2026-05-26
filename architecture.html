@@ -195,7 +195,7 @@ td code, .code { font-family: ui-monospace, "SF Mono", Menlo, monospace; backgro
 <!-- =============================================================== -->
 
 <div class="diagram">
-<svg class="diagram-svg" viewBox="0 0 1300 1180" xmlns="http://www.w3.org/2000/svg">
+<svg class="diagram-svg" viewBox="0 0 1400 1740" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
       <path d="M0,0 L10,5 L0,10 z" fill="#444"/>
@@ -206,344 +206,412 @@ td code, .code { font-family: ui-monospace, "SF Mono", Menlo, monospace; backgro
     <marker id="arr-purple" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
       <path d="M0,0 L10,5 L0,10 z" fill="#8e44ad"/>
     </marker>
+    <marker id="arr-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#2980b9"/>
+    </marker>
+    <marker id="arr-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#c0392b"/>
+    </marker>
   </defs>
 
-  <!-- ============================= -->
-  <!-- 外部リソース層（左サイド）       -->
-  <!-- ============================= -->
-  <text x="40" y="30" font-size="13" font-weight="700" fill="#666" letter-spacing="0.05em">EXTERNAL DATA SOURCES</text>
-
-  <!-- moomoo (key broker) -->
-  <rect x="40" y="50" width="220" height="90" rx="6" fill="#fff3e0" stroke="#e67e22" stroke-width="2"/>
-  <text x="50" y="72" font-size="13" font-weight="700" fill="#222">moomoo OpenAPI</text>
-  <text x="50" y="92" font-size="10.5" fill="#666">米国株 + 日本株</text>
-  <text x="50" y="107" font-size="10.5" fill="#666">株価・出来高・残高・約定</text>
-  <text x="50" y="124" font-size="10" fill="#e67e22" font-weight="700">実運用データの単一ソース</text>
-
-  <!-- SEC EDGAR -->
-  <rect x="40" y="160" width="220" height="55" rx="6" fill="#fff" stroke="#aaa"/>
-  <text x="50" y="180" font-size="12" font-weight="600" fill="#222">SEC EDGAR</text>
-  <text x="50" y="198" font-size="10.5" fill="#666">米国IR一次情報 (10-K, 10-Q)</text>
-
-  <!-- EDINET -->
-  <rect x="40" y="225" width="220" height="55" rx="6" fill="#fff" stroke="#aaa"/>
-  <text x="50" y="245" font-size="12" font-weight="600" fill="#222">EDINET API</text>
-  <text x="50" y="263" font-size="10.5" fill="#666">日本IR一次情報 (有報・四報)</text>
-
-  <!-- TDnet RSS -->
-  <rect x="40" y="290" width="220" height="55" rx="6" fill="#fff" stroke="#aaa"/>
-  <text x="50" y="310" font-size="12" font-weight="600" fill="#222">TDnet RSS</text>
-  <text x="50" y="328" font-size="10.5" fill="#666">日本適時開示（速報）</text>
-
-  <!-- News -->
-  <rect x="40" y="355" width="220" height="65" rx="6" fill="#fff" stroke="#aaa"/>
-  <text x="50" y="375" font-size="12" font-weight="600" fill="#222">NewsAPI / RSS</text>
-  <text x="50" y="392" font-size="10.5" fill="#666">Bloomberg, Reuters, 日経,</text>
-  <text x="50" y="408" font-size="10.5" fill="#666">9to5Mac, TechCrunch...</text>
-
-  <!-- J-Quants -->
-  <rect x="40" y="430" width="220" height="55" rx="6" fill="#fff" stroke="#aaa"/>
-  <text x="50" y="450" font-size="12" font-weight="600" fill="#222">J-Quants / yfinance</text>
-  <text x="50" y="468" font-size="10.5" fill="#666">過去価格・財務（補助・BT用）</text>
-
-  <!-- Manual input -->
-  <rect x="40" y="495" width="220" height="55" rx="6" fill="#f0f8ff" stroke="#2980b9" stroke-dasharray="4,3"/>
-  <text x="50" y="515" font-size="12" font-weight="600" fill="#222">手動投入（人間）</text>
-  <text x="50" y="533" font-size="10.5" fill="#666">X発言・URL貼り付け</text>
-
-  <!-- ============================= -->
-  <!-- Mac (Local) 全体ボックス        -->
-  <!-- ============================= -->
-  <rect x="300" y="50" width="960" height="900" rx="8" fill="none" stroke="#333" stroke-width="2" stroke-dasharray="6,3"/>
-  <text x="310" y="40" font-size="13" font-weight="700" fill="#333">macOS (launchd 常駐、ローカル完結)</text>
-
-  <!-- ============================= -->
-  <!-- FastAPI / Scheduler            -->
-  <!-- ============================= -->
-  <rect x="320" y="80" width="430" height="100" rx="6" fill="#e8f4f8" stroke="#2980b9" stroke-width="1.5"/>
-  <text x="335" y="103" font-size="13" font-weight="700" fill="#1f5582">FastAPI Server</text>
-  <text x="335" y="123" font-size="11" fill="#444">・Next.js UI（localhost）の配信</text>
-  <text x="335" y="140" font-size="11" fill="#444">・APScheduler（朝バッチ・定期処理）</text>
-  <text x="335" y="157" font-size="11" fill="#444">・MCP ホスト</text>
-  <text x="335" y="174" font-size="11" fill="#444">・価格更新ボタンの受け口（手動 refresh）</text>
-
-  <!-- ============================= -->
-  <!-- moomoo OpenD (right)           -->
-  <!-- ============================= -->
-  <rect x="780" y="80" width="460" height="100" rx="6" fill="#fff3e0" stroke="#e67e22" stroke-width="1.5"/>
-  <text x="795" y="103" font-size="13" font-weight="700" fill="#a04a00">moomoo OpenD（常時起動）</text>
-  <text x="795" y="123" font-size="11" fill="#444">・株価・出来高（リアルタイム）</text>
-  <text x="795" y="140" font-size="11" fill="#444">・保有銘柄・残高 同期</text>
-  <text x="795" y="157" font-size="11" fill="#444">・約定履歴 自動取り込み</text>
-  <text x="795" y="174" font-size="10" fill="#666" font-style="italic">※moomooのAI機能（チャート予測等）はAPIで取れないため使わない</text>
-
-  <!-- ============================= -->
-  <!-- Multi-Agent Orchestrator       -->
-  <!-- ============================= -->
-  <rect x="320" y="200" width="920" height="220" rx="6" fill="#f5e6f7" stroke="#8e44ad" stroke-width="1.5"/>
-  <text x="335" y="222" font-size="13" font-weight="700" fill="#5b2c6f">Multi-Agent Orchestrator (LangChain)</text>
-
-  <!-- agents row 1 (Phase 1) -->
-  <text x="335" y="245" font-size="10" font-weight="700" fill="#666" letter-spacing="0.05em">PHASE 1 エージェント</text>
-
-  <rect x="335" y="252" width="170" height="62" rx="4" fill="#fff" stroke="#8e44ad"/>
-  <text x="345" y="270" font-size="11.5" font-weight="600" fill="#222">screening-agent</text>
-  <text x="345" y="287" font-size="10" fill="#666">V字/テーマで287銘柄</text>
-  <text x="345" y="302" font-size="10" fill="#666">→ 候補10-20件抽出</text>
-
-  <rect x="515" y="252" width="170" height="62" rx="4" fill="#fff" stroke="#8e44ad"/>
-  <text x="525" y="270" font-size="11.5" font-weight="600" fill="#222">market-analyst × N</text>
-  <text x="525" y="287" font-size="10" fill="#666">候補銘柄を並列分析</text>
-  <text x="525" y="302" font-size="10" fill="#666">→ スコアリング・要約</text>
-
-  <rect x="695" y="252" width="170" height="62" rx="4" fill="#fff" stroke="#8e44ad"/>
-  <text x="705" y="270" font-size="11.5" font-weight="600" fill="#222">portfolio-builder</text>
-  <text x="705" y="287" font-size="10" fill="#666">初回構築・配分</text>
-  <text x="705" y="302" font-size="10" fill="#666">Core-Satellite管理</text>
-
-  <rect x="875" y="252" width="170" height="62" rx="4" fill="#fff" stroke="#16a085" stroke-width="2"/>
-  <text x="885" y="270" font-size="11.5" font-weight="600" fill="#222">sell-recommender</text>
-  <text x="885" y="287" font-size="10" fill="#16a085">【NEW】売り推奨</text>
-  <text x="885" y="302" font-size="10" fill="#666">利確 / 損切り判定</text>
-
-  <rect x="1055" y="252" width="170" height="62" rx="4" fill="#fff" stroke="#16a085" stroke-width="2"/>
-  <text x="1065" y="270" font-size="11.5" font-weight="600" fill="#222">manual-input-analyst</text>
-  <text x="1065" y="287" font-size="10" fill="#16a085">【NEW】即時解釈</text>
-  <text x="1065" y="302" font-size="10" fill="#666">X発言・URL → 影響先</text>
-
-  <!-- agents row 2 (Phase 2+) -->
-  <text x="335" y="338" font-size="10" font-weight="700" fill="#666" letter-spacing="0.05em">PHASE 2+ エージェント</text>
-
-  <rect x="335" y="345" width="220" height="62" rx="4" fill="#fafafa" stroke="#bbb" stroke-dasharray="3,3"/>
-  <text x="345" y="363" font-size="11.5" font-weight="600" fill="#888">position-monitor</text>
-  <text x="345" y="380" font-size="10" fill="#888">保有銘柄の継続監視</text>
-  <text x="345" y="395" font-size="10" fill="#888">（Phase 1 では sell-recommender が代替）</text>
-
-  <rect x="565" y="345" width="220" height="62" rx="4" fill="#fafafa" stroke="#bbb" stroke-dasharray="3,3"/>
-  <text x="575" y="363" font-size="11.5" font-weight="600" fill="#888">strategy-coordinator</text>
-  <text x="575" y="380" font-size="10" fill="#888">統合判断・複数エージェント調整</text>
-
-  <rect x="795" y="345" width="220" height="62" rx="4" fill="#fafafa" stroke="#bbb" stroke-dasharray="3,3"/>
-  <text x="805" y="363" font-size="11.5" font-weight="600" fill="#888">backtest-runner</text>
-  <text x="805" y="380" font-size="10" fill="#888">過去データで戦略検証</text>
-
-  <!-- ============================= -->
-  <!-- MCP Tool Layer                 -->
-  <!-- ============================= -->
-  <rect x="320" y="440" width="920" height="220" rx="6" fill="#f0f8ff" stroke="#2980b9" stroke-width="1.5"/>
-  <text x="335" y="462" font-size="13" font-weight="700" fill="#1f5582">MCP Tool Layer（自作）</text>
-
-  <rect x="335" y="475" width="180" height="60" rx="4" fill="#fff" stroke="#2980b9"/>
-  <text x="345" y="493" font-size="11.5" font-weight="600">market_data</text>
-  <text x="345" y="510" font-size="10" fill="#666">moomoo中心、補助yf/JQ</text>
-  <text x="345" y="525" font-size="10" fill="#27ae60" font-weight="700">Phase 1</text>
-
-  <rect x="525" y="475" width="180" height="60" rx="4" fill="#fff" stroke="#2980b9"/>
-  <text x="535" y="493" font-size="11.5" font-weight="600">fundamentals</text>
-  <text x="535" y="510" font-size="10" fill="#666">EDGAR / EDINET</text>
-  <text x="535" y="525" font-size="10" fill="#27ae60" font-weight="700">Phase 1</text>
-
-  <rect x="715" y="475" width="180" height="60" rx="4" fill="#fff" stroke="#2980b9"/>
-  <text x="725" y="493" font-size="11.5" font-weight="600">disclosure</text>
-  <text x="725" y="510" font-size="10" fill="#666">TDnet RSS</text>
-  <text x="725" y="525" font-size="10" fill="#27ae60" font-weight="700">Phase 1</text>
-
-  <rect x="905" y="475" width="180" height="60" rx="4" fill="#fff" stroke="#2980b9"/>
-  <text x="915" y="493" font-size="11.5" font-weight="600">news</text>
-  <text x="915" y="510" font-size="10" fill="#666">NewsAPI / RSS</text>
-  <text x="915" y="525" font-size="10" fill="#27ae60" font-weight="700">Phase 1</text>
-
-  <!-- row 2 -->
-  <rect x="335" y="545" width="180" height="60" rx="4" fill="#fff" stroke="#2980b9"/>
-  <text x="345" y="563" font-size="11.5" font-weight="600">technicals</text>
-  <text x="345" y="580" font-size="10" fill="#666">TA-Lib計算</text>
-  <text x="345" y="595" font-size="10" fill="#27ae60" font-weight="700">Phase 1</text>
-
-  <rect x="525" y="545" width="180" height="60" rx="4" fill="#fff" stroke="#2980b9"/>
-  <text x="535" y="563" font-size="11.5" font-weight="600">screening</text>
-  <text x="535" y="580" font-size="10" fill="#666">V字 / テーマロジック</text>
-  <text x="535" y="595" font-size="10" fill="#27ae60" font-weight="700">Phase 1</text>
-
-  <rect x="715" y="545" width="180" height="60" rx="4" fill="#fff3e0" stroke="#e67e22" stroke-width="2"/>
-  <text x="725" y="563" font-size="11.5" font-weight="600">broker_read</text>
-  <text x="725" y="580" font-size="10" fill="#666">残高・約定の読み取り</text>
-  <text x="725" y="595" font-size="10" fill="#27ae60" font-weight="700">Phase 1【NEW前倒し】</text>
-
-  <rect x="905" y="545" width="180" height="60" rx="4" fill="#fff" stroke="#2980b9"/>
-  <text x="915" y="563" font-size="11.5" font-weight="600">llm_call</text>
-  <text x="915" y="580" font-size="10" fill="#666">Anthropic / Ollama 呼分け</text>
-  <text x="915" y="595" font-size="10" fill="#27ae60" font-weight="700">Phase 1</text>
-
-  <!-- row 3 -->
-  <rect x="335" y="615" width="180" height="35" rx="4" fill="#fafafa" stroke="#bbb" stroke-dasharray="3,3"/>
-  <text x="345" y="635" font-size="11.5" font-weight="600" fill="#888">broker_order</text>
-  <text x="465" y="635" font-size="10" fill="#f39c12" font-weight="700" text-anchor="end">Phase 2-</text>
-
-  <rect x="525" y="615" width="180" height="35" rx="4" fill="#fafafa" stroke="#bbb" stroke-dasharray="3,3"/>
-  <text x="535" y="635" font-size="11.5" font-weight="600" fill="#888">backtester</text>
-  <text x="655" y="635" font-size="10" fill="#95a5a6" font-weight="700" text-anchor="end">Phase 2-3</text>
-
-  <!-- ============================= -->
-  <!-- Persistence: SQLite            -->
-  <!-- ============================= -->
-  <rect x="320" y="680" width="600" height="130" rx="6" fill="#fff" stroke="#7f8c8d" stroke-width="1.5"/>
-  <text x="335" y="702" font-size="13" font-weight="700" fill="#34495e">Persistence : SQLite</text>
-
-  <rect x="335" y="715" width="130" height="85" rx="4" fill="#f8f8f5"/>
-  <text x="345" y="732" font-size="11" font-weight="600">decisions</text>
-  <text x="345" y="748" font-size="9.5" fill="#666">レコメンド履歴</text>
-  <text x="345" y="762" font-size="9.5" fill="#666">（買い/売り/利確/損切）</text>
-  <text x="345" y="780" font-size="9" fill="#16a085" font-weight="700">的中率算出に使用</text>
-
-  <rect x="475" y="715" width="130" height="85" rx="4" fill="#f8f8f5"/>
-  <text x="485" y="732" font-size="11" font-weight="600">portfolio</text>
-  <text x="485" y="748" font-size="9.5" fill="#666">保有銘柄、取得情報</text>
-  <text x="485" y="762" font-size="9.5" fill="#666">目標期間、進捗</text>
-  <text x="485" y="780" font-size="9" fill="#e67e22" font-weight="700">moomooと同期</text>
-
-  <rect x="615" y="715" width="130" height="85" rx="4" fill="#fff3e0" stroke="#16a085" stroke-width="2"/>
-  <text x="625" y="732" font-size="11" font-weight="600">topics</text>
-  <text x="625" y="748" font-size="9" fill="#16a085">【NEW】収集ニュース</text>
-  <text x="625" y="762" font-size="9.5" fill="#666">重要度、影響先銘柄</text>
-  <text x="625" y="780" font-size="9.5" fill="#666">ソースURL</text>
-
-  <rect x="755" y="715" width="155" height="85" rx="4" fill="#f8f8f5"/>
-  <text x="765" y="732" font-size="11" font-weight="600">analysis_logs, cost_logs</text>
-  <text x="765" y="748" font-size="9.5" fill="#666">エージェント実行ログ</text>
-  <text x="765" y="762" font-size="9.5" fill="#666">API消費追跡</text>
-  <text x="765" y="780" font-size="9" fill="#16a085" font-weight="700">月¥5,000予算管理</text>
-
-  <!-- ============================= -->
-  <!-- LLM Layer                      -->
-  <!-- ============================= -->
-  <rect x="940" y="680" width="300" height="130" rx="6" fill="#fdf2f2" stroke="#c0392b" stroke-width="1.5"/>
-  <text x="955" y="702" font-size="13" font-weight="700" fill="#922b21">LLM Layer</text>
-
-  <rect x="955" y="715" width="130" height="85" rx="4" fill="#fff"/>
-  <text x="965" y="732" font-size="11" font-weight="600">Claude</text>
-  <text x="965" y="748" font-size="9.5" fill="#666">Sonnet 4.6（Hot Path）</text>
-  <text x="965" y="762" font-size="9.5" fill="#666">Opus 4.7（Critical）</text>
-  <text x="965" y="780" font-size="9" fill="#c0392b" font-weight="700">投資判断・深掘り</text>
-
-  <rect x="1095" y="715" width="130" height="85" rx="4" fill="#fff"/>
-  <text x="1105" y="732" font-size="11" font-weight="600">Ollama</text>
-  <text x="1105" y="748" font-size="9.5" fill="#666">Cold Path</text>
-  <text x="1105" y="762" font-size="9.5" fill="#666">要約・整形</text>
-  <text x="1105" y="780" font-size="9" fill="#c0392b" font-weight="700">ローカル無料</text>
-
-  <!-- ============================= -->
-  <!-- UI Layer                       -->
-  <!-- ============================= -->
-  <rect x="320" y="830" width="920" height="105" rx="6" fill="#fffbe6" stroke="#f1c40f" stroke-width="1.5"/>
-  <text x="335" y="852" font-size="13" font-weight="700" fill="#7d6608">Next.js UI（ブラウザ localhost）</text>
-
-  <rect x="335" y="865" width="160" height="55" rx="4" fill="#fff"/>
-  <text x="345" y="883" font-size="11" font-weight="600">ダッシュボード</text>
-  <text x="345" y="900" font-size="9.5" fill="#666">売り買い × 保有 ×</text>
-  <text x="345" y="912" font-size="9.5" fill="#666">トピックス × Track</text>
-
-  <rect x="505" y="865" width="160" height="55" rx="4" fill="#fafafa" stroke="#bbb"/>
-  <text x="515" y="883" font-size="11" font-weight="600" fill="#888">スクリーニング</text>
-  <text x="515" y="900" font-size="9.5" fill="#888">STEP B 続編</text>
-
-  <rect x="675" y="865" width="160" height="55" rx="4" fill="#fafafa" stroke="#bbb"/>
-  <text x="685" y="883" font-size="11" font-weight="600" fill="#888">銘柄詳細</text>
-  <text x="685" y="900" font-size="9.5" fill="#888">STEP B 続編</text>
-
-  <rect x="845" y="865" width="160" height="55" rx="4" fill="#fafafa" stroke="#bbb"/>
-  <text x="855" y="883" font-size="11" font-weight="600" fill="#888">ポートフォリオ</text>
-  <text x="855" y="900" font-size="9.5" fill="#888">STEP B 続編</text>
-
-  <rect x="1015" y="865" width="210" height="55" rx="4" fill="#fafafa" stroke="#bbb"/>
-  <text x="1025" y="883" font-size="11" font-weight="600" fill="#888">設定 / 週次 / 過去レコメンド</text>
-  <text x="1025" y="900" font-size="9.5" fill="#888">STEP B 続編</text>
-
-  <!-- ============================= -->
-  <!-- HUMAN ZONE                     -->
-  <!-- ============================= -->
-  <rect x="320" y="965" width="920" height="170" rx="6" fill="#eef" stroke="#2980b9" stroke-width="1.5"/>
-  <text x="335" y="988" font-size="13" font-weight="700" fill="#1f5582">YOU（あなた）</text>
-
-  <rect x="335" y="1000" width="270" height="60" rx="4" fill="#fff"/>
-  <text x="345" y="1018" font-size="11" font-weight="600">朝5分ダッシュボード確認</text>
-  <text x="345" y="1035" font-size="10" fill="#666">売り買いレコメンド → 採用判断</text>
-  <text x="345" y="1050" font-size="10" fill="#666">深掘りは詳細パネル</text>
-
-  <rect x="615" y="1000" width="270" height="60" rx="4" fill="#fff"/>
-  <text x="625" y="1018" font-size="11" font-weight="600">moomooアプリで手動発注</text>
-  <text x="625" y="1035" font-size="10" fill="#666">指値・数量はツールがコピー可能</text>
-  <text x="625" y="1050" font-size="10" fill="#666">約定は自動同期</text>
-
-  <rect x="895" y="1000" width="335" height="60" rx="4" fill="#fff"/>
-  <text x="905" y="1018" font-size="11" font-weight="600">セットアップ作業（Phase 0-1）</text>
-  <text x="905" y="1035" font-size="10" fill="#666">moomoo口座開設、各APIキー取得、</text>
-  <text x="905" y="1050" font-size="10" fill="#666">.env設定、緊急停止ファイル管理</text>
-
-  <rect x="335" y="1070" width="895" height="55" rx="4" fill="#fff" stroke="#e67e22" stroke-dasharray="4,3"/>
-  <text x="345" y="1088" font-size="11" font-weight="600" fill="#a04a00">緊急時の介入</text>
-  <text x="345" y="1105" font-size="10" fill="#666">~/.trading-agent/HALT ファイル作成で全停止 / .env のPAPER/LIVE切替 / 月次予算超過時の停止承認</text>
-
-
-  <!-- ============================= -->
-  <!-- 矢印（外部→MCP）                -->
-  <!-- ============================= -->
-  <!-- moomoo → OpenD（同じmoomooなので直接） -->
-  <path d="M 260 95 L 778 130" stroke="#e67e22" stroke-width="2" fill="none" marker-end="url(#arr-orange)"/>
-  <text x="490" y="100" font-size="9.5" fill="#a04a00" font-weight="700">OpenAPI（株価/残高/約定）</text>
-
-  <!-- 各データソース → MCP Tool Layer -->
-  <path d="M 260 188 L 333 495" stroke="#444" stroke-width="1" fill="none" marker-end="url(#arr)"/>
-  <text x="270" y="370" font-size="9" fill="#666">REST/API</text>
-
-  <path d="M 260 253 L 333 495" stroke="#444" stroke-width="1" fill="none" marker-end="url(#arr)"/>
-  <path d="M 260 318 L 720 545" stroke="#444" stroke-width="1" fill="none" marker-end="url(#arr)"/>
-  <path d="M 260 388 L 910 495" stroke="#444" stroke-width="1" fill="none" marker-end="url(#arr)"/>
-  <path d="M 260 458 L 340 565" stroke="#444" stroke-width="1" fill="none" marker-end="url(#arr)"/>
-
-  <!-- moomoo OpenD → broker_read -->
-  <path d="M 800 180 L 800 543" stroke="#e67e22" stroke-width="2" fill="none" marker-end="url(#arr-orange)"/>
-
-  <!-- 手動投入 → manual-input-analyst -->
-  <path d="M 260 523 L 1060 282" stroke="#2980b9" stroke-width="1" fill="none" stroke-dasharray="4,3" marker-end="url(#arr)"/>
-
-  <!-- Scheduler → Orchestrator -->
-  <path d="M 535 180 L 535 252" stroke="#2980b9" stroke-width="1.5" fill="none" marker-end="url(#arr)"/>
-  <text x="545" y="218" font-size="9" fill="#1f5582">朝バッチ起動</text>
-
-  <!-- Orchestrator ↔ MCP Tool Layer -->
-  <path d="M 470 420 L 470 460" stroke="#8e44ad" stroke-width="1.5" fill="none" marker-end="url(#arr-purple)"/>
-  <path d="M 770 460 L 770 420" stroke="#8e44ad" stroke-width="1.5" fill="none" marker-end="url(#arr-purple)"/>
-  <text x="600" y="438" font-size="9.5" fill="#5b2c6f" font-weight="700">MCP</text>
-
-  <!-- MCP → Persistence -->
-  <path d="M 460 660 L 460 685" stroke="#444" stroke-width="1" fill="none" marker-end="url(#arr)"/>
-
-  <!-- MCP → LLM -->
-  <path d="M 950 605 L 1015 680" stroke="#c0392b" stroke-width="1.5" fill="none" marker-end="url(#arr)"/>
-  <text x="990" y="650" font-size="9.5" fill="#922b21" font-weight="700">LLM call</text>
-
-  <!-- Persistence → UI (read) -->
-  <path d="M 620 810 L 620 862" stroke="#444" stroke-width="1" fill="none" marker-end="url(#arr)"/>
-
-  <!-- UI ↔ Human -->
-  <path d="M 415 920 L 415 1000" stroke="#2980b9" stroke-width="1.5" fill="none" marker-end="url(#arr)"/>
-  <path d="M 475 1000 L 475 920" stroke="#2980b9" stroke-width="1.5" fill="none" marker-end="url(#arr)"/>
-  <text x="430" y="965" font-size="9.5" fill="#1f5582">↕ レビュー</text>
-
-  <!-- Human → moomoo (発注) -->
-  <path d="M 745 1000 L 745 188" stroke="#e67e22" stroke-width="1.5" fill="none" stroke-dasharray="4,3" marker-end="url(#arr-orange)"/>
-  <text x="755" y="600" font-size="9" fill="#a04a00" transform="rotate(-90 755 600)">手動発注</text>
-
+  <!-- ============================================== -->
+  <!-- TITLE & COLUMN HEADERS                          -->
+  <!-- ============================================== -->
+  <text x="20" y="22" font-size="14" font-weight="700" fill="#222">朝バッチからUI、あなた（俺）までのフロー — ↓が主フロー、←が注入元</text>
+  <text x="20" y="40" font-size="11" fill="#666">ZEELE車線（左・草案・参考）と MAGI車線（右・本流・決裁）は ⑥UIで合流し、⑦あなたで完結する</text>
+  <text x="240" y="65" text-anchor="middle" font-size="12" font-weight="700" fill="#5b2c6f">ZEELE 車線（草案・参考）</text>
+  <text x="840" y="65" text-anchor="middle" font-size="12" font-weight="700" fill="#1f5582">MAGI 車線（本流・決裁）</text>
+  <text x="1310" y="65" text-anchor="middle" font-size="11" font-weight="700" fill="#c0392b" letter-spacing="0.05em">注入元</text>
+
+  <!-- ============================================== -->
+  <!-- STAGE ① データ                                  -->
+  <!-- ============================================== -->
+  <circle cx="25" cy="135" r="14" fill="#222"/>
+  <text x="25" y="140" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">①</text>
+  <text x="25" y="165" text-anchor="middle" font-size="9" fill="#666">データ</text>
+
+  <rect x="60" y="80" width="360" height="130" rx="6" fill="#f8f4ff" stroke="#8e44ad" stroke-width="1.5" stroke-dasharray="5,3"/>
+  <text x="75" y="100" font-size="11.5" font-weight="700" fill="#5b2c6f">探索データ（ZEELE 用）</text>
+  <text x="75" y="120" font-size="10" fill="#666">• yfinance（60+地域・無料）</text>
+  <text x="75" y="136" font-size="10" fill="#666">• Grok API（X検索・XAI_API_KEY）</text>
+  <text x="75" y="152" font-size="10" fill="#666">• 業界news / SNS</text>
+  <text x="75" y="180" font-size="9.5" fill="#8e44ad" font-style="italic">来歴メタ任意（参考扱い）</text>
+  <text x="75" y="196" font-size="9.5" fill="#8e44ad" font-style="italic">LLM 数値生成 OK</text>
+
+  <rect x="460" y="80" width="760" height="130" rx="6" fill="#fff3e0" stroke="#e67e22" stroke-width="1.5"/>
+  <text x="475" y="100" font-size="11.5" font-weight="700" fill="#a04a00">真実データ（MAGI 用）</text>
+  <text x="475" y="120" font-size="10" fill="#666">• moomoo OpenAPI（米株/日株・株価・残高・約定）</text>
+  <text x="475" y="136" font-size="10" fill="#666">• SEC EDGAR / EDINET / TDnet RSS / NewsAPI / J-Quants（補助）</text>
+  <text x="475" y="152" font-size="10" fill="#666">• 手動投入（X発言・URL貼り付け）</text>
+  <text x="475" y="180" font-size="9.5" fill="#a04a00" font-style="italic">source_refs（出典）必須 / data_asof（時点）必須</text>
+  <text x="475" y="196" font-size="9.5" fill="#a04a00" font-style="italic">重要数値は2ソース照合</text>
+
+  <path d="M 240 215 L 240 240" stroke="#8e44ad" stroke-width="2.5" fill="none" stroke-dasharray="5,3" marker-end="url(#arr-purple)"/>
+  <path d="M 840 215 L 840 240" stroke="#e67e22" stroke-width="2.5" fill="none" marker-end="url(#arr-orange)"/>
+
+  <!-- ============================================== -->
+  <!-- STAGE ② 取り込み                                -->
+  <!-- ============================================== -->
+  <circle cx="25" cy="310" r="14" fill="#222"/>
+  <text x="25" y="315" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">②</text>
+  <text x="25" y="340" text-anchor="middle" font-size="9" fill="#666">取り込み</text>
+
+  <rect x="60" y="250" width="360" height="135" rx="6" fill="#fff" stroke="#8e44ad" stroke-width="1.5" stroke-dasharray="5,3"/>
+  <text x="75" y="270" font-size="11.5" font-weight="700" fill="#5b2c6f">stock_skills 攻め系（草案）</text>
+  <text x="75" y="290" font-size="10" fill="#666">• 16プリセット探索</text>
+  <text x="75" y="304" font-size="9.5" fill="#888">  value / growth / momentum / contrarian / alpha …</text>
+  <text x="75" y="320" font-size="10" fill="#666">• market-research（Grok narrative）</text>
+  <text x="75" y="334" font-size="9.5" fill="#888">  業界・銘柄物語・センチメント</text>
+  <text x="75" y="360" font-size="9.5" fill="#8e44ad" font-weight="700">⚠ 処理＝候補発議。LLMが数値生成OK</text>
+  <text x="75" y="375" font-size="9.5" fill="#8e44ad" font-weight="700">⚠ decisions テーブル直結禁止</text>
+
+  <rect x="460" y="250" width="760" height="135" rx="6" fill="#f0f8ff" stroke="#2980b9" stroke-width="1.5"/>
+  <text x="475" y="270" font-size="11.5" font-weight="700" fill="#1f5582">MCP Tool Layer（自作・8ツール）</text>
+  <rect x="475" y="282" width="175" height="40" rx="3" fill="#fff" stroke="#2980b9"/>
+  <text x="485" y="297" font-size="10" font-weight="600">market_data</text>
+  <text x="485" y="312" font-size="9" fill="#666">moomoo+yfinance(2ソース)</text>
+  <rect x="660" y="282" width="180" height="40" rx="3" fill="#fff" stroke="#2980b9"/>
+  <text x="670" y="297" font-size="10" font-weight="600">fundamentals</text>
+  <text x="670" y="312" font-size="9" fill="#666">EDGAR / EDINET</text>
+  <rect x="850" y="282" width="170" height="40" rx="3" fill="#fff" stroke="#2980b9"/>
+  <text x="860" y="297" font-size="10" font-weight="600">disclosure / news</text>
+  <text x="860" y="312" font-size="9" fill="#666">TDnet / NewsAPI</text>
+  <rect x="1030" y="282" width="185" height="40" rx="3" fill="#fff3e0" stroke="#e67e22" stroke-width="1.5"/>
+  <text x="1040" y="297" font-size="10" font-weight="600">broker_read</text>
+  <text x="1040" y="312" font-size="9" fill="#666">残高・約定・建玉</text>
+  <rect x="475" y="328" width="175" height="40" rx="3" fill="#fff" stroke="#2980b9"/>
+  <text x="485" y="343" font-size="10" font-weight="600">technicals</text>
+  <text x="485" y="358" font-size="9" fill="#666">TA-Lib</text>
+  <rect x="660" y="328" width="180" height="40" rx="3" fill="#fff" stroke="#2980b9"/>
+  <text x="670" y="343" font-size="10" font-weight="600">screening</text>
+  <text x="670" y="358" font-size="9" fill="#666">V字/テーマ/信用性</text>
+  <rect x="850" y="328" width="170" height="40" rx="3" fill="#fff" stroke="#2980b9"/>
+  <text x="860" y="343" font-size="10" font-weight="600">llm_call</text>
+  <text x="860" y="358" font-size="9" fill="#666">Anthropic/Ollama</text>
+  <rect x="1030" y="328" width="185" height="40" rx="3" fill="#fafafa" stroke="#bbb" stroke-dasharray="3,3"/>
+  <text x="1040" y="343" font-size="10" font-weight="600" fill="#888">broker_order</text>
+  <text x="1040" y="358" font-size="9" fill="#888">Phase 2+</text>
+
+  <path d="M 240 390 L 240 415" stroke="#8e44ad" stroke-width="2.5" fill="none" stroke-dasharray="5,3" marker-end="url(#arr-purple)"/>
+  <path d="M 840 390 L 840 415" stroke="#2980b9" stroke-width="2.5" fill="none" marker-end="url(#arr-blue)"/>
+
+  <!-- ============================================== -->
+  <!-- STAGE ③ 提案                                    -->
+  <!-- ============================================== -->
+  <circle cx="25" cy="490" r="14" fill="#222"/>
+  <text x="25" y="495" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">③</text>
+  <text x="25" y="520" text-anchor="middle" font-size="9" fill="#666">提案</text>
+
+  <rect x="60" y="425" width="360" height="130" rx="6" fill="#fef7ff" stroke="#8e44ad" stroke-width="1.5" stroke-dasharray="5,3"/>
+  <text x="75" y="445" font-size="11.5" font-weight="700" fill="#5b2c6f">候補プール + 物語</text>
+  <text x="75" y="465" font-size="10" fill="#666">「気になった銘柄」リスト</text>
+  <text x="75" y="481" font-size="10" fill="#666">+ Grok narrative / X トレンド</text>
+  <text x="75" y="497" font-size="10" fill="#666">+ ZEELE スコア（参考値）</text>
+  <text x="75" y="519" font-size="9.5" fill="#8e44ad" font-weight="700">→ ⑤の candidate_pool 表へ</text>
+  <text x="75" y="534" font-size="9.5" fill="#8e44ad" font-weight="700">→ ⑥ UI「ZEELE zone」に表示</text>
+  <text x="75" y="549" font-size="9.5" fill="#8e44ad">  (MAGI判定を経ない / 参考扱い)</text>
+
+  <rect x="460" y="425" width="760" height="130" rx="6" fill="#f5e6f7" stroke="#8e44ad" stroke-width="1.5"/>
+  <text x="475" y="445" font-size="11.5" font-weight="700" fill="#5b2c6f">PHASE 1 収集・提案 agents（提案までで判断なし）</text>
+  <rect x="475" y="455" width="142" height="55" rx="3" fill="#fff" stroke="#8e44ad"/>
+  <text x="485" y="471" font-size="10" font-weight="600">screening-agent</text>
+  <text x="485" y="486" font-size="9" fill="#666">287銘柄→10-20候補</text>
+  <text x="485" y="500" font-size="9" fill="#666">信用性フィルタ</text>
+  <rect x="627" y="455" width="142" height="55" rx="3" fill="#fff" stroke="#8e44ad"/>
+  <text x="637" y="471" font-size="10" font-weight="600">topics-collector</text>
+  <text x="637" y="486" font-size="9" fill="#666">ニュース・開示</text>
+  <text x="637" y="500" font-size="9" fill="#666">→ topics 表</text>
+  <rect x="779" y="455" width="142" height="55" rx="3" fill="#fff" stroke="#8e44ad"/>
+  <text x="789" y="471" font-size="10" font-weight="600">portfolio-builder</text>
+  <text x="789" y="486" font-size="9" fill="#666">初回構築・配分</text>
+  <text x="789" y="500" font-size="9" fill="#666">Core-Satellite</text>
+  <rect x="931" y="455" width="142" height="55" rx="3" fill="#fff" stroke="#8e44ad"/>
+  <text x="941" y="471" font-size="10" font-weight="600">sell-recommender</text>
+  <text x="941" y="486" font-size="9" fill="#666">利確/損切り判定</text>
+  <text x="941" y="500" font-size="9" fill="#666">→ MAGI対象</text>
+  <rect x="1083" y="455" width="135" height="55" rx="3" fill="#fff" stroke="#8e44ad"/>
+  <text x="1093" y="471" font-size="10" font-weight="600">manual-input</text>
+  <text x="1093" y="486" font-size="9" fill="#666">即時解釈</text>
+  <text x="1093" y="500" font-size="9" fill="#666">X発言・URL</text>
+  <text x="475" y="528" font-size="9.5" fill="#5b2c6f">⚙ 提案候補（買い/売り）を ④MAGI 4段へ — まだ「判断」ではない</text>
+  <text x="475" y="545" font-size="9.5" fill="#5b2c6f">⚙ 各agentはMCP経由でデータ取得 + LLM Layer経由で読み・整形</text>
+
+  <!-- Side: LLM Layer (注入元) -->
+  <rect x="1240" y="425" width="140" height="130" rx="5" fill="#fdf2f2" stroke="#c0392b" stroke-width="1.5"/>
+  <text x="1250" y="445" font-size="11" font-weight="700" fill="#922b21">LLM Layer</text>
+  <text x="1250" y="463" font-size="9.5" fill="#666">Sonnet 4.6 (Hot)</text>
+  <text x="1250" y="478" font-size="9.5" fill="#666">Opus 4.7 (Critical)</text>
+  <text x="1250" y="493" font-size="9.5" fill="#666">Ollama (Cold・無料)</text>
+  <text x="1250" y="514" font-size="9" fill="#c0392b" font-weight="700">月¥5,000予算管理</text>
+  <text x="1250" y="528" font-size="9" fill="#c0392b" font-weight="700">HALT で停止</text>
+  <text x="1250" y="544" font-size="9" fill="#666" font-style="italic">（③/④で注入）</text>
+  <path d="M 1240 482 L 1220 482" stroke="#c0392b" stroke-width="1.5" fill="none" marker-end="url(#arr-red)"/>
+  <text x="1162" y="478" font-size="9" fill="#c0392b" font-weight="700">読み・整形</text>
+
+  <!-- ZEELE bypass arrow -->
+  <path d="M 240 560 L 240 1090" stroke="#8e44ad" stroke-width="2" fill="none" stroke-dasharray="5,3" marker-end="url(#arr-purple)"/>
+  <rect x="180" y="610" width="125" height="50" rx="4" fill="#fff" stroke="#8e44ad" stroke-dasharray="3,2"/>
+  <text x="242" y="628" text-anchor="middle" font-size="10" fill="#5b2c6f" font-weight="700">ZEELE は</text>
+  <text x="242" y="642" text-anchor="middle" font-size="10" fill="#5b2c6f" font-weight="700">MAGI判定を</text>
+  <text x="242" y="656" text-anchor="middle" font-size="10" fill="#5b2c6f" font-weight="700">バイパス</text>
+
+  <path d="M 840 560 L 840 590" stroke="#8e44ad" stroke-width="2.5" fill="none" marker-end="url(#arr-purple)"/>
+
+  <!-- ============================================== -->
+  <!-- STAGE ④ MAGI 判定（MAGI車線のみ）              -->
+  <!-- ============================================== -->
+  <circle cx="25" cy="720" r="14" fill="#8e44ad"/>
+  <text x="25" y="725" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">④</text>
+  <text x="25" y="750" text-anchor="middle" font-size="9" fill="#5b2c6f">MAGI判定</text>
+  <text x="25" y="763" text-anchor="middle" font-size="8" fill="#666">(本流のみ)</text>
+
+  <rect x="460" y="600" width="760" height="285" rx="6" fill="#fafaff" stroke="#8e44ad" stroke-width="2"/>
+  <text x="475" y="622" font-size="13" font-weight="700" fill="#5b2c6f">MAGI 4段（独立検証 → 防御層 → 統合機構 → 碇司令）</text>
+  <text x="475" y="638" font-size="10" fill="#666">SCORE: NONE / 数値はコードのみ / LLMは「読む」だけ / 各審判は独立（互いの出力を入力にしない）</text>
+
+  <text x="475" y="660" font-size="10.5" font-weight="700" fill="#5b2c6f" letter-spacing="0.05em">④-A 3審判（独立に意見を出す）</text>
+  <rect x="475" y="670" width="240" height="82" rx="4" fill="#fff" stroke="#8e44ad"/>
+  <text x="485" y="688" font-size="12" font-weight="700" fill="#5b2c6f">MELCHIOR</text>
+  <text x="485" y="706" font-size="10" fill="#666">役割：テクニカル / 価格</text>
+  <text x="485" y="722" font-size="10" fill="#666">エンジン：Ollama（独立）</text>
+  <text x="485" y="742" font-size="9" fill="#c0392b" font-weight="700">← LLM Layer (Ollama)</text>
+  <rect x="725" y="670" width="240" height="82" rx="4" fill="#fff" stroke="#8e44ad"/>
+  <text x="735" y="688" font-size="12" font-weight="700" fill="#5b2c6f">BALTHASAR</text>
+  <text x="735" y="706" font-size="10" fill="#666">役割：ファンダ・出典照合</text>
+  <text x="735" y="722" font-size="10" fill="#666">エンジン：コード+LLM解釈</text>
+  <text x="735" y="742" font-size="9" fill="#c0392b" font-weight="700">← LLM Layer (Sonnet)</text>
+  <rect x="975" y="670" width="240" height="82" rx="4" fill="#fff" stroke="#8e44ad"/>
+  <text x="985" y="688" font-size="12" font-weight="700" fill="#5b2c6f">CASPER</text>
+  <text x="985" y="706" font-size="10" fill="#666">役割：narrative / ニュース</text>
+  <text x="985" y="722" font-size="10" fill="#666">エンジン：Claude Sonnet</text>
+  <text x="985" y="742" font-size="9" fill="#c0392b" font-weight="700">← LLM Layer (Sonnet)</text>
+
+  <text x="475" y="775" font-size="10.5" font-weight="700" fill="#5b2c6f" letter-spacing="0.05em">④-B 防御層 → 統合機構 → 碇司令</text>
+  <rect x="475" y="785" width="210" height="85" rx="4" fill="#fdf2f2" stroke="#c0392b" stroke-width="1.5"/>
+  <text x="485" y="803" font-size="11" font-weight="700" fill="#922b21">防御層</text>
+  <text x="485" y="822" font-size="9.5" fill="#666">矛盾 / 偽出典 /</text>
+  <text x="485" y="836" font-size="9.5" fill="#666">古時点 / ハルシネ検出</text>
+  <text x="485" y="858" font-size="9" fill="#c0392b">→ verifications 表</text>
+  <path d="M 685 827 L 700 827" stroke="#c0392b" stroke-width="1.5" fill="none" marker-end="url(#arr-red)"/>
+  <rect x="700" y="785" width="210" height="85" rx="4" fill="#fffbe6" stroke="#f1c40f" stroke-width="1.5"/>
+  <text x="710" y="803" font-size="11" font-weight="700" fill="#7d6608">統合機構</text>
+  <text x="710" y="822" font-size="9.5" fill="#666">3審判の割れを表示</text>
+  <text x="710" y="836" font-size="9.5" fill="#666">SCORE は出さない</text>
+  <text x="710" y="858" font-size="9" fill="#7d6608">→ split_pattern 表</text>
+  <path d="M 910 827 L 925 827" stroke="#f39c12" stroke-width="1.5" fill="none" marker-end="url(#arr)"/>
+  <rect x="925" y="785" width="290" height="85" rx="4" fill="#f5e6f7" stroke="#8e44ad" stroke-width="2"/>
+  <text x="935" y="803" font-size="12" font-weight="700" fill="#5b2c6f">碇司令</text>
+  <text x="935" y="822" font-size="10" fill="#666">推奨（推し/利確/撤退/要検討/静観）</text>
+  <text x="935" y="836" font-size="10" fill="#666">+ 反対意見 + 出典 + 時点</text>
+  <text x="935" y="858" font-size="9" fill="#5b2c6f">→ commander_rec / decisions</text>
+
+  <!-- Side: LLM Layer (注入元・④用) -->
+  <rect x="1240" y="670" width="140" height="200" rx="5" fill="#fdf2f2" stroke="#c0392b" stroke-width="1.5"/>
+  <text x="1250" y="690" font-size="11" font-weight="700" fill="#922b21">LLM Layer</text>
+  <text x="1250" y="708" font-size="9" fill="#666">3審判別にモデル割当：</text>
+  <text x="1250" y="725" font-size="9.5" fill="#5b2c6f" font-weight="700">MELCHIOR ← Ollama</text>
+  <text x="1250" y="740" font-size="9.5" fill="#5b2c6f" font-weight="700">BALTHASAR ← Sonnet</text>
+  <text x="1250" y="755" font-size="9.5" fill="#5b2c6f" font-weight="700">CASPER ← Sonnet</text>
+  <text x="1250" y="778" font-size="9" fill="#666">独立性のため</text>
+  <text x="1250" y="791" font-size="9" fill="#666">プロンプトに他審判</text>
+  <text x="1250" y="804" font-size="9" fill="#666">の出力を入力しない</text>
+  <text x="1250" y="826" font-size="9" fill="#c0392b" font-weight="700">防御層も Sonnet を</text>
+  <text x="1250" y="839" font-size="9" fill="#c0392b" font-weight="700">使うが「読む」のみ</text>
+  <text x="1250" y="858" font-size="9" fill="#666" font-style="italic">数値生成は不可</text>
+  <path d="M 1240 710 L 1216 710" stroke="#c0392b" stroke-width="1.3" fill="none" marker-end="url(#arr-red)"/>
+  <path d="M 1240 825 L 1216 825" stroke="#c0392b" stroke-width="1.3" fill="none" marker-end="url(#arr-red)"/>
+
+  <path d="M 840 885 L 840 915" stroke="#8e44ad" stroke-width="2.5" fill="none" marker-end="url(#arr-purple)"/>
+
+  <!-- ============================================== -->
+  <!-- STAGE ⑤ 永続化                                  -->
+  <!-- ============================================== -->
+  <circle cx="25" cy="985" r="14" fill="#222"/>
+  <text x="25" y="990" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">⑤</text>
+  <text x="25" y="1015" text-anchor="middle" font-size="9" fill="#666">永続化</text>
+
+  <rect x="60" y="920" width="1160" height="140" rx="6" fill="#fff" stroke="#7f8c8d" stroke-width="1.5"/>
+  <text x="75" y="942" font-size="13" font-weight="700" fill="#34495e">Persistence (SQLite) — 既存16表 + MAGI 4表（+ ZEELE 草案表）</text>
+  <rect x="75" y="955" width="345" height="95" rx="4" fill="#f8f4ff" stroke="#8e44ad" stroke-dasharray="3,3"/>
+  <text x="85" y="972" font-size="10.5" font-weight="700" fill="#5b2c6f">ZEELE 出力（草案）</text>
+  <text x="85" y="989" font-size="9.5" fill="#666">candidate_pool（草案表）</text>
+  <text x="85" y="1004" font-size="9.5" fill="#666">narrative_log（物語・センチメント）</text>
+  <text x="85" y="1023" font-size="9" fill="#8e44ad" font-weight="700">⚠ decisions への直接FK禁止</text>
+  <text x="85" y="1038" font-size="9" fill="#8e44ad">→ UI ZEELE zone 表示のみ</text>
+  <rect x="445" y="955" width="775" height="95" rx="4" fill="#f5e6f7" stroke="#8e44ad"/>
+  <text x="455" y="972" font-size="10.5" font-weight="700" fill="#5b2c6f">MAGI 出力（本流）</text>
+  <text x="455" y="989" font-size="9.5" fill="#666">MAGI 4表：judge_verdict / split_pattern / commander_rec / verification</text>
+  <text x="455" y="1004" font-size="9.5" fill="#666">既存表：decisions / portfolio / topics / buy_signals / sell_signals</text>
+  <text x="455" y="1019" font-size="9.5" fill="#666">     analysis_logs / cost_logs (月¥5,000予算管理) / settings 等</text>
+  <text x="455" y="1038" font-size="9" fill="#5b2c6f" font-weight="700">→ UI MAGI zone + 検証フラグ + 出典 + 時点</text>
+
+  <path d="M 700 1065 L 700 1090" stroke="#444" stroke-width="2" fill="none" marker-end="url(#arr)"/>
+
+  <!-- ============================================== -->
+  <!-- STAGE ⑥ UI（2車線合流）                         -->
+  <!-- ============================================== -->
+  <circle cx="25" cy="1175" r="14" fill="#f1c40f"/>
+  <text x="25" y="1180" text-anchor="middle" font-size="13" font-weight="700" fill="#7d6608">⑥</text>
+  <text x="25" y="1205" text-anchor="middle" font-size="9" fill="#666">UI</text>
+
+  <rect x="60" y="1095" width="1160" height="185" rx="6" fill="#fffbe6" stroke="#f1c40f" stroke-width="2"/>
+  <text x="75" y="1118" font-size="13" font-weight="700" fill="#7d6608">Next.js UI ダッシュボード（new_dashboard.html 準拠）</text>
+  <text x="75" y="1134" font-size="10" fill="#666">朝5分の確認画面。左右2ゾーンで車線を視覚分離。フォント・配色・DOMはモック逐語移植。</text>
+
+  <rect x="75" y="1145" width="345" height="120" rx="5" fill="#f8f4ff" stroke="#8e44ad" stroke-dasharray="4,3"/>
+  <text x="85" y="1163" font-size="11" font-weight="700" fill="#5b2c6f">ZEELE zone（参考・草案）</text>
+  <text x="85" y="1181" font-size="9.5" fill="#666">• 候補プール一覧（16プリセット結果）</text>
+  <text x="85" y="1195" font-size="9.5" fill="#666">• Grok narrative / X トレンド</text>
+  <text x="85" y="1209" font-size="9.5" fill="#666">• 「参考／未照合」バッジ常時表示</text>
+  <text x="85" y="1234" font-size="10" fill="#8e44ad" font-weight="700">⚡ [ watchlist 昇格 ] ボタン</text>
+  <text x="85" y="1250" font-size="9" fill="#666">→ 翌朝バッチで ③MAGI ライン入力に注入</text>
+
+  <rect x="430" y="1160" width="50" height="105" rx="3" fill="#fff" stroke="#f1c40f" stroke-width="2"/>
+  <text x="455" y="1188" text-anchor="middle" font-size="10" font-weight="700" fill="#7d6608">人</text>
+  <text x="455" y="1203" text-anchor="middle" font-size="10" font-weight="700" fill="#7d6608">間</text>
+  <text x="455" y="1218" text-anchor="middle" font-size="10" font-weight="700" fill="#7d6608">ゲ</text>
+  <text x="455" y="1233" text-anchor="middle" font-size="10" font-weight="700" fill="#7d6608">|</text>
+  <text x="455" y="1248" text-anchor="middle" font-size="10" font-weight="700" fill="#7d6608">ト</text>
+
+  <rect x="490" y="1145" width="730" height="120" rx="5" fill="#e8f4f8" stroke="#2980b9"/>
+  <text x="500" y="1163" font-size="11" font-weight="700" fill="#1f5582">MAGI zone（本流・推奨）</text>
+  <text x="500" y="1181" font-size="9.5" fill="#666">• 売り買いレコメンド（碇司令推奨：推し/利確/撤退/要検討/静観）</text>
+  <text x="500" y="1195" font-size="9.5" fill="#666">• 3審判表示（MELCHIOR / BALTHASAR / CASPER の意見と割れ）</text>
+  <text x="500" y="1209" font-size="9.5" fill="#666">• 防御層フラグ ×3（数値照合 / 信用性 / 碇MAGI準拠）</text>
+  <text x="500" y="1223" font-size="9.5" fill="#666">• 反対意見 + 出典 + 時点 + 未照合バッジ</text>
+  <text x="500" y="1250" font-size="10" fill="#1f5582" font-weight="700">⚡ [ 承認 / 否認 / 保留 ] ボタン（検証完了まで非活性）</text>
+
+  <!-- watchlist 昇格 ループバック→翌朝③ -->
+  <path d="M 240 1250 L 440 1250 L 440 460 L 460 460" stroke="#8e44ad" stroke-width="1.3" fill="none" stroke-dasharray="4,3" marker-end="url(#arr-purple)" opacity="0.7"/>
+  <text x="450" y="852" font-size="10" fill="#5b2c6f" font-weight="700" transform="rotate(-90 450 852)">翌朝バッチでMAGI判定対象</text>
+
+  <path d="M 660 1280 L 660 1310" stroke="#2980b9" stroke-width="2.5" fill="none" marker-end="url(#arr-blue)"/>
+
+  <!-- ============================================== -->
+  <!-- STAGE ⑦ あなた（俺）                            -->
+  <!-- ============================================== -->
+  <circle cx="25" cy="1385" r="14" fill="#2980b9"/>
+  <text x="25" y="1390" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">⑦</text>
+  <text x="25" y="1415" text-anchor="middle" font-size="9" fill="#1f5582">俺</text>
+
+  <rect x="60" y="1320" width="1160" height="170" rx="6" fill="#eef" stroke="#2980b9" stroke-width="2"/>
+  <text x="75" y="1342" font-size="14" font-weight="700" fill="#1f5582">あなた（俺）— 最終決裁者</text>
+  <text x="75" y="1358" font-size="10" fill="#666">朝5分でダッシュボードを開く → ZEELE は流し読み（参考）／ MAGI は精読（決裁）</text>
+
+  <rect x="75" y="1370" width="370" height="55" rx="4" fill="#fff"/>
+  <text x="85" y="1390" font-size="11" font-weight="700">朝5分レビュー</text>
+  <text x="85" y="1407" font-size="9.5" fill="#666">売り買いレコメンド確認</text>
+  <text x="85" y="1420" font-size="9.5" fill="#666">深掘りは詳細パネル / トピックス展開</text>
+
+  <rect x="455" y="1370" width="370" height="55" rx="4" fill="#fff"/>
+  <text x="465" y="1390" font-size="11" font-weight="700">承認 / 否認 / 保留</text>
+  <text x="465" y="1407" font-size="9.5" fill="#666">未照合 or 割れ時は既定「保留」</text>
+  <text x="465" y="1420" font-size="9.5" fill="#666">→ decision.status 更新</text>
+
+  <rect x="835" y="1370" width="385" height="55" rx="4" fill="#fff3e0" stroke="#e67e22"/>
+  <text x="845" y="1390" font-size="11" font-weight="700" fill="#a04a00">moomoo手動発注</text>
+  <text x="845" y="1407" font-size="9.5" fill="#666">UIから指値・数量コピー → moomooアプリへ入力</text>
+  <text x="845" y="1420" font-size="9.5" fill="#666">約定は自動同期で portfolio 更新</text>
+
+  <rect x="75" y="1435" width="1145" height="50" rx="4" fill="#fff" stroke="#e67e22" stroke-dasharray="4,3"/>
+  <text x="85" y="1455" font-size="11" font-weight="600" fill="#a04a00">緊急時の介入</text>
+  <text x="85" y="1473" font-size="9.5" fill="#666">~/.trading-agent/HALT で全停止 / .env の PAPER/LIVE 切替 / 月次予算超過の停止承認</text>
+
+  <text x="1085" y="1505" font-size="9" fill="#a04a00" font-style="italic">↑ 約定は ①真実データ（moomoo OpenAPI 側）へ自動同期</text>
+
+  <!-- ============================================== -->
+  <!-- DISCIPLINE 外骨格バンド（X-2 / D-23・D-24）     -->
+  <!-- ============================================== -->
+  <circle cx="25" cy="1565" r="14" fill="#16a085"/>
+  <text x="25" y="1570" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">外</text>
+  <text x="25" y="1595" text-anchor="middle" font-size="9" fill="#0e6655">規律外骨格</text>
+
+  <rect x="60" y="1520" width="1320" height="170" rx="6" fill="#e8f8f5" stroke="#16a085" stroke-width="2"/>
+  <text x="75" y="1543" font-size="13" font-weight="700" fill="#0e6655">🔧 規律外骨格 — discipline/ 5モジュール（D-23 外骨格 ＋ D-24 北極星 = claude-trading-skills 翻案）</text>
+  <text x="75" y="1559" font-size="10" fill="#666">claude-trading-skills（MIT）の "Decision-process OS" を tradesupport 原則（数値はコード／出典必須／SCORE:NONE）に翻案。各モジュールは影響するステージに矢印で結線。</text>
+
+  <!-- 5 modules in a row -->
+  <rect x="75" y="1572" width="245" height="105" rx="4" fill="#fff" stroke="#16a085" stroke-width="1.5"/>
+  <text x="85" y="1590" font-size="11" font-weight="700" fill="#0e6655">exposure_coach</text>
+  <text x="85" y="1605" font-size="9" fill="#666">X-2C — 8入力統合 →</text>
+  <text x="85" y="1618" font-size="9" fill="#666">NEW_ENTRY / REDUCE_ONLY / </text>
+  <text x="85" y="1631" font-size="9" fill="#666">CASH_PRIORITY ＋ ceiling%</text>
+  <text x="85" y="1648" font-size="9" fill="#16a085" font-weight="700">→ ④ 前段ゲート</text>
+  <text x="85" y="1662" font-size="9" fill="#888" font-style="italic">既存 market_analyst を解体</text>
+
+  <rect x="330" y="1572" width="245" height="105" rx="4" fill="#fff" stroke="#16a085" stroke-width="1.5"/>
+  <text x="340" y="1590" font-size="11" font-weight="700" fill="#0e6655">holding_health</text>
+  <text x="340" y="1605" font-size="9" fill="#666">X-2B — Kanchi T1-T5 翻案</text>
+  <text x="340" y="1618" font-size="9" fill="#666">減配/カバレッジ/信用/開示KW/</text>
+  <text x="340" y="1631" font-size="9" fill="#666">構造悪化 → OK/WARN/REVIEW</text>
+  <text x="340" y="1648" font-size="9" fill="#16a085" font-weight="700">→ ④ 防御層へ流入</text>
+  <text x="340" y="1662" font-size="9" fill="#888" font-style="italic">EDINET 統合済で直接実装可</text>
+
+  <rect x="585" y="1572" width="245" height="105" rx="4" fill="#fff" stroke="#16a085" stroke-width="1.5"/>
+  <text x="595" y="1590" font-size="11" font-weight="700" fill="#0e6655">thesis_store</text>
+  <text x="595" y="1605" font-size="9" fill="#666">X-2A — 最優先・即着手可</text>
+  <text x="595" y="1618" font-size="9" fill="#666">投資テーゼ ライフサイクル</text>
+  <text x="595" y="1631" font-size="9" fill="#666">IDEA→ENTRY_READY→ACTIVE→CLOSED</text>
+  <text x="595" y="1648" font-size="9" fill="#16a085" font-weight="700">→ ⑤ MAGI出力に並列</text>
+  <text x="595" y="1662" font-size="9" fill="#888" font-style="italic">PoC scaffold 緑（5テスト）</text>
+
+  <rect x="840" y="1572" width="245" height="105" rx="4" fill="#fff" stroke="#16a085" stroke-width="1.5"/>
+  <text x="850" y="1590" font-size="11" font-weight="700" fill="#0e6655">postmortem</text>
+  <text x="850" y="1605" font-size="9" fill="#666">X-2D — クローズ後分類</text>
+  <text x="850" y="1618" font-size="9" fill="#666">TP/FP/MO/RM ＋</text>
+  <text x="850" y="1631" font-size="9" fill="#666">ベンチマーク比α（TOPIX/SPY）</text>
+  <text x="850" y="1648" font-size="9" fill="#16a085" font-weight="700">→ ⑦ あなた・月次へ</text>
+  <text x="850" y="1662" font-size="9" fill="#888" font-style="italic">既存 paper_review.py 拡張</text>
+
+  <rect x="1095" y="1572" width="280" height="105" rx="4" fill="#fff" stroke="#16a085" stroke-width="1.5"/>
+  <text x="1105" y="1590" font-size="11" font-weight="700" fill="#0e6655">performance_coach</text>
+  <text x="1105" y="1605" font-size="9" fill="#666">X-2D — プロセス遵守＋</text>
+  <text x="1105" y="1618" font-size="9" fill="#666">リスク規律＋執行品質＋行動パターン</text>
+  <text x="1105" y="1631" font-size="9" fill="#666">→ next_session_operating_rules</text>
+  <text x="1105" y="1648" font-size="9" fill="#16a085" font-weight="700">→ ⑦ あなたが採否</text>
+  <text x="1105" y="1662" font-size="9" fill="#888" font-style="italic">原則7「人間A/B」と完全両立</text>
+
+  <!-- 戻り矢印（各モジュール → 影響先ステージ） -->
+  <!-- exposure_coach → ④ pre-gate (around x=460, y=600) -->
+  <path d="M 197 1572 Q 197 1100 460 880" stroke="#16a085" stroke-width="1.2" fill="none" stroke-dasharray="3,3" opacity="0.7"/>
+  <path d="M 460 880 L 470 875" stroke="#16a085" stroke-width="1.2" fill="none"/>
+  <path d="M 460 880 L 470 887" stroke="#16a085" stroke-width="1.2" fill="none"/>
+
+  <!-- holding_health → ④ 防御層 (around x=580, y=785) -->
+  <path d="M 452 1572 Q 452 1050 580 870" stroke="#16a085" stroke-width="1.2" fill="none" stroke-dasharray="3,3" opacity="0.7"/>
+  <path d="M 580 870 L 587 865" stroke="#16a085" stroke-width="1.2" fill="none"/>
+  <path d="M 580 870 L 587 877" stroke="#16a085" stroke-width="1.2" fill="none"/>
+
+  <!-- thesis_store → ⑤ MAGI 出力 (around x=833, y=1050) -->
+  <path d="M 707 1572 Q 707 1300 833 1055" stroke="#16a085" stroke-width="1.2" fill="none" stroke-dasharray="3,3" opacity="0.7"/>
+  <path d="M 833 1055 L 840 1050" stroke="#16a085" stroke-width="1.2" fill="none"/>
+  <path d="M 833 1055 L 840 1062" stroke="#16a085" stroke-width="1.2" fill="none"/>
+
+  <!-- postmortem → ⑦ あなた (around x=962, y=1320) -->
+  <path d="M 962 1572 L 962 1490" stroke="#16a085" stroke-width="1.2" fill="none" stroke-dasharray="3,3" opacity="0.7"/>
+  <path d="M 962 1490 L 956 1497" stroke="#16a085" stroke-width="1.2" fill="none"/>
+  <path d="M 962 1490 L 968 1497" stroke="#16a085" stroke-width="1.2" fill="none"/>
+
+  <!-- performance_coach → ⑦ あなた (around x=1235, y=1320) -->
+  <path d="M 1235 1572 L 1235 1490" stroke="#16a085" stroke-width="1.2" fill="none" stroke-dasharray="3,3" opacity="0.7"/>
+  <path d="M 1235 1490 L 1229 1497" stroke="#16a085" stroke-width="1.2" fill="none"/>
+  <path d="M 1235 1490 L 1241 1497" stroke="#16a085" stroke-width="1.2" fill="none"/>
+
+  <!-- INFRASTRUCTURE FOOTER（cross-cutting） -->
+  <rect x="60" y="1698" width="1320" height="40" rx="4" fill="#f5f5f5" stroke="#aaa"/>
+  <text x="75" y="1717" font-size="11" font-weight="700" fill="#555">基盤（cross-cutting）</text>
+  <text x="220" y="1717" font-size="10" fill="#666">macOS / FastAPI Server（MCPホスト＋UI配信＋APScheduler朝バッチ起動） / moomoo OpenD（常時起動・株価/残高/約定の同期）</text>
+  <text x="75" y="1732" font-size="9" fill="#888">launchd常駐・ローカル完結・月¥5,000 LLM予算 / HALT 即停止 / PAPER ⇄ LIVE 切替</text>
 </svg>
 </div>
 
 <div class="note note-update">
   <strong>図の読み方：</strong>
-  オレンジ実線 = moomoo関連のデータフロー（一元化方針）。
-  紫 = MCP（エージェント↔ツール）。
-  赤 = LLM呼び出し。
-  灰色破線枠 = Phase 2 以降の追加要素。
-  <strong>緑枠</strong>付き = STEP B で確定した新規／前倒し要素。
+  ① → ⑦ の順に上から下へ流れる。<strong>↓ が主フロー</strong>、<strong>← が注入元</strong>（LLM Layer など脇から差し込まれる要素）。
+  <strong>左列＝ZEELE 車線（紫破線・草案）</strong>は探索・発議のみ。決裁ラインへ直結せず、④MAGI 判定をバイパスして⑥UI（ZEELE zone）で表示される。
+  <strong>右列＝MAGI 車線（実線）</strong>はデータ→MCP→提案→MAGI 4段→碇司令→UI→人間決裁の本流。SCORE: NONE / 数値はコードのみ / LLMは「読む」だけ。
+  ⑥UI で2車線が左右2ゾーンに合流し、中央に「watchlist 昇格」ボタン。これが <strong>ZEELE↔MAGI 唯一の橋</strong>で、押すと翌朝バッチで③MAGI ラインに注入される。
+  ZEELE は <code>docs/plan/DECISIONS.md</code> 未反映の草案（§7参照）。確定までは UI でも視覚分離で表示する。
 </div>
 
 
@@ -862,6 +930,341 @@ td code, .code { font-family: ui-monospace, "SF Mono", Menlo, monospace; backgro
   「手動発注 + 自動同期」という中間形態を採用した。完全自動売買は Phase 3、完全手動入力は実運用で必ず破綻する。
   「moomooアプリで発注 → 約定は自動でツールに反映」のハイブリッドが、ユーザーの最終チェックを担保しつつ、ツールが常に最新データを持てる落とし所。
 </div>
+
+
+<!-- =============================================================== -->
+<h2>7. アーキテクチャ拡張案：二車線設計 ZEELE × MAGI ＋ 北極星 claude-trading-skills</h2>
+<!-- =============================================================== -->
+
+<div class="status-bar" style="border-left-color:#27ae60">
+  <strong style="color:#1e7e3f">2026-05-26 更新（D-24 確定）：</strong>
+  設計北極星を <a href="https://github.com/tradermonty/claude-trading-skills" target="_blank">tradermonty/claude-trading-skills</a>（MIT）に確定。
+  stock_skills は守り系モジュール提供源に格下げ。詳細仕様 = <code>docs/plan/spec/X2_claude_trading_skills_adoption.md</code>。
+  二車線設計（ZEELE × MAGI）は引き続き草案だが、<strong>MAGI 車線の "規律監督OS" の中身は X-2 で実装スペック化済</strong>。§7.6 参照。
+</div>
+
+<div class="status-bar" style="border-left-color:#8e44ad">
+  <strong style="color:#5b2c6f">ZEELE 側は引き続き草案。</strong>
+  着手は B0〜B6（MAGI本体）がペーパー運用に乗ってから（その間は MAGI車線への先行取り込みのみ実施）。
+</div>
+
+<h3>7.1 背景：現状の哲学的緊張</h3>
+<p>SCORE: NONE 原則は<b>決裁直前のハルシネーション遮断</b>のため。「攻め架構を凍結」の結論は<b>取引執行のエッジ無し</b>に対するもの。両者を一本化したことで<b>探索/発見にすら予測・スコアを禁じる</b>形になり、入口が痩せている。<b>車線分離でこの矛盾を解く</b>（Evangelion メタファ：ZEELE＝シナリオ発議、MAGI＝独立検証の合議体）。</p>
+
+<h3>7.2 構造：三層（探索データ → ZEELE / 真実データ → MAGI、車線間のゲートは人間のみ）</h3>
+
+<div class="diagram">
+<svg class="diagram-svg" viewBox="0 0 1200 500" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arr7" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#444"/>
+    </marker>
+    <marker id="arr7-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#2980b9"/>
+    </marker>
+    <marker id="arr7-purple" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#8e44ad"/>
+    </marker>
+    <marker id="arr7-orange" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#e67e22"/>
+    </marker>
+  </defs>
+
+  <!-- EXPLORATION DATA (top-left) -->
+  <text x="50" y="22" font-size="11" font-weight="700" fill="#888" letter-spacing="0.05em">EXPLORATION DATA</text>
+  <rect x="50" y="32" width="450" height="90" rx="6" fill="#f8f4ff" stroke="#8e44ad" stroke-width="1.5"/>
+  <text x="65" y="54" font-size="13" font-weight="700" fill="#5b2c6f">yfinance（60+地域） / Grok（X検索） / 業界narrative</text>
+  <text x="65" y="74" font-size="11" fill="#666">stock_skills 攻め系の餌：スクリーニング・センチメント・物語</text>
+  <text x="65" y="92" font-size="11" fill="#666">来歴メタは任意（"未照合・参考"扱い）</text>
+  <text x="65" y="110" font-size="11" fill="#666">LLMが数値を生成してよい層</text>
+
+  <!-- VERIFIED DATA (top-right) -->
+  <text x="700" y="22" font-size="11" font-weight="700" fill="#888" letter-spacing="0.05em">VERIFIED DATA</text>
+  <rect x="700" y="32" width="450" height="90" rx="6" fill="#fff3e0" stroke="#e67e22" stroke-width="1.5"/>
+  <text x="715" y="54" font-size="13" font-weight="700" fill="#a04a00">moomoo OpenAPI + yfinance（2ソース目）</text>
+  <text x="715" y="74" font-size="11" fill="#666">SEC EDGAR / EDINET / TDnet / NewsAPI</text>
+  <text x="715" y="92" font-size="11" fill="#666"><b>source_refs（出典）必須・data_asof（時点）必須</b></text>
+  <text x="715" y="110" font-size="11" fill="#666">重要数値は2ソース照合</text>
+
+  <!-- ZEELE LANE (left middle) -->
+  <rect x="50" y="160" width="540" height="200" rx="8" fill="#f5e6f7" stroke="#8e44ad" stroke-width="2"/>
+  <text x="65" y="184" font-size="15" font-weight="700" fill="#5b2c6f">ZEELE車線（発議・探索）</text>
+  <text x="65" y="204" font-size="11" fill="#666">stock_skills 攻め系を移植 — 16プリセット / momentum / contrarian / alpha /</text>
+  <text x="65" y="220" font-size="11" fill="#666">market-research（Grok narrative）</text>
+  <rect x="65" y="232" width="245" height="50" rx="4" fill="#fff" stroke="#8e44ad"/>
+  <text x="75" y="250" font-size="11" font-weight="700" fill="#5b2c6f">LLM数値 OK</text>
+  <text x="75" y="266" font-size="10" fill="#666">スコア・予測・シナリオ歓迎</text>
+  <rect x="320" y="232" width="260" height="50" rx="4" fill="#fff" stroke="#8e44ad"/>
+  <text x="330" y="250" font-size="11" font-weight="700" fill="#5b2c6f">出力＝候補プール＋物語</text>
+  <text x="330" y="266" font-size="10" fill="#666">「参考／未照合」バッジ常時表示</text>
+  <rect x="65" y="294" width="515" height="55" rx="4" fill="#fef7ff" stroke="#c39bd3" stroke-dasharray="3,3"/>
+  <text x="75" y="312" font-size="11" font-weight="700" fill="#5b2c6f">サンセット条項</text>
+  <text x="75" y="328" font-size="10" fill="#666">6ヶ月毎に ZEELE発議銘柄の1年後リターン vs ベンチマーク評価。</text>
+  <text x="75" y="343" font-size="10" fill="#666">勝てなければ車線ごと廃止（凍結思想の裏口復活を防ぐ）。</text>
+
+  <!-- MAGI LANE (right middle) -->
+  <rect x="620" y="160" width="540" height="200" rx="8" fill="#e8f4f8" stroke="#2980b9" stroke-width="2"/>
+  <text x="635" y="184" font-size="15" font-weight="700" fill="#1f5582">MAGI車線（判断・決裁）</text>
+  <text x="635" y="204" font-size="11" fill="#666">3審判（独立検証）→ 防御層 → 統合機構 → 碇司令 → 人間決裁</text>
+  <text x="635" y="220" font-size="11" fill="#666">stock_skills 守り系を移植（来歴メタ必須コントラクトへ）</text>
+  <rect x="635" y="232" width="245" height="50" rx="4" fill="#fff" stroke="#2980b9"/>
+  <text x="645" y="250" font-size="11" font-weight="700" fill="#1f5582">SCORE: NONE</text>
+  <text x="645" y="266" font-size="10" fill="#666">数値はコードのみ／LLM非生成</text>
+  <rect x="890" y="232" width="260" height="50" rx="4" fill="#fff" stroke="#2980b9"/>
+  <text x="900" y="250" font-size="11" font-weight="700" fill="#1f5582">出力＝決裁可能な推奨</text>
+  <text x="900" y="266" font-size="10" fill="#666">買い／売り／保留＋出典＋時点</text>
+  <rect x="635" y="294" width="515" height="55" rx="4" fill="#f0f8ff" stroke="#5dade2" stroke-dasharray="3,3"/>
+  <text x="645" y="312" font-size="11" font-weight="700" fill="#1f5582">先行取り込み（B並走中に着手可能）</text>
+  <text x="645" y="328" font-size="10" fill="#666">複利シミュ／株主還元利回り（配当＋自社株買い）／</text>
+  <text x="645" y="343" font-size="10" fill="#666">health_check＋調整アドバイザー17ルール</text>
+
+  <!-- BRIDGE: HUMAN (center bottom) -->
+  <rect x="320" y="400" width="560" height="70" rx="8" fill="#fffbe6" stroke="#f1c40f" stroke-width="2"/>
+  <text x="600" y="425" text-anchor="middle" font-size="14" font-weight="700" fill="#7d6608">人間が watchlist へ昇格 ── 車線間の唯一の橋</text>
+  <text x="600" y="445" text-anchor="middle" font-size="10.5" fill="#666">ZEELE→decisions の直接FK禁止／MAGIプロンプトに ZEELE 出力を入力しない（独立性原則）</text>
+  <text x="600" y="460" text-anchor="middle" font-size="10" fill="#888">→ 既存§1の「朝バッチ起動 → 3審判 → 防御層 → 統合 → 碇 → 人間決裁 → 手動発注」フローに合流</text>
+
+  <!-- DATA ARROWS (top → lanes) -->
+  <path d="M 275 122 L 275 158" stroke="#8e44ad" stroke-width="1.8" fill="none" marker-end="url(#arr7-purple)"/>
+  <path d="M 925 122 L 890 158" stroke="#e67e22" stroke-width="1.8" fill="none" marker-end="url(#arr7-orange)"/>
+
+  <!-- ZEELE → bridge -->
+  <path d="M 320 360 L 450 397" stroke="#8e44ad" stroke-width="1.8" fill="none" marker-end="url(#arr7-purple)"/>
+  <text x="335" y="382" font-size="10" fill="#5b2c6f" font-weight="700">候補プール</text>
+
+  <!-- bridge → MAGI -->
+  <path d="M 760 397 L 880 360" stroke="#2980b9" stroke-width="1.8" fill="none" stroke-dasharray="5,3" marker-end="url(#arr7-blue)"/>
+  <text x="775" y="382" font-size="10" fill="#1f5582" font-weight="700">朝バッチでMAGI判定</text>
+
+  <!-- VERIFIED → MAGI direct (existing flow) -->
+  <path d="M 925 122 L 925 158" stroke="#e67e22" stroke-width="1.5" fill="none" stroke-dasharray="4,3"/>
+</svg>
+</div>
+
+<div class="note note-update">
+  <strong>図の読み方：</strong>
+  紫＝ZEELE車線（発議・探索）／青＝MAGI車線（判断・決裁）／オレンジ＝既存の真実データ経路。
+  ZEELE と MAGI は <b>直接接続せず</b>、watchlist（黄色：人間ゲート）でのみ繋がる。
+  既存§1の全フローは「真実データ → MAGI車線」側にそのまま生きる。
+</div>
+
+<h3>7.3 機能の振り分け（stock_skills 側）</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th style="width:38%">機能</th>
+      <th style="width:18%">振り分け</th>
+      <th>理由</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>16プリセット探索 / momentum / contrarian / alpha</td>
+      <td><b style="color:#5b2c6f">ZEELE</b></td>
+      <td>発議＝OK。決裁ではないので凍結原則と矛盾しない</td>
+    </tr>
+    <tr>
+      <td>0-100割安度スコア / Grok生成見通し</td>
+      <td><b style="color:#5b2c6f">ZEELE限定</b></td>
+      <td>「未照合・参考」ラベルで MAGI車線には持ち込まない</td>
+    </tr>
+    <tr>
+      <td>market-research（Grok narrative）</td>
+      <td><b style="color:#5b2c6f">ZEELE</b></td>
+      <td>読み物として価値（決裁入力には使わない）</td>
+    </tr>
+    <tr>
+      <td>value_trap / shareholder_yield（配当＋自社株買い）</td>
+      <td><b style="color:#1f5582">MAGI車線</b></td>
+      <td>決定論的ルール／コード由来の計算＝SCORE:NONE適合。買い持ちの守り</td>
+    </tr>
+    <tr>
+      <td>複利シミュ（3シナリオ＋配当再投資＋積立）</td>
+      <td><b style="color:#1f5582">MAGI車線</b></td>
+      <td>「所有×時間×複利」の可視化＝持ち続け動機づけ。コード由来</td>
+    </tr>
+    <tr>
+      <td>health_check（3段階アラート）／調整アドバイザー17ルール／concentration HHI</td>
+      <td><b style="color:#1f5582">MAGI車線</b></td>
+      <td>規律監督の中核。ルール診断→アクション＝SCORE:NONE適合</td>
+    </tr>
+    <tr>
+      <td>ストレステスト（8シナリオ・相関・VaR・感応度）</td>
+      <td><b style="color:#1f5582">MAGI車線</b></td>
+      <td>事前曝露把握＝守り。狼狽売り抑止に直結</td>
+    </tr>
+    <tr>
+      <td>investment-note（テーゼ/懸念/学び）</td>
+      <td>両車線で共有</td>
+      <td>ZEELE 用「気になった理由」、MAGI 用「持ち続ける理由」をタイプで区別</td>
+    </tr>
+    <tr>
+      <td>GraphRAG / graph-query（Neo4j）</td>
+      <td>履歴層（両車線にまたぐ）</td>
+      <td>トラックレコード評価（MAGI）と過去候補参照（ZEELE）両方に効く。重い → 後回し</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>7.4 漏出防止の規律（UIで強制、良心ではなく構造で）</h3>
+
+<ol style="margin-left:20px;font-size:13px;line-height:1.7">
+  <li><b>UI色分け＋ラベル</b>：ZEELE出力は別ゾーン・別配色・「参考／未照合」バッジ常時。<code>new_dashboard.html</code> の現行レイアウトには侵入せず、新規セクションで追加。</li>
+  <li><b>物理的な経路遮断</b>：ZEELE出力テーブルから <code>decisions</code> テーブルへの直接FKを禁止。watchlist 経由でのみ流入（コードで強制）。</li>
+  <li><b>MAGIプロンプト独立性</b>：MAGIプロンプトに ZEELE 出力（スコア・見通し）を入力しない。審判の独立性原則の延長。</li>
+  <li><b>サンセット条項</b>：6ヶ月毎に ZEELE発議銘柄の1年後リターン vs ベンチマーク評価。勝てなければ ZEELE 車線ごと廃止。</li>
+  <li><b>用語衝突の整理</b>：「scenario」は ZEELE（<code>narrative_scenario</code>：LLM生成）と MAGI（<code>stress_scenario</code>：コード由来）で命名規約を分ける。</li>
+</ol>
+
+<h3>7.5 着手順（D-24 / X-2 で更新）</h3>
+
+<ol style="margin-left:20px;font-size:13px;line-height:1.7">
+  <li><b>B0〜B6</b>（MAGI本体）をペーパー運用まで完成（現在進行中）</li>
+  <li>並走で <b>X-2A：thesis_store 実装</b>（Trader Memory Core 翻案）— B0〜B6に最短経路で効く</li>
+  <li>続いて <b>X-2B：holding_health（Kanchi T1-T5 翻案）</b> — EDINET 統合済の tradesupport で直接効く</li>
+  <li>その後 <b>X-2C：exposure_coach</b> — 既存 market_analyst の SCORE:NONE 違反箇所を解体・再構成</li>
+  <li>MAGI 車線がペーパー運用に乗ってから <b>X-2D：postmortem + performance_coach</b>（P6 評価・学習）</li>
+  <li>並走で stock_skills 守り系（value_trap／株主還元利回り／複利シミュ／concentration HHI）を MAGI 車線に取り込み</li>
+  <li>すべて完成後に <b>Z0：ZEELE車線起こし</b>（claude-trading-skills の edge-pipeline 7スキル群を参考）</li>
+</ol>
+
+<div class="note note-update" style="border-left-color:#8e44ad">
+  <strong>借用コストの注意：</strong>
+  借用元の OSS（claude-trading-skills / stock_skills / dexter-jp 等）は <code>source_refs</code> / <code>data_asof</code> の来歴メタを持たない。
+  借用＝コピペではなく、tradesupport の<b>「2ソース照合・来歴必須」コントラクトへ移植</b>する作業（D-21 適合）。
+  yfinance は両車線で使用（ZEELE 探索目的・MAGI は moomoo の2ソース目）。
+</div>
+
+<!-- =============================================================== -->
+<h3>7.6 北極星：claude-trading-skills（D-24・2026-05-26 確定）</h3>
+<!-- =============================================================== -->
+
+<p><a href="https://github.com/tradermonty/claude-trading-skills" target="_blank">tradermonty/claude-trading-skills</a>（MIT・55スキル・8カテゴリ・5公式ワークフロー）が tradesupport の設計思想と<b>ほぼ完全一致</b>。PROJECT_VISION から引用：</p>
+
+<blockquote style="margin:8px 20px;padding:10px 14px;background:#f0f8ff;border-left:3px solid #2980b9;font-size:12.5px">
+  "<b>not to outsource buy/sell decisions to AI</b>"<br>
+  "Decision-process OS — <b>Plan → Trade → Record → Review → Improve</b>"<br>
+  "long-term investing, ETFs, and dividend stocks as their <b>core</b>, while using disciplined swing trading as a <b>satellite strategy</b>"
+</blockquote>
+
+<p>memory「持ち続けさせる機・Core-Satellite 規律監督」の英訳と言える整合。<b>stock_skills は割安発見器、claude-trading-skills は規律監督OS</b>。tradesupport が目指しているのは後者。</p>
+
+<h4 style="margin-top:18px">7.6.1 5ワークフロー骨格 → tradesupport DAG マッピング</h4>
+
+<table>
+  <thead>
+    <tr>
+      <th style="width:23%">claude-trading-skills</th>
+      <th style="width:10%">頻度</th>
+      <th style="width:8%">所要</th>
+      <th>tradesupport 翻案</th>
+      <th style="width:12%">対応 X-2</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>market-regime-daily</code></td>
+      <td>日次</td>
+      <td>15分</td>
+      <td>朝バッチ＝breadth + uptrend + <b>exposure_coach</b>（NEW）</td>
+      <td>X-2C</td>
+    </tr>
+    <tr>
+      <td><code>core-portfolio-weekly</code></td>
+      <td>週次</td>
+      <td>60分</td>
+      <td>portfolio_snapshot + allocation + <b>holding_health</b>（NEW） + rebalance</td>
+      <td>X-2A/B</td>
+    </tr>
+    <tr>
+      <td><code>trade-memory-loop</code></td>
+      <td>クローズ毎</td>
+      <td>30分</td>
+      <td>thesis_close + <b>postmortem</b>（NEW） + performance_coach（NEW）</td>
+      <td>X-2D</td>
+    </tr>
+    <tr>
+      <td><code>monthly-performance-review</code></td>
+      <td>月次</td>
+      <td>90分</td>
+      <td>monthly_aggregate + aggregate_postmortem + <b>rule_changes_for_next_month</b>（NEW）</td>
+      <td>X-2D</td>
+    </tr>
+    <tr>
+      <td><code>swing-opportunity-daily</code></td>
+      <td>日次</td>
+      <td>30分</td>
+      <td>ZEELE 車線（凍結中）— exposure_decision が non-restrictive の時のみ走る</td>
+      <td>Z0（後回し）</td>
+    </tr>
+  </tbody>
+</table>
+
+<h4 style="margin-top:18px">7.6.2 5キー翻案モジュール（<code>trading_agent/discipline/</code> 新ディレクトリ）</h4>
+
+<table>
+  <thead>
+    <tr>
+      <th style="width:22%">翻案モジュール</th>
+      <th style="width:13%">着想元</th>
+      <th>機能</th>
+      <th style="width:10%">SCORE:NONE適合</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>discipline/exposure_coach.py</code></td>
+      <td>exposure-coach</td>
+      <td>8入力統合→ posture（NEW_ENTRY_ALLOWED/REDUCE_ONLY/CASH_PRIORITY） + ceiling_pct（コード由来・状態ラベル化）</td>
+      <td>✓（状態ラベル）</td>
+    </tr>
+    <tr>
+      <td><code>discipline/holding_health.py</code></td>
+      <td>kanchi-dividend-review-monitor</td>
+      <td>T1-T5 強制見直し（減配/カバレッジ/信用/開示KW/構造悪化）→ OK/WARN/REVIEW。<b>絶対 auto-sell しない</b></td>
+      <td>✓（決定論的）</td>
+    </tr>
+    <tr>
+      <td><code>discipline/thesis_store.py</code></td>
+      <td>trader-memory-core</td>
+      <td>投資テーゼライフサイクル（IDEA→ENTRY_READY→ACTIVE→CLOSED）。YAML state、jsonschema 検証</td>
+      <td>✓（数値はコード）</td>
+    </tr>
+    <tr>
+      <td><code>discipline/postmortem.py</code></td>
+      <td>signal-postmortem</td>
+      <td>クローズ後分類（TRUE_POSITIVE / FALSE_POSITIVE / MISSED_OPPORTUNITY / REGIME_MISMATCH）＋ベンチマーク比α</td>
+      <td>✓（コード分類）</td>
+    </tr>
+    <tr>
+      <td><code>discipline/performance_coach.py</code></td>
+      <td>trade-performance-coach</td>
+      <td>プロセス遵守＋リスク規律＋執行品質＋行動パターン → next_session_operating_rules（人間が採否）</td>
+      <td>✓（決定論的判定）</td>
+    </tr>
+  </tbody>
+</table>
+
+<h4 style="margin-top:18px">7.6.3 既存モジュールとの整合（重要な再構成）</h4>
+
+<ul style="margin-left:20px;font-size:13px;line-height:1.7">
+  <li><strong><code>agents/market_analyst.py</code></strong>（現在 LLM が bull/base/bear scenario の数値を生成 = SCORE:NONE 違反）→ <code>discipline/exposure_coach.py</code> + breadth + uptrend に分解。<b>LLM は「読む・整形」のみに後退</b></li>
+  <li><strong><code>evaluation/paper_review.py</code></strong> → <code>discipline/postmortem.py</code> に拡張（4分類追加）</li>
+  <li><strong><code>risk/params.py</code></strong>（D-23 の8数値）→ 維持。<code>performance_coach.py</code> が遵守フラグを生成</li>
+  <li><strong><code>magi/</code></strong>（MAGI 4段）→ <code>exposure_decision</code> を前段ゲートに、<code>holding_health</code> の REVIEW を防御層に統合</li>
+</ul>
+
+<h4 style="margin-top:18px">7.6.4 D-23 規律層との関係</h4>
+
+<p>D-23「規律層（外骨格）」が<b>抽象的な8数値の方針</b>を定めたのに対し、D-24（claude-trading-skills 北極星）は<b>具体的な実装スペック</b>を与える。両者は補完関係：</p>
+
+<ul style="margin-left:20px;font-size:13px;line-height:1.7">
+  <li><b>D-23 が定める What</b>：8数値（リスク2%/5銘柄/30%上限/現金20%/DD-15%停止/増額ゲート/損切12%/JP主体）</li>
+  <li><b>D-24 が定める How</b>：T1-T5 トリガー / exposure_decision の3状態 / thesis ライフサイクル / 4分類 postmortem / 月次 operating_rules 提案</li>
+</ul>
+
+<p>D-24 確定により、D-23 の「外骨格」が<b>抽象論から実装可能な仕様</b>になった（X-2 spec で詳細化）。</p>
 
 </div>
 

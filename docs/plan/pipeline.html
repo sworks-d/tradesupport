@@ -205,12 +205,55 @@
 </div>
 
 <div class="external">
-  <h3>★ 外部AIエージェント投資リポジトリの活用（要件）＝未着手 0%</h3>
+  <h3>★ 外部AIエージェント投資リポジトリの活用＝北極星確定（2026-05-26 D-24）</h3>
+  <p style="font-size:12px;color:var(--ink2);margin:4px 0 8px">
+    DECISIONS.md D-24 で確定：<b>claude-trading-skills を設計北極星</b>とする。詳細仕様 = <code>docs/plan/spec/X2_claude_trading_skills_adoption.md</code>。
+  </p>
+
+  <p style="font-size:12.5px;color:var(--ink);margin:8px 0 4px"><b>1. 借用候補リポジトリ（D-24 で再ランキング）</b></p>
   <ul>
-    <li><b>virattt/ai-hedge-fund</b>：投資家ペルソナ分析エージェント／データadapter／バックテスト・評価指標 → 借用候補</li>
-    <li><b>TradingAgents</b>：多エージェントの議論(debate)・反証フレーム → MAGIの「割れを見せる」に近い</li>
-    <li>現状：docsで調査のみ。コード/手法の流用はゼロ。<b>「何を借りるか」棚卸しが必要</b>。</li>
+    <li><b style="color:var(--ok)">tradermonty/claude-trading-skills</b>（★北極星★・MIT）：55スキル・8カテゴリ・5公式ワークフロー。<br>
+      <span style="color:var(--ok)">"Decision-process OS / Plan → Trade → Record → Review → Improve"</span>＝memory「持ち続けさせる機・Core-Satellite規律監督」と完全整合。<br>
+      <b>X-2A〜D で5モジュール翻案</b>（thesis_store / holding_health / exposure_coach / postmortem / performance_coach）。</li>
+    <li><b>edinetdb/dexter-jp</b>（JP特化・要確認）：EDINET+J-Quants 自律エージェント。<b>tradesupport は既に EDINET 使用＝直接相性</b>。MAGI BALTHASAR（出典照合）の実装パターン参考。</li>
+    <li><b>okikusan-public/stock_skills</b>（守り系のみ採用）：<br>
+      <span style="color:var(--ok)">守り系（value_trap / shareholder_yield / 複利シミュ / concentration HHI）→ MAGI 車線</span>。
+      <span style="color:var(--no)">攻め系（16プリセット探索／0-100スコア／Grok生成見通し）→ 不採用</span>。</li>
+    <li><b>virattt/ai-hedge-fund</b>：投資家ペルソナ分析／バックテスト評価指標 → P6 補強候補</li>
+    <li><b>TradingAgents</b>：多エージェント議論(debate)・reflection 構造 → MAGI 統合機構の「割れ表示」と P6-2/3 補強</li>
   </ul>
+
+  <p style="font-size:12.5px;color:var(--ink);margin:12px 0 4px"><b>2. 構造案：二車線アーキテクチャ（ZEELE × MAGI）</b></p>
+  <p style="font-size:12px;color:var(--ink2);margin-bottom:6px">
+    探索（攻め）と決裁（守り）を別車線に分け出力経路を分離。車線間のゲートは<b>「人間が watchlist へ昇格」だけ</b>。
+  </p>
+  <ul>
+    <li><b>ZEELE車線（発議・探索）</b>：stock_skills攻め系を移植。LLMが数値を出してよい／スコア・予測歓迎／出力は<b>「候補プール＋物語」止まり、決裁ラインへ直結禁止</b></li>
+    <li><b>真実車線</b>：moomoo＋yfinance の2ソース照合（来歴メタ <code>source_refs</code>／<code>data_asof</code> 必須）</li>
+    <li><b>MAGI車線（判断・決裁）</b>：3審判→防御層→統合→碇司令→人間決裁。SCORE: NONE、数値はコードのみ。stock_skills守り系を移植</li>
+  </ul>
+
+  <p style="font-size:12.5px;color:var(--ink);margin:12px 0 4px"><b>3. 漏出防止の規律（UIで強制）</b></p>
+  <ul>
+    <li>ZEELE出力は別ゾーン・別配色・「参考／未照合」バッジ常時表示</li>
+    <li>ZEELE→<code>decisions</code> の直接FK禁止。watchlist 経由でのみ流入（コードで強制）</li>
+    <li>MAGIプロンプトに ZEELE 出力を入力しない（審判の独立性原則の延長）</li>
+    <li><b>サンセット条項</b>：6ヶ月毎にZEELE発議銘柄の1年後リターン vs ベンチマーク評価 → 勝てなければ車線ごと廃止</li>
+  </ul>
+
+  <p style="font-size:12.5px;color:var(--ink);margin:12px 0 4px"><b>4. 着手順（D-24 / X-2 で更新）</b></p>
+  <ul>
+    <li><b>X-2A：thesis_store</b>（最優先・B0〜B6 並走可）— Trader Memory Core 翻案。投資テーゼライフサイクル管理</li>
+    <li><b>X-2B：holding_health</b> — Kanchi T1-T5 翻案。EDINET 統合済 tradesupport で直接実装可</li>
+    <li><b>X-2C：exposure_coach</b> — 既存 market_analyst の SCORE:NONE 違反箇所を解体・再構成</li>
+    <li><b>X-2D：postmortem + performance_coach</b>（ペーパー運用後）— P6 評価・学習の実装層</li>
+    <li>並走で stock_skills 守り系（value_trap／株主還元利回り／複利シミュ／HHI）を MAGI 車線に取り込み</li>
+    <li>すべて完成後に <b>Z0：ZEELE 車線起こし</b>（claude-trading-skills の edge-pipeline 7スキル群を参考）</li>
+  </ul>
+
+  <p style="font-size:11.5px;color:var(--ink3);margin-top:10px;font-style:italic">
+    借用方針（D-21 適合）：考え方の蒸留→自前実装。コードの直輸入はしない。各モジュール先頭に "Inspired by …" コメント。
+  </p>
 </div>
 
 <p style="font-size:12px;color:var(--ink3);margin-top:16px">
