@@ -62,3 +62,4 @@
 - `0054-snapshot-gendo-card-wiring.md` — UI反映#1：build_snapshotに gendo_card 注入＋碇stanceを投票のみに修正（snapshot.jsonにカードのデータ）
 - `0055-ui-gendo-card-render.md` — UI反映#2：ダッシュボード碇ゾーンにGENDO推奨カード描画(LiveData.tsx・tsc/eslint clean)
 - `0056-paper-review-process-adherence.md` — P4-4：守りをリターンでなくプロセス遵守で測る(check_process_adherence)＋リスク調整純関数。run_paper --evaluate を向け直し
+- `0057-moomoo-jp-api-confirmed.md` — moomoo JP OpenAPI実機確定(日本非対応は誤り・同意②後JP/REAL読取OK・JP SIMULATE非対応・accinfo currency=JPY必須)＋MoomooBroker通貨修正(ライブ実証)

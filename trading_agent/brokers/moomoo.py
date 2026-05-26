@@ -47,15 +47,20 @@ class MoomooBroker:
         *,
         host: str = "127.0.0.1",
         port: int = 11111,
-        trd_env: str = "SIMULATE",  # paper-first（liveは明示切替）
+        # paper-first（liveは明示切替）。※JPはAPI上REALのみ（SIMULATE非対応）
+        trd_env: str = "SIMULATE",
         markets: tuple[str, ...] = ("US", "JP"),
-        security_firm: str = "FUTUJP",  # moomoo JP（実環境の診断で確認）
+        # moomoo JP。2026-05-26 実環境でJP/REAL疎通OK（保有/口座読取）
+        security_firm: str = "FUTUJP",
+        # accinfo_query の換算通貨。JP口座は JPY 必須（未指定だと変換エラー）
+        currency: str = "JPY",
     ) -> None:
         self._host = host
         self._port = port
         self._trd_env = trd_env
         self._markets = markets
         self._security_firm = security_firm
+        self._currency = currency
 
     @classmethod
     def from_settings(cls, settings: Any) -> MoomooBroker:
@@ -72,6 +77,7 @@ class MoomooBroker:
             trd_env=trd_env,
             markets=markets or ("US", "JP"),
             security_firm=getattr(settings, "moomoo_security_firm", "FUTUJP"),
+            currency=getattr(settings, "moomoo_currency", "JPY"),
         )
 
     def get_positions(self) -> list[Position]:
@@ -111,7 +117,10 @@ class MoomooBroker:
         sdk = _import_sdk()
         ctx = self._open_ctx(sdk, self._markets[0])
         try:
-            ret, data = ctx.accinfo_query(trd_env=getattr(sdk.TrdEnv, self._trd_env))
+            ret, data = ctx.accinfo_query(
+                trd_env=getattr(sdk.TrdEnv, self._trd_env),
+                currency=getattr(sdk.Currency, self._currency),
+            )
         except Exception as exc:
             raise BrokerUnavailable(f"accinfo_query 例外: {exc}") from exc
         finally:
