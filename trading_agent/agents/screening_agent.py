@@ -85,7 +85,11 @@ def enrich_candidates(
 class ScreeningAgentInput(AgentInput):
     universe_size: int = 500
     strategies: list[str] = Field(default_factory=lambda: ["v_shape", "theme"])
-    min_score: float = 50.0
+    # ペーパーテスト中の暫定値：本来 50.0 だが、yfinance の JP 四半期 EPS データが
+    # 薄く composite が現実的に 50 に届かないため、観察可能な水準まで一時的に下げる。
+    # 入力データ層が整備されたら（JQuants 切替等）50.0 に戻す（→ docs/MORNING_REVIEW.md
+    # の閾値見直し論点）。
+    min_score: float = 20.0
     max_results: int = 30
 
 
@@ -120,15 +124,24 @@ class ScreeningAgent(Agent[ScreeningAgentInput]):
         self._sector_cache = sector_cache or SectorReturnCache()
 
     async def execute(self, agent_input: ScreeningAgentInput) -> AgentOutput:
+        import asyncio
+
         universe = self._load_universe(self._ctx.engine, agent_input.universe_size)
         # テーマスコア用：topics 表から各銘柄の言及件数を一括取得（DB1往復）
         keyword_counts = keyword_match_counts(
             self._ctx.engine, [u.ticker for u in universe]
         )
-        tickers_data = [
-            await self._gather(u, keyword_count=keyword_counts.get(u.ticker, 0))
-            for u in universe
-        ]
+        # universe が大きい場合に直列処理だと timeout（universe=500 で 5 分超え）。
+        # asyncio.Semaphore で yfinance rate limit を考慮しつつ並列化。
+        sem = asyncio.Semaphore(16)
+
+        async def _gather_with_limit(u: Universe) -> ScreeningTickerData:
+            async with sem:
+                return await self._gather(u, keyword_count=keyword_counts.get(u.ticker, 0))
+
+        tickers_data = list(
+            await asyncio.gather(*[_gather_with_limit(u) for u in universe])
+        )
 
         sout = await self._ctx.call_tool(
             "screening",

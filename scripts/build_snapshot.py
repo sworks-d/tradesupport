@@ -1000,10 +1000,20 @@ def _build_zeele_section(
         available_cash_jpy if available_cash_jpy is not None else account_total_jpy
     )
 
+    # ZEELE は「量より質：3-5銘柄で十分」（ZeelePanel.tsx の設計コメント）。
+    # qualifier が多数になっても UI には reference_score 上位だけを出す。
+    _ZEELE_DISPLAY_TOP_N = 5
+
     candidates: list[dict[str, object]] = []
     with Session(engine) as session:
         active_states = list(
-            session.exec(select(ZeeleState).where(col(ZeeleState.is_active)))
+            session.exec(
+                select(ZeeleState)
+                .where(col(ZeeleState.is_active))
+                .order_by(col(ZeeleState.reference_score).desc())
+                .order_by(col(ZeeleState.weeks_in_zeele).desc())
+                .limit(_ZEELE_DISPLAY_TOP_N)
+            )
         )
         name_map = {
             u.ticker: u.name

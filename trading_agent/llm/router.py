@@ -9,6 +9,7 @@ from __future__ import annotations
 # モデル ID（環境のモデル一覧に準拠）
 MODEL_SONNET = "claude-sonnet-4-6"  # Hot Path
 MODEL_OPUS = "claude-opus-4-7"  # Critical
+MODEL_HAIKU = "claude-haiku-4-5"  # Cold Path（Ollama 未導入時のフォールバック実モデル）
 MODEL_OLLAMA = "ollama"  # Cold Path（実モデル名は settings.ollama_model）
 
 # purpose ベースの分類（SYSTEM_DESIGN §5.2/5.3）
@@ -18,10 +19,13 @@ CRITICAL_PURPOSES = frozenset({"deep_dive"})
 # Cold を Hot に格上げするトークン閾値
 _COLD_ESCALATION_TOKENS = 4000
 
-# 【たたき台】per-1K トークンの円単価（SYSTEM_DESIGN §5.4、2026-05 時点）
+# per-1K トークンの円単価（2026-05 時点、概算）
+# Haiku が登録されていないと未知モデル扱いで Sonnet 単価にフォールバックされ、
+# BudgetGuard が実コストの 3〜4 倍で予算消費を記録して誤発動する。
 PRICING_JPY: dict[str, tuple[float, float]] = {
     MODEL_SONNET: (0.45, 2.25),
     MODEL_OPUS: (2.25, 11.25),
+    MODEL_HAIKU: (0.15, 0.75),  # 約 1/3 単価（Haiku 4.5）
     MODEL_OLLAMA: (0.0, 0.0),
 }
 

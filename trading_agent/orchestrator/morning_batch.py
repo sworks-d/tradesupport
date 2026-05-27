@@ -194,11 +194,17 @@ async def run_morning_batch(
         )
 
     async def run_zeele_curator() -> object:
-        # screening_results を読んで「3週連続入賞」を ZeeleState に upsert する。
-        # 日次で走ること自体は冪等（同日に複数回走らせても結果は同じ）。
+        # screening_results を読んで「N週連続入賞」を ZeeleState に upsert する。
+        # 本来は 3週連続だが、ペーパーテスト期間は観察可能性を優先して 1週連続 まで
+        # 緩和する（screening 側 min_score も併せて緩和済み）。データ層が整備
+        # されたら ZeeleCuratorInput の qualification_weeks を 3 に戻す。
         return await execute_agent(
             ZeeleCuratorAgent(ctx),
-            ZeeleCuratorInput(invocation_id=invocation_id, dry_run=dry_run),
+            ZeeleCuratorInput(
+                invocation_id=invocation_id,
+                dry_run=dry_run,
+                qualification_weeks=1,
+            ),
             engine,
         )
 
@@ -252,7 +258,7 @@ async def run_morning_batch(
         DAGNode("pre_check", pre_check, timeout_s=30),
         DAGNode("topics_collector", run_topics, depends_on=["pre_check"], timeout_s=600),
         DAGNode("universe_refresh", universe_refresh, depends_on=["pre_check"], timeout_s=300),
-        DAGNode("screening", run_screening, depends_on=["topics_collector"], timeout_s=300),
+        DAGNode("screening", run_screening, depends_on=["topics_collector"], timeout_s=900),
         DAGNode("zeele_curator", run_zeele_curator, depends_on=["screening"], timeout_s=60),
         DAGNode("market_analyst", run_market_analyst, depends_on=["screening"], timeout_s=600),
         DAGNode("sell_recommender", run_sell, depends_on=["market_analyst"], timeout_s=300),
