@@ -23,7 +23,7 @@ from pathlib import Path
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, col, select
 
-from trading_agent.brokers import StandInBroker, load_positions
+from trading_agent.brokers import load_account, load_positions
 from trading_agent.db import create_all, get_engine
 from trading_agent.discipline.exposure_coach import ExposureInputs, decide_exposure
 from trading_agent.discipline.holding_health import check_all_holdings
@@ -31,7 +31,6 @@ from trading_agent.llm.anthropic_client import AnthropicClient
 from trading_agent.magi import casper_llm, classify_split, command, run_judges, verify
 from trading_agent.magi.gendo import gendo_recommend
 from trading_agent.magi.persist import derive_gendo_stance
-from trading_agent.models.thesis import Thesis, ThesisStatus
 from trading_agent.mcp_tools.fundamentals import (
     FundamentalsInput,
     FundamentalsOutput,
@@ -45,6 +44,9 @@ from trading_agent.mcp_tools.technicals import (
     TechnicalsOutput,
     TechnicalsTool,
 )
+from trading_agent.models.thesis import Thesis, ThesisStatus
+from trading_agent.models.universe import Universe
+from trading_agent.models.zeele import ZeeleState
 from trading_agent.portfolio import recommend_position
 from trading_agent.portfolio.sizing import SizeRec
 from trading_agent.screening import (
@@ -58,7 +60,11 @@ from trading_agent.utils.time_utils import utcnow
 _log = get_logger("snapshot")
 
 # 買い候補（カードの data-detail / data-panel id → ティッカー）。まず NVDA。
-CANDIDATES: dict[str, str] = {"nvda": "NVDA"}
+# 買い候補の MAGI 詳細評価対象。F0 期は NVDA をサンプル枠として固定していたが、
+# 「実データだけを UI に出す」方針へ転換したため空にする。decisions テーブルに
+# 入った buy 候補は当面 candidates_pending（簡易表示）として snapshot に流す。
+# 詳細 MAGI 評価は HANDOFF §5「低 4：CANDIDATES マップ拡張」のタスクで拡張する。
+CANDIDATES: dict[str, str] = {}
 
 _ROLE = {"MELCHIOR": "業績", "BALTHASAR": "株価", "CASPER": "文脈"}
 _DOT = {"MELCHIOR": "#ff8c42", "BALTHASAR": "#4ecdc4", "CASPER": "#fbbf24"}
@@ -156,6 +162,234 @@ def _demo_secondary(tickers: list[str]) -> dict[str, dict[str, float]]:
 
 def _fmt_price(ticker: str, price: float) -> str:
     return f"¥ {price:,.0f}" if _is_jp(ticker) else f"$ {price:,.2f}"
+
+
+def _holdings_source_label(broker_src: str, trading_mode: str, account_src: str) -> str:
+    # broker_src は保有取得（保有 0 件だと "standin" にフォールバックされる仕様）。
+    # 口座側（account_src）が moomoo に繋がっていれば「保有 0 件」のメッセージで明示する。
+    if broker_src == "moomoo":
+        return "moomoo 実弾" if trading_mode == "live" else "moomoo JP REAL（紙運用：仮想入金 overlay）"
+    if account_src in ("moomoo", "moomoo+overlay"):
+        suffix = "実弾" if trading_mode == "live" else "紙運用 overlay"
+        return f"moomoo 接続済・保有 0 件（{suffix}）"
+    return "サンプル/未接続"
+
+
+def _fetch_price_histories(tickers: list[str], days: int = 30) -> dict[str, list[float]]:
+    """yfinance で複数銘柄の終値履歴を一括取得（30 日分）。失敗銘柄は除外。"""
+    if not tickers:
+        return {}
+    import yfinance as yf
+
+    from trading_agent.mcp_tools.fundamentals import to_yfinance_symbol
+
+    sym_map = {to_yfinance_symbol(t): t for t in tickers}
+    out: dict[str, list[float]] = {}
+    try:
+        df = yf.download(
+            list(sym_map.keys()),
+            period=f"{days}d",
+            interval="1d",
+            auto_adjust=True,
+            progress=False,
+            group_by="ticker",
+            threads=True,
+        )
+    except Exception as exc:
+        _log.warning("price_history_fetch_failed", error=str(exc))
+        return out
+    if df is None or df.empty:
+        return out
+    for sym, ticker in sym_map.items():
+        try:
+            series = df[sym]["Close"] if len(sym_map) > 1 else df["Close"]
+            closes = [float(x) for x in series.dropna().tolist()]
+            if closes:
+                out[ticker] = closes
+        except Exception as exc:
+            _log.warning("price_history_extract_failed", ticker=ticker, error=str(exc))
+    return out
+
+
+def _build_pending_decisions(engine: Engine) -> dict[str, dict[str, object]]:
+    """decisions テーブルから決裁待ちの buy 候補を取り出し、推奨度順に整形。
+
+    各 decision に `commander_rec` の最新 1 件と `judge_verdict`（MAGI 3 審判）の最新を
+    join し、`commander_recommendation` `commander_counter` `verdicts` を含める。
+
+    ソート優先順（推奨度の高い順）:
+        1. commander 推奨カテゴリ: 買い → 保留 → その他 → 推奨なし
+        2. gendo_stance: 推し → 要検討 → 静観 → 不明
+        3. score: 降順（None は最後）
+        4. expected_return: 降順（None は最後）
+        5. id: 降順（最新優先）
+    """
+    from trading_agent.models.decisions import Decision
+    from trading_agent.models.magi import CommanderRec, JudgeVerdict
+    from trading_agent.models.universe import Universe as Uni
+
+    stance_priority: dict[str, int] = {"推し": 0, "要検討": 1, "静観": 2}
+
+    def commander_category(rec: str | None) -> int:
+        if not rec:
+            return 3
+        if "買い" in rec[:10]:
+            return 0
+        if "保留" in rec[:10]:
+            return 1
+        return 2
+
+    with Session(engine) as s:
+        rows = s.exec(
+            select(Decision)
+            .where(col(Decision.action) == "buy")
+            .where(col(Decision.status).in_(("awaiting", "approved")))
+        ).all()
+        commanders: dict[int, CommanderRec] = {}
+        for cr in s.exec(
+            select(CommanderRec).order_by(col(CommanderRec.created_at).asc())
+        ).all():
+            if cr.decision_id is not None:
+                commanders[cr.decision_id] = cr
+        verdicts_by_decision: dict[int, dict[str, str]] = {}
+        for v in s.exec(
+            select(JudgeVerdict).order_by(col(JudgeVerdict.created_at).asc())
+        ).all():
+            if v.decision_id is None:
+                continue
+            verdicts_by_decision.setdefault(v.decision_id, {})[v.judge] = v.verdict
+        universe_meta: dict[str, dict[str, str]] = {}
+        for u in s.exec(select(Uni)).all():
+            universe_meta[u.ticker] = {
+                "name": u.name or "",
+                "market": u.market or "",
+                "sector": u.sector or "",
+            }
+
+    def sort_key(d: Decision) -> tuple[int, int, float, float, int]:
+        cmd = commanders.get(d.id or -1)
+        return (
+            commander_category(cmd.recommendation if cmd else None),
+            stance_priority.get(d.gendo_stance or "", 9),
+            -(float(d.score) if d.score is not None else -1.0),
+            -(float(d.expected_return) if d.expected_return is not None else -999.0),
+            -(d.id or 0),
+        )
+
+    sorted_rows = sorted(rows, key=sort_key)
+
+    # 価格履歴を一括取得（30 日分の終値・sparkline 描画用）。失敗しても続行。
+    histories = _fetch_price_histories(
+        [d.ticker for d in sorted_rows if d.id is not None], days=30
+    )
+
+    out: dict[str, dict[str, object]] = {}
+    for d in sorted_rows:
+        if d.id is None:
+            continue
+        card_id = f"d{d.id}"
+        cmd = commanders.get(d.id)
+        meta = universe_meta.get(d.ticker, {"name": "", "market": "JP", "sector": ""})
+        out[card_id] = {
+            "decision_id": d.id,
+            "ticker": d.ticker,
+            "name": meta["name"],
+            "market": meta["market"],
+            "sector": meta["sector"],
+            "action": d.action,
+            "status": d.status,
+            "gendo_stance": d.gendo_stance or "—",
+            "thesis": d.thesis_at_decision or "",
+            "entry_price": d.entry_price,
+            "stop_pct": d.stop_pct,
+            "target_period_days": d.target_period_days,
+            "score": d.score,
+            "expected_return": d.expected_return,
+            "commander_recommendation": cmd.recommendation if cmd else None,
+            "commander_counter": cmd.counter_argument if cmd else None,
+            "verdicts": verdicts_by_decision.get(d.id, {}),
+            "price_history_30d": histories.get(d.ticker, []),
+        }
+    return out
+
+
+def _build_topics_section(engine: Engine, limit: int = 30) -> dict[str, object]:
+    """topics テーブル → snapshot.topics（重要度順・category 別 count）。
+
+    朝バッチの topics_collector が `topics` テーブルに保存した記事を、UI 表示用に整形する。
+    全 archived=False を対象に、importance を high → medium → low 順、その中で
+    collected_at の降順で並べる。表示は最新 `limit` 件まで。
+    """
+    from trading_agent.models.topics import Topic
+
+    IMP_ORDER: dict[str, int] = {"high": 0, "medium": 1, "low": 2}
+
+    with Session(engine) as s:
+        rows = s.exec(
+            select(Topic).where(col(Topic.is_archived) == False)  # noqa: E712
+        ).all()
+
+    counts: dict[str, int] = {"all": 0, "macro": 0, "sector": 0, "stock": 0}
+    for r in rows:
+        counts["all"] += 1
+        cat = r.category
+        if cat in counts:
+            counts[cat] += 1
+
+    sorted_rows = sorted(
+        rows,
+        key=lambda r: (
+            IMP_ORDER.get(r.importance, 99),
+            -(r.collected_at.timestamp() if r.collected_at else 0.0),
+        ),
+    )
+
+    items = [
+        {
+            "id": r.id,
+            "importance": r.importance,
+            "category": r.category,
+            "headline": r.headline,
+            "summary": (r.summary or "")[:240],
+            "source": r.source,
+            "url": r.source_url,
+            "affected_tickers": list(r.affected_tickers or []),
+            "impact_text": r.impact_text,
+            "collected_at": (
+                r.collected_at.strftime("%Y-%m-%d %H:%M") if r.collected_at else ""
+            ),
+        }
+        for r in sorted_rows[:limit]
+    ]
+
+    return {"counts": counts, "items": items}
+
+
+def _build_sell_section(engine: Engine) -> dict[str, dict[str, object]]:
+    """holdings に対する売り推奨を snapshot.sell に流し込む。
+
+    sell_signals テーブルから ticker ごとに最新 1 件を取り、UI 表示用の dict に整形する。
+    sell_recommender は active な portfolio に対してのみ動くため、保有 0 件なら自然に空 dict。
+    """
+    from trading_agent.models.signals import SellSignal
+
+    out: dict[str, dict[str, object]] = {}
+    with Session(engine) as s:
+        rows = s.exec(
+            select(SellSignal).order_by(col(SellSignal.created_at).desc())
+        ).all()
+    seen: set[str] = set()
+    for row in rows:
+        if row.ticker in seen:
+            continue
+        seen.add(row.ticker)
+        out[f"sell-{row.ticker.lower()}"] = {
+            "ticker": row.ticker,
+            "signal_type": row.signal_type,
+            "score": int(row.score),
+            "ai_confidence": float(row.ai_confidence or 0.0),
+        }
+    return out
 
 
 def _market_cap(ticker: str) -> float | None:
@@ -339,10 +573,19 @@ async def build(*, live: bool, prefer_moomoo: bool) -> dict[str, object]:
     eng = get_engine(Path(tempfile.gettempdir()) / "snapshot.sqlite")
     create_all(eng)
 
-    positions, broker_src = load_positions(prefer_moomoo=prefer_moomoo)
-    account = StandInBroker().get_account()  # 運用元本¥100,000（moomoo口座連携は後続）
-    total = account.total_assets if account else 0.0
-    cash = account.cash if account else 0.0
+    # 設定と本番 DB を読み込む（口座状態の Portfolio.active コスト算出に必要）。
+    # 実運用スクリプト群（load_universe / run_morning_batch / run_paper / run_evaluation）が
+    # `data/trading.sqlite` を使っているので、それに合わせる。
+    from trading_agent.config import load_settings
+
+    settings = load_settings()
+    prod_engine = get_engine(Path("data") / "trading.sqlite")
+    create_all(prod_engine)
+
+    positions, broker_src = load_positions(prefer_moomoo=prefer_moomoo, settings=settings)
+    account, account_src = load_account(prod_engine, settings)
+    total = account.total_assets
+    cash = account.cash
     usdjpy = _usdjpy(live)
 
     # 保有（口座未接続なら空＝現金100%）
@@ -375,7 +618,10 @@ async def build(*, live: bool, prefer_moomoo: bool) -> dict[str, object]:
     llm_tool = _maybe_llm_tool(eng, live=live)
     candidates = await _build_candidates(live, total, cash, usdjpy, llm_tool=llm_tool)
 
-    holdings_source = "moomoo ペーパー" if broker_src == "moomoo" else "サンプル/未接続"
+    holdings_source = _holdings_source_label(broker_src, settings.trading_mode, account_src)
+    sell_section = _build_sell_section(prod_engine)
+    topics_section = _build_topics_section(prod_engine)
+    pending_decisions = _build_pending_decisions(prod_engine)
 
     # === X-2C exposure_coach: 今日のポスチャー ===
     # 実 breadth/uptrend データは未配線（X-2C 完成で接続）。LOW confidence → REDUCE_ONLY フォールバック。
@@ -427,19 +673,26 @@ async def build(*, live: bool, prefer_moomoo: bool) -> dict[str, object]:
     )
 
     # === ZEELE 攻めレコメンド枠（D-24/D-25・X-2 ZEELE 車線） ===
-    # screening pipeline → ZEELE 移植は次セッション以降。
-    # 現状はプレースホルダ候補で UI 構造を整える（mode=demo で固定セット）。
+    # zeele_curator が ZeeleState テーブルに永続化した「3週連続入賞」銘柄を読み出し、
+    # 価格履歴は yfinance（live）から取得。DB が空なら候補なし＝Cash 優先メッセージ。
     zeele = _build_zeele_section(
+        engine=prod_engine,
         mode_is_live=live,
         account_total_jpy=float(total) if total else 100000.0,  # D-23 既定¥100k
         usdjpy=usdjpy,
+        available_cash_jpy=float(cash) if cash else float(total) if total else 100000.0,
     )
 
     return {
         "generated_at": utcnow().strftime("%Y-%m-%d %H:%M"),
         "mode": "live" if live else "demo",
+        "trading_mode": settings.trading_mode,
         "broker": broker_src,
+        "account_source": account_src,
         "holdings_source": holdings_source,
+        "sell": sell_section,
+        "topics": topics_section,
+        "pending_decisions": pending_decisions,
         "usdjpy": round(usdjpy, 2),
         # D-24 北極星 / D-25 市場対象（脳裏チップ表示用）
         "north_star": {
@@ -688,140 +941,150 @@ def _stop_pct_for_candidate(
     return 0.12, "default"
 
 
-def _build_zeele_section(
-    *, mode_is_live: bool, account_total_jpy: float = 100000.0, usdjpy: float = 150.0
-) -> dict[str, object]:
-    """ZEELE 攻めレコメンド枠（暫定プレースホルダ）。
+def _fetch_zeele_price_history(ticker: str) -> tuple[list[float], str | None]:
+    """ZEELE 候補の 12週分の終値と直近終値日付を yfinance から取得する。
 
-    本配線は次セッション以降（screening_agent / topics_collector → ZEELE への
-    ingest アダプタ完成時）。それまでは UI 構造確認用の固定セットを返す。
-    候補は universe の TOPIX 中型銘柄から選び、narrative は仮テキスト。
-    各候補に **推奨サイジング**（D-23 準拠）を付与する。
+    Sparkline 描画と stop_pct 算出（実現ボラ）に使う。週次 12 本（period="3mo", interval="1wk"）。
+    失敗時は空リストと None を返す（呼び出し側でグレースフル降格）。
     """
-    # ZEELE 候補（暫定プレースホルダ）。
-    # 「熟成中の攻め候補」framing：1日の bump ではなく数週〜月単位の継続性を示す。
-    # price_history_12w は 12 週分の終値（直近右端）。Sparkline 描画用。
-    candidates: list[dict[str, object]] = [
-        {
-            "ticker": "8035",
-            "name": "東京エレクトロン",
-            "preset": "momentum",
-            "narrative": "AI 半導体設備投資の構造的拡大。受注残高 1 年以上の積み上がり。",
-            "structural_thesis": "3週連続で momentum/alpha 複数プリセット上位入賞",
-            "reference_score": 72,
-            "x_sentiment": "ポジティブ",
-            "zeele_entered_at": "2026-05-08",
-            "zeele_weeks": 3,
-            "period_return_pct": 18.2,
-            "price_history_12w": [22000, 22300, 21800, 22600, 23100, 23400, 23800, 24500, 25100, 25400, 25800, 26000],
-            "promoted": False,
-        },
-        {
-            "ticker": "6857",
-            "name": "アドバンテスト",
-            "preset": "growth",
-            "narrative": "HBM/AI チップテスタ需要・受注残高過去最高更新中。",
-            "structural_thesis": "4週連続で growth 上位・HBM テーマ持続",
-            "reference_score": 68,
-            "x_sentiment": "ポジティブ",
-            "zeele_entered_at": "2026-04-26",
-            "zeele_weeks": 4,
-            "period_return_pct": 24.5,
-            "price_history_12w": [5800, 5900, 6100, 6050, 6300, 6500, 6800, 6900, 7100, 7000, 7200, 7220],
-            "promoted": False,
-        },
-        {
-            "ticker": "4452",
-            "name": "花王",
-            "preset": "contrarian",
-            "narrative": "中国逆風で割安水準。配当継続性◎・原材料価格反落で利益率回復余地。",
-            "structural_thesis": "PBR 1倍割れ改善要請＋配当王の歴史。下値堅い",
-            "reference_score": 61,
-            "x_sentiment": "中立",
-            "zeele_entered_at": "2026-04-12",
-            "zeele_weeks": 6,
-            "period_return_pct": 4.8,
-            "price_history_12w": [5800, 5750, 5700, 5780, 5820, 5870, 5900, 5950, 5980, 6000, 6020, 6080],
-            "promoted": False,
-        },
-        {
-            "ticker": "9101",
-            "name": "商船三井",
-            "preset": "value",
-            "narrative": "PER 4倍台・配当利回り 5%超。BS 健全・自社株買い継続。",
-            "structural_thesis": "海運 3社の PBR 改善継続。配当方針強化",
-            "reference_score": 65,
-            "x_sentiment": "中立",
-            "zeele_entered_at": "2026-03-29",
-            "zeele_weeks": 8,
-            "period_return_pct": 12.1,
-            "price_history_12w": [4800, 4850, 4900, 4870, 4950, 5000, 5050, 5100, 5180, 5220, 5300, 5380],
-            "promoted": False,
-        },
-    ]
-    narrative_themes: list[dict[str, str]] = [
-        {
-            "title": "AI 設備投資の継続",
-            "summary": "NVDA / 東エレ / アドバンテストに追い風。HBM・先端パッケージ向け装置の受注が伸びる",
-            "source": "（テーマ仮）",
-        },
-        {
-            "title": "JP 配当株の再評価",
-            "summary": "東証 PBR1倍割れ改善要請を受け、配当・自社株買いの強化が継続",
-            "source": "（テーマ仮）",
-        },
-    ]
-    x_trends: list[dict[str, str]] = [
-        {
-            "title": "#半導体",
-            "summary": "東エレ・アドバンテスト・SUMCO 言及増加（仮）",
-        },
-    ]
-    # 現金可用額：snapshot を作る側でまだ現金を引数化していないため、暫定で口座総額。
-    # ペーパー運用後（実保有のとき）は available_cash を分離して渡す。
-    available_cash_jpy = account_total_jpy  # 現状=現金100%（保有0前提）
+    try:
+        import yfinance as yf
 
-    # 各候補に推奨サイジングを付与（D-23 準拠・参考値）。
-    # stop_pct はプリセット由来で **銘柄ごとに変動**。
-    for c in candidates:
-        history = c.get("price_history_12w") or []
-        if not history:
+        sym = f"{ticker}.T" if ticker.isdigit() else ticker
+        df = yf.Ticker(sym).history(period="3mo", interval="1wk", auto_adjust=False)
+        if df is None or df.empty or "Close" not in df.columns:
+            return [], None
+        closes = [float(v) for v in df["Close"].dropna().tolist()[-12:]]
+        if not closes:
+            return [], None
+        last_date = df.index[-1].strftime("%Y-%m-%d") if len(df.index) > 0 else None
+        return closes, last_date
+    except Exception as exc:
+        _log.warning("zeele_price_history_failed", ticker=ticker, error=str(exc))
+        return [], None
+
+
+def _fetch_zeele_last_price(ticker: str) -> float | None:
+    """直近終値（fast_info.last_price）。週次履歴の最終値より精度が高い。失敗時 None。"""
+    try:
+        import yfinance as yf
+
+        sym = f"{ticker}.T" if ticker.isdigit() else ticker
+        info = yf.Ticker(sym).fast_info
+        return float(info.last_price)
+    except Exception as exc:
+        _log.warning("zeele_last_price_failed", ticker=ticker, error=str(exc))
+        return None
+
+
+def _build_zeele_section(
+    *,
+    engine: Engine,
+    mode_is_live: bool,
+    account_total_jpy: float = 100000.0,
+    usdjpy: float = 150.0,
+    available_cash_jpy: float | None = None,
+) -> dict[str, object]:
+    """ZEELE 攻めレコメンド枠：zeele_curator が永続化した銘柄を読み出し、価格を肉付けする。
+
+    フロー：
+      1. ZeeleState (is_active=True) を DB から取得
+      2. 各銘柄について yfinance で 12週終値・直近終値を取得（live モードのみ）
+      3. preset / 履歴から stop_pct を算出し、D-23 サイジングを付与
+      4. UI 描画用の dict にまとめて返す
+
+    候補ゼロ時は candidates=[] を返す（UI 側で「該当なし・Cash 優先」を表示）。
+    """
+    # 現金可用額（呼出側で計算済なら使う・無ければ口座総額を流用）
+    cash_available = (
+        available_cash_jpy if available_cash_jpy is not None else account_total_jpy
+    )
+
+    candidates: list[dict[str, object]] = []
+    with Session(engine) as session:
+        active_states = list(
+            session.exec(select(ZeeleState).where(col(ZeeleState.is_active)))
+        )
+        name_map = {
+            u.ticker: u.name
+            for u in session.exec(
+                select(Universe).where(col(Universe.ticker).in_([s.ticker for s in active_states]))
+            )
+        } if active_states else {}
+
+    for state in active_states:
+        # 価格履歴（live モードでのみ yfinance）。demo モードでは履歴なしで進める。
+        history: list[float] = []
+        last_date: str | None = None
+        last_price: float | None = None
+        if mode_is_live:
+            history, last_date = _fetch_zeele_price_history(state.ticker)
+            last_price = _fetch_zeele_last_price(state.ticker)
+
+        # last_price が取れなければ履歴末尾を fallback
+        if last_price is None and history:
+            last_price = history[-1]
+        if last_price is None:
+            # 取得不能なら候補から除外（モック価格は出さない）
+            _log.warning("zeele_candidate_skipped_no_price", ticker=state.ticker)
             continue
-        last = float(history[-1])
-        ticker = c["ticker"] if isinstance(c["ticker"], str) else ""
-        is_jp = ticker.isdigit()
-        entry_jpy = last if is_jp else last * usdjpy
-        preset = c.get("preset", "")
-        preset_key = preset if isinstance(preset, str) else ""
 
-        # 動的 stop：preset 既定 と 実現ボラ×4σ の max（広い方 = 保守的）
-        history_f = [float(v) for v in history if v is not None]
-        stop_pct, stop_source = _stop_pct_for_candidate(history_f, preset_key)
+        is_jp = state.ticker.isdigit()
+        entry_jpy = last_price if is_jp else last_price * usdjpy
 
+        stop_pct, stop_source = _stop_pct_for_candidate(history, state.preset)
         sizing = _suggest_size(
             account_total_jpy=account_total_jpy,
-            available_cash_jpy=available_cash_jpy,
+            available_cash_jpy=cash_available,
             entry_jpy=entry_jpy,
             stop_pct=stop_pct,
         )
-        c["last_price"] = round(last, 2)
-        c["last_price_jpy"] = round(entry_jpy)
-        c["suggested_jpy"] = sizing["suggested_jpy"]
-        c["suggested_shares"] = sizing["suggested_shares"]
-        c["sizing_constraint"] = sizing["constraint"]
-        c["stop_pct_used"] = sizing["stop_pct_used"]
-        c["stop_pct_source"] = stop_source  # "preset" | "vol" | "default"
+
+        period_return_pct: float | None = None
+        if len(history) >= 2 and history[0] > 0:
+            period_return_pct = round((history[-1] / history[0] - 1) * 100, 1)
+
+        candidates.append(
+            {
+                "ticker": state.ticker,
+                "name": name_map.get(state.ticker, ""),
+                "preset": state.preset,
+                "structural_thesis": state.structural_thesis,
+                "reference_score": round(state.reference_score, 1),
+                "zeele_entered_at": state.entered_at.isoformat(),
+                "zeele_weeks": state.weeks_in_zeele,
+                "period_return_pct": period_return_pct,
+                "price_history_12w": history,
+                "last_price": round(last_price, 2),
+                "last_price_jpy": round(entry_jpy),
+                "last_price_asof": last_date,  # UI で「終値（日付）」を出すための明示
+                "suggested_jpy": sizing["suggested_jpy"],
+                "suggested_shares": sizing["suggested_shares"],
+                "sizing_constraint": sizing["constraint"],
+                "stop_pct_used": sizing["stop_pct_used"],
+                "stop_pct_source": stop_source,
+                "promoted": False,
+            }
+        )
+
+    # 候補が無い時は UI 側で「該当なし（プール乾燥中・Cash優先）」を出す
+    note = (
+        "ZEELE プールが乾燥中（3週連続入賞銘柄なし）。Cash 優先。"
+        if not candidates
+        else f"ZEELE プールに {len(candidates)} 銘柄が在籍中。"
+    )
 
     return {
         "candidates": candidates,
-        "narrative_themes": narrative_themes,
-        "x_trends": x_trends,
-        "note": "screening pipeline → ZEELE の ingest 配線は次セッション。現状はプレースホルダ。",
+        # narrative テーマは structural_thesis に集約。section レベルは現状未使用
+        "narrative_themes": [],
+        "x_trends": [],
+        "note": note,
         "generated_at": utcnow().strftime("%Y-%m-%d %H:%M"),
         "account_total_jpy": round(account_total_jpy),
-        "available_cash_jpy": round(available_cash_jpy),
+        "available_cash_jpy": round(cash_available),
         "cash_floor_jpy": round(account_total_jpy * 0.20),
-        "investable_cash_jpy": round(max(0, available_cash_jpy - account_total_jpy * 0.20)),
+        "investable_cash_jpy": round(max(0, cash_available - account_total_jpy * 0.20)),
     }
 
 

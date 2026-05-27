@@ -168,8 +168,9 @@ class TestMorningBatch:
         batch = await run_morning_batch(engine, host=_mock_host(engine))
 
         assert batch.status in {"success", "partial"}
-        assert len(batch.node_status) == 12  # 全ノード実行（A-4で +materialize/+magi_verify）
+        assert len(batch.node_status) == 13  # +zeele_curator（Phase 3 ZEELE 本配線）
         assert batch.node_status["screening"] == "success"
+        assert batch.node_status["zeele_curator"] == "success"
         assert batch.node_status["materialize_decisions"] == "success"
         assert batch.node_status["magi_verify"] == "success"
 

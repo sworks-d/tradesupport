@@ -39,6 +39,7 @@ type Candidate = {
   // 価格・推奨サイジング（D-23 準拠・参考値）
   last_price?: number;
   last_price_jpy?: number;
+  last_price_asof?: string; // yfinance の直近週次終値日付（YYYY-MM-DD）
   suggested_jpy?: number;
   suggested_shares?: number;
   sizing_constraint?: "risk" | "cap" | "cash" | "n/a";
@@ -54,6 +55,7 @@ type Snapshot = {
     available_cash_jpy?: number;
     investable_cash_jpy?: number;
     cash_floor_jpy?: number;
+    note?: string;
   };
 };
 
@@ -270,7 +272,12 @@ export default function ZeelePanel() {
 
   const renderCard = (c: Candidate) => {
     const promoted = isPromoted(c);
-    const last = c.price_history_12w?.[c.price_history_12w.length - 1];
+    // last_price はサーバ側で yfinance.fast_info.last_price を入れている（精度高）。
+    // 失敗時は price_history_12w[-1]（週次終値の最終）にフォールバック。
+    const last = c.last_price ?? c.price_history_12w?.[c.price_history_12w.length - 1];
+    const priceLabel = c.last_price_asof
+      ? `終値 ${c.last_price_asof}`
+      : "終値";
     return (
       <article className="zeele-card" key={c.ticker}>
         <div className="zeele-card-head">
@@ -285,14 +292,14 @@ export default function ZeelePanel() {
           )}
         </div>
 
-        {c.price_history_12w && (
+        {c.price_history_12w && c.price_history_12w.length > 0 && (
           <Sparkline values={c.price_history_12w} returnPct={c.period_return_pct} />
         )}
 
         {last !== undefined && (
           <div className="zeele-price">
             <span className="zeele-price-now">{fmtPrice(c.ticker, last)}</span>
-            <span className="zeele-price-label">現在値</span>
+            <span className="zeele-price-label">{priceLabel}</span>
           </div>
         )}
 
@@ -419,8 +426,16 @@ export default function ZeelePanel() {
 
       <div className="zeele-body">
         {candidates.length === 0 ? (
-          <div className="zeele-card-note">
-            熟成中の候補なし（screening の通算履歴と紐付け配線は次セッション）
+          <div className="zeele-empty">
+            <div className="zeele-empty-head">プール乾燥中</div>
+            <div className="zeele-empty-body">
+              {data?.zeele?.note ??
+                "3週連続で screening 入賞した銘柄なし。Cash 優先（新規エントリーを急がない）。"}
+            </div>
+            <div className="zeele-empty-sub">
+              ZEELE は「数週で出入りしない」設計（[[zeele-magi-role-split]]）。
+              候補ゼロは異常ではなく、規律的な待機状態。
+            </div>
           </div>
         ) : (
           <>

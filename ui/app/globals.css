@@ -2609,6 +2609,32 @@ svg[preserveAspectRatio="none"] :is(line, path, polyline, polygon, rect, circle)
   font-style: italic;
 }
 
+/* プール乾燥時の規律的待機メッセージ（ZEELE candidates が空のとき） */
+.zeele-empty {
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  padding: 16px 14px;
+  background: var(--bg-1);
+}
+.zeele-empty-head {
+  color: var(--ink-2);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  margin-bottom: 6px;
+}
+.zeele-empty-body {
+  color: var(--ink-1);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.zeele-empty-sub {
+  color: var(--ink-3);
+  font-size: 10.5px;
+  margin-top: 8px;
+  line-height: 1.4;
+}
+
 /* セクション見出し */
 .zeele-section-label {
   color: var(--ink-3);

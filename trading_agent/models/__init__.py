@@ -29,6 +29,7 @@ from trading_agent.models.thesis import (
 )
 from trading_agent.models.topics import ManualInput, Topic
 from trading_agent.models.universe import Universe
+from trading_agent.models.zeele import ZeeleState
 
 __all__ = [
     "AnalysisLog",
@@ -58,5 +59,6 @@ __all__ = [
     "Topic",
     "Universe",
     "Verification",
+    "ZeeleState",
     "default_setting_rows",
 ]

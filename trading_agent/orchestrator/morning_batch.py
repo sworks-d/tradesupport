@@ -24,6 +24,7 @@ from trading_agent.agents.portfolio_builder import PortfolioBuilderAgent, Portfo
 from trading_agent.agents.screening_agent import ScreeningAgent, ScreeningAgentInput
 from trading_agent.agents.sell_recommender import SellRecommenderAgent, SellRecommenderInput
 from trading_agent.agents.topics_collector import TopicsCollectorAgent, TopicsCollectorInput
+from trading_agent.agents.zeele_curator import ZeeleCuratorAgent, ZeeleCuratorInput
 from trading_agent.magi.persist import (
     FinancialsFetcher,
     magi_verify,
@@ -54,7 +55,7 @@ def build_host(engine: Engine) -> MCPHost:
     """全 MCP ツールを登録した MCPHost を構築する（実行用）。"""
     from trading_agent.config import get_settings
     from trading_agent.llm.anthropic_client import AnthropicClient
-    from trading_agent.llm.ollama_client import OllamaClient
+    from trading_agent.llm.haiku_fallback import HaikuFallbackClient
 
     settings = get_settings()
     host = MCPHost()
@@ -64,11 +65,13 @@ def build_host(engine: Engine) -> MCPHost:
     host.register(DisclosureTool())
     host.register(TechnicalsTool())
     host.register(ScreeningTool(engine))
+    # Cold Path（Ollama）は未インストール環境のため Anthropic Haiku で代用する。
+    # Ollama を将来導入する場合は HaikuFallbackClient を OllamaClient(...) に戻す。
     host.register(
         LLMCallTool(
             engine,
             anthropic_client=AnthropicClient(settings.anthropic_api_key),
-            ollama_client=OllamaClient(settings.ollama_host, settings.ollama_model),
+            ollama_client=HaikuFallbackClient(settings.anthropic_api_key),
         )
     )
     return host
@@ -190,6 +193,15 @@ async def run_morning_batch(
             engine,
         )
 
+    async def run_zeele_curator() -> object:
+        # screening_results を読んで「3週連続入賞」を ZeeleState に upsert する。
+        # 日次で走ること自体は冪等（同日に複数回走らせても結果は同じ）。
+        return await execute_agent(
+            ZeeleCuratorAgent(ctx),
+            ZeeleCuratorInput(invocation_id=invocation_id, dry_run=dry_run),
+            engine,
+        )
+
     async def run_market_analyst() -> object:
         candidates = _candidate_tickers(engine)
         return await execute_agent(
@@ -241,6 +253,7 @@ async def run_morning_batch(
         DAGNode("topics_collector", run_topics, depends_on=["pre_check"], timeout_s=600),
         DAGNode("universe_refresh", universe_refresh, depends_on=["pre_check"], timeout_s=300),
         DAGNode("screening", run_screening, depends_on=["topics_collector"], timeout_s=300),
+        DAGNode("zeele_curator", run_zeele_curator, depends_on=["screening"], timeout_s=60),
         DAGNode("market_analyst", run_market_analyst, depends_on=["screening"], timeout_s=600),
         DAGNode("sell_recommender", run_sell, depends_on=["market_analyst"], timeout_s=300),
         DAGNode("portfolio_builder", run_portfolio, depends_on=["sell_recommender"], timeout_s=60),
