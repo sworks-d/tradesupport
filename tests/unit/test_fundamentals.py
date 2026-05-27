@@ -11,6 +11,7 @@ from trading_agent.mcp_tools.fundamentals import (
     FundamentalsInput,
     FundamentalsTool,
     _default_fields,
+    eps_metrics_from_series,
     is_jp_ticker,
     primary_source_url,
 )
@@ -75,6 +76,34 @@ class TestFieldCoverage:
         tool = FundamentalsTool(fetcher=_CountingFetcher(values))
         out = await tool.execute(FundamentalsInput(ticker="AAPL"))
         assert set(out.data) == set(values)
+
+
+class TestEpsMetrics:
+    """screening S7（V字）用の四半期 EPS 派生指標。"""
+
+    def test_seven_quarters_yields_all_four_metrics(self) -> None:
+        # 新しい順：[t, t-1, t-2, t-3, t-4, t-5, t-6]
+        m = eps_metrics_from_series([2.0, 1.8, 1.5, 1.2, 1.0, 0.8, 0.5])
+        assert m["eps_latest_q"] == 2.0
+        assert m["eps_prev_prev_q"] == 1.5
+        assert m["eps_growth_latest_q"] == 1.0          # (2.0 - 1.0) / 1.0
+        assert m["eps_growth_prev_prev_q"] == 2.0       # (1.5 - 0.5) / 0.5
+
+    def test_four_quarters_only_yields_abs_values(self) -> None:
+        m = eps_metrics_from_series([2.0, 1.8, 1.5, 1.2])
+        assert m == {"eps_latest_q": 2.0, "eps_prev_prev_q": 1.5}
+
+    def test_single_quarter_yields_only_latest(self) -> None:
+        assert eps_metrics_from_series([2.0]) == {"eps_latest_q": 2.0}
+
+    def test_empty_series_returns_empty(self) -> None:
+        assert eps_metrics_from_series([]) == {}
+
+    def test_zero_divisor_skipped(self) -> None:
+        # 4q-ago が 0 だと割り算不能 → 該当成長率はスキップ（他は残る）
+        m = eps_metrics_from_series([2.0, 1.8, 1.5, 1.2, 0.0])
+        assert "eps_growth_latest_q" not in m
+        assert m["eps_latest_q"] == 2.0
 
 
 class TestMarketDetection:

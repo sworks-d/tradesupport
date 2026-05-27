@@ -20,6 +20,10 @@ from sqlmodel import Session, col, select
 
 from trading_agent.agents.base import Agent, AgentInput, AgentOutput
 from trading_agent.agents.context import AgentContext
+from trading_agent.agents.theme_context import (
+    SectorReturnCache,
+    keyword_match_counts,
+)
 from trading_agent.mcp_tools.fundamentals import FundamentalsInput
 from trading_agent.mcp_tools.market_data import MarketDataInput
 from trading_agent.mcp_tools.screening import ScreeningInput, ScreeningTickerData
@@ -105,16 +109,26 @@ class ScreeningAgent(Agent[ScreeningAgentInput]):
         *,
         financials_fetcher: FinancialsFetcher | None = None,
         price_history: PriceHistory | None = None,
+        sector_cache: SectorReturnCache | None = None,
     ) -> None:
         self._ctx = context
         self._log = get_logger("agent").bind(agent=self.name)
         # 渡されたら 信用性/V字/相対力 で候補をエンリッチ（既定OFF＝ネット非依存・テスト用）
         self._financials_fetcher = financials_fetcher
         self._price_history = price_history
+        # セクター/市場 30日リターンの取得キャッシュ（テスト時はスタブ注入）
+        self._sector_cache = sector_cache or SectorReturnCache()
 
     async def execute(self, agent_input: ScreeningAgentInput) -> AgentOutput:
         universe = self._load_universe(self._ctx.engine, agent_input.universe_size)
-        tickers_data = [await self._gather(u) for u in universe]
+        # テーマスコア用：topics 表から各銘柄の言及件数を一括取得（DB1往復）
+        keyword_counts = keyword_match_counts(
+            self._ctx.engine, [u.ticker for u in universe]
+        )
+        tickers_data = [
+            await self._gather(u, keyword_count=keyword_counts.get(u.ticker, 0))
+            for u in universe
+        ]
 
         sout = await self._ctx.call_tool(
             "screening",
@@ -162,17 +176,21 @@ class ScreeningAgent(Agent[ScreeningAgentInput]):
                 )
             )
 
-    async def _gather(self, u: Universe) -> ScreeningTickerData:
+    async def _gather(self, u: Universe, *, keyword_count: int = 0) -> ScreeningTickerData:
         data = ScreeningTickerData(
             ticker=u.ticker,
             name=u.name,
             market=u.market,
             sector=u.sector,
             market_cap=u.market_cap_jpy,
+            keyword_match_count=keyword_count,
         )
         await self._fill_market_data(u.ticker, data)
         await self._fill_technicals(u.ticker, data)
         await self._fill_fundamentals(u.ticker, data)
+        # テーマスコア：セクター/市場 30日リターン（ETF 経由）
+        data.market_return_30d = self._sector_cache.market_return(u.market)
+        data.sector_return_30d = self._sector_cache.sector_return(u.market, u.sector)
         return data
 
     async def _fill_market_data(self, ticker: str, data: ScreeningTickerData) -> None:
@@ -194,6 +212,13 @@ class ScreeningAgent(Agent[ScreeningAgentInput]):
                 if isinstance(rsi, int | float):
                     data.rsi = float(rsi)
                 data.macd_cross_recent = "golden_cross" in signals or "macd_bullish" in signals
+                # S7 株価底打ち判定用：90日終値の高安（近似）
+                min_p = payload.get("min_price_90d")
+                if isinstance(min_p, int | float):
+                    data.min_price_90d = float(min_p)
+                max_p = payload.get("max_price_90d")
+                if isinstance(max_p, int | float):
+                    data.max_price_90d = float(max_p)
         except Exception as exc:
             self._log.warning("screening_technicals_failed", ticker=ticker, error=str(exc))
 
@@ -201,12 +226,33 @@ class ScreeningAgent(Agent[ScreeningAgentInput]):
         try:
             out = await self._ctx.call_tool(
                 "fundamentals",
-                FundamentalsInput(ticker=ticker, fields=["revenue_growth", "per", "pbr"]),
+                FundamentalsInput(
+                    ticker=ticker,
+                    fields=[
+                        "revenue_growth",
+                        "per",
+                        "pbr",
+                        # S7 業績反転判定用：四半期 EPS と YoY 成長率
+                        "eps_latest_q",
+                        "eps_prev_prev_q",
+                        "eps_growth_latest_q",
+                        "eps_growth_prev_prev_q",
+                    ],
+                ),
             )
             payload = getattr(out, "data", None)
             if out.success and payload:
                 growth = payload.get("revenue_growth")
                 if isinstance(growth, int | float):
                     data.revenue_growth_latest_q = float(growth)
+                for key in (
+                    "eps_latest_q",
+                    "eps_prev_prev_q",
+                    "eps_growth_latest_q",
+                    "eps_growth_prev_prev_q",
+                ):
+                    v = payload.get(key)
+                    if isinstance(v, int | float):
+                        setattr(data, key, float(v))
         except Exception as exc:
             self._log.warning("screening_fundamentals_failed", ticker=ticker, error=str(exc))

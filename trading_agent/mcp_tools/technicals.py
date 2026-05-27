@@ -33,7 +33,8 @@ HistoryProvider = Callable[[str, int], list[float]]
 
 
 def _default_indicators() -> list[str]:
-    return ["rsi", "macd", "sma_20", "sma_60", "bollinger"]
+    # min/max_price_90d は終値系列から近似算出（screening S7 株価底打ち判定用）
+    return ["rsi", "macd", "sma_20", "sma_60", "bollinger", "min_price_90d", "max_price_90d"]
 
 
 class TechnicalsInput(MCPToolInput):
@@ -177,6 +178,11 @@ class TechnicalsTool(MCPTool[TechnicalsInput]):
             except ValueError:
                 return None
             return sma(closes, period)
+        if indicator == "min_price_90d":
+            # 終値系列の最小（OHLC の low ではない近似だが screening 用途には十分）
+            return min(closes) if closes else None
+        if indicator == "max_price_90d":
+            return max(closes) if closes else None
         return None
 
     def _signals(
@@ -213,8 +219,10 @@ class TechnicalsTool(MCPTool[TechnicalsInput]):
 def _fetch_history_yfinance(ticker: str, period_days: int) -> list[float]:
     import yfinance as yf
 
+    from trading_agent.mcp_tools.fundamentals import to_yfinance_symbol
+
     try:
-        hist = yf.Ticker(ticker).history(period=f"{period_days}d")
+        hist = yf.Ticker(to_yfinance_symbol(ticker)).history(period=f"{period_days}d")
     except Exception as exc:
         raise NetworkError(f"yfinance history failed: {exc}") from exc
     if hist.empty:

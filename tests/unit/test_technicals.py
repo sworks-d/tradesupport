@@ -81,6 +81,9 @@ class TestTool:
         assert out.data["rsi"] == 100.0
         assert "sma_20" in out.data and "sma_60" in out.data
         assert "macd" in out.data and "bollinger" in out.data
+        # S7 株価底打ち判定用：90日終値の最小・最大
+        assert out.data["min_price_90d"] == 1.0
+        assert out.data["max_price_90d"] == 120.0
         assert "overbought_rsi" in out.signals
         assert "macd_bullish" in out.signals
 

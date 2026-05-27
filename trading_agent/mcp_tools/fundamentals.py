@@ -66,6 +66,14 @@ _YF_FIELD_MAP: dict[str, str] = {
 # 取得関数の型：ticker → (正規化済み数値, fiscal_period)
 Fetcher = Callable[[str], tuple[dict[str, float], str]]
 
+# screening の S7 V字判定用：四半期 EPS 派生フィールド（fundamentals に同居させる）
+_QUARTERLY_EPS_FIELDS = (
+    "eps_latest_q",
+    "eps_prev_prev_q",
+    "eps_growth_latest_q",
+    "eps_growth_prev_prev_q",
+)
+
 
 def _default_fields() -> list[str]:
     """MELCHIOR が見る既定指標。成長・収益性・健全性・CF を網羅（取得不能な項目は欠損＝na）。"""
@@ -84,7 +92,31 @@ def _default_fields() -> list[str]:
         "current_ratio",
         "free_cashflow",
         "dividend_yield",
+        # screening S7（V字）用：四半期 EPS。欠損可（取得不能なら採点側でスキップ）
+        *_QUARTERLY_EPS_FIELDS,
     ]
+
+
+def eps_metrics_from_series(series: list[float]) -> dict[str, float]:
+    """新しい順の EPS 列から screening 派生4指標を計算する。
+
+    - `eps_latest_q`     = 直近の EPS（赤字→黒字 判定用）
+    - `eps_prev_prev_q`  = 2四半期前の EPS（同上）
+    - `eps_growth_latest_q`    = (直近 - 4q前) / |4q前|（YoY 成長率）
+    - `eps_growth_prev_prev_q` = (2q前 - 6q前) / |6q前|（YoY 成長率）
+
+    取得できない指標は dict から除外する（欠損として扱う）。
+    """
+    out: dict[str, float] = {}
+    if len(series) >= 1:
+        out["eps_latest_q"] = series[0]
+    if len(series) >= 3:
+        out["eps_prev_prev_q"] = series[2]
+    if len(series) >= 5 and series[4] != 0:
+        out["eps_growth_latest_q"] = (series[0] - series[4]) / abs(series[4])
+    if len(series) >= 7 and series[6] != 0:
+        out["eps_growth_prev_prev_q"] = (series[2] - series[6]) / abs(series[6])
+    return out
 
 
 class FundamentalsInput(MCPToolInput):
@@ -112,6 +144,20 @@ def is_jp_ticker(ticker: str) -> bool:
     return ticker.upper().endswith(".T") or code.isdigit()
 
 
+def to_yfinance_symbol(ticker: str) -> str:
+    """yfinance に渡せる形式に正規化する（JP は ``.T`` を付与、US はそのまま）。
+
+    - ``"7203"``    → ``"7203.T"``
+    - ``"7203.T"``  → ``"7203.T"``（冪等）
+    - ``"NVDA"``    → ``"NVDA"``
+    """
+    if ticker.upper().endswith(".T"):
+        return ticker
+    if ticker.split(".")[0].isdigit():
+        return f"{ticker}.T"
+    return ticker
+
+
 def primary_source_url(ticker: str) -> str:
     """一次情報（EDGAR / EDINET）への参照 URL を返す（透明性）。"""
     if is_jp_ticker(ticker):
@@ -123,12 +169,46 @@ def primary_source_url(ticker: str) -> str:
     )
 
 
+def _fetch_quarterly_eps_series(symbol: str) -> list[float]:
+    """yfinance.quarterly_income_stmt から EPS 系列を新しい順で取り出す。
+
+    取得できなければ空リスト。NaN は除外する。
+    """
+    try:
+        import yfinance as yf
+
+        df = yf.Ticker(symbol).quarterly_income_stmt
+    except Exception:
+        return []
+    if df is None or getattr(df, "empty", True):
+        return []
+    # 行ラベルは "Diluted EPS" / "Basic EPS" のいずれか
+    eps_row = None
+    for key in ("Diluted EPS", "Basic EPS"):
+        if key in getattr(df, "index", []):
+            eps_row = df.loc[key]
+            break
+    if eps_row is None:
+        return []
+    series: list[float] = []
+    for v in eps_row.values:
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            continue
+        if f != f:  # NaN チェック
+            continue
+        series.append(f)
+    return series
+
+
 def _fetch_from_yfinance(ticker: str) -> tuple[dict[str, float], str]:
     """yfinance から財務サマリ指標を取得し、共通フォーマットに正規化する。"""
     import yfinance as yf
 
+    symbol = to_yfinance_symbol(ticker)
     try:
-        info = yf.Ticker(ticker).info
+        info = yf.Ticker(symbol).info
     except Exception as exc:
         raise NetworkError(f"yfinance fundamentals fetch failed: {exc}") from exc
 
@@ -143,6 +223,10 @@ def _fetch_from_yfinance(ticker: str) -> tuple[dict[str, float], str]:
                 values[common_field] = float(raw)
             except (TypeError, ValueError):
                 continue
+
+    # 四半期 EPS の派生指標を追加（S7 V字 採点用）。取れない銘柄は静かに欠損で進む。
+    eps_series = _fetch_quarterly_eps_series(symbol)
+    values.update(eps_metrics_from_series(eps_series))
 
     fiscal_period = "latest"
     epoch = info.get("lastFiscalYearEnd")
