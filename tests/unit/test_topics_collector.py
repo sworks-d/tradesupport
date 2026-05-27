@@ -152,6 +152,82 @@ class TestAgent:
         toyota = next(t for t in topics if "トヨタ" in t.headline)
         assert toyota.importance == "high"  # 決算速報
 
+    async def test_llm_circuit_breaker_trips_after_repeated_empty_response(
+        self, tmp_path: Path
+    ) -> None:
+        """LLM が空応答を連発したら、6件目以降は LLM を呼ばずルールベースで進む。"""
+
+        class _FailingLLM(MCPTool[LLMCallInput]):
+            name = "llm_call"
+
+            def __init__(self) -> None:
+                self.call_count = 0
+
+            async def _execute(self, tool_input: LLMCallInput) -> LLMCallOutput:
+                self.call_count += 1
+                # 空応答 → extract_json は {} を返す → reinforce 失敗とカウント
+                return LLMCallOutput(success=True, response="")
+
+        host = MCPHost()
+        # 10件の "low" 重要度ニュース（LLM 補強が走る対象）
+        news = [
+            {
+                "title": f"地味な記事 {i}",
+                "summary": "",
+                "url": f"http://n/{i}",
+                "source": "X",
+                "published_at": "",
+            }
+            for i in range(10)
+        ]
+        host.register(_NewsStub(news))
+        host.register(_DisclosureStub([]))
+        failing_llm = _FailingLLM()
+        host.register(failing_llm)
+        ctx = AgentContext(host=host, engine=_engine(tmp_path), invocation_id="inv")
+
+        out = await TopicsCollectorAgent(ctx).execute(TopicsCollectorInput(invocation_id="inv"))
+        assert out.success is True
+        # 閾値（_LLM_FAILURE_TRIP=5）を超えた後はスキップされる
+        # 最初の5件で連続失敗 → 6件目で circuit open → 以降は呼ばれない
+        assert failing_llm.call_count == 5, f"expected 5, got {failing_llm.call_count}"
+
+    async def test_llm_call_cap_limits_calls_per_batch(self, tmp_path: Path) -> None:
+        """1バッチで LLM 補強上限（_LLM_CALL_CAP_PER_BATCH=30）を超えると以降スキップ。"""
+
+        class _CountingLLM(MCPTool[LLMCallInput]):
+            name = "llm_call"
+
+            def __init__(self) -> None:
+                self.call_count = 0
+
+            async def _execute(self, tool_input: LLMCallInput) -> LLMCallOutput:
+                self.call_count += 1
+                return LLMCallOutput(success=True, response='{"importance": "medium"}')
+
+        host = MCPHost()
+        # 50件の低重要度ニュース（全て LLM 補強対象）
+        news = [
+            {
+                "title": f"地味な記事 {i}",
+                "summary": "",
+                "url": f"http://n/{i}",
+                "source": "X",
+                "published_at": "",
+            }
+            for i in range(50)
+        ]
+        host.register(_NewsStub(news))
+        host.register(_DisclosureStub([]))
+        counting_llm = _CountingLLM()
+        host.register(counting_llm)
+        ctx = AgentContext(host=host, engine=_engine(tmp_path), invocation_id="inv")
+
+        out = await TopicsCollectorAgent(ctx).execute(TopicsCollectorInput(invocation_id="inv"))
+        assert out.success is True
+        # 上限 30 件で打ち止め（残り20件はルールベースのまま）
+        assert counting_llm.call_count == 30
+
     async def test_llm_reinforces_low(self, tmp_path: Path) -> None:
         news = [
             {

@@ -14,7 +14,7 @@
 from __future__ import annotations
 
 import datetime as dt
-import json
+from trading_agent.llm.json_extract import extract_json
 from typing import Any
 
 from pydantic import Field
@@ -267,7 +267,7 @@ class SellRecommenderAgent(Agent[SellRecommenderInput]):
                 ),
             )
             if out.success:
-                parsed = json.loads(getattr(out, "response", "") or "{}")
+                parsed = extract_json(getattr(out, "response", None))
                 health = float(parsed.get("overall_health", 0.5))
                 status = str(parsed.get("overall_status") or status_from_health(health))
                 progress = list(parsed.get("checklist_progress", []))

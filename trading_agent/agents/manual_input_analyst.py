@@ -10,7 +10,7 @@ manual_inputs に保存し、トピックス化候補を生成する。
 
 from __future__ import annotations
 
-import json
+from trading_agent.llm.json_extract import extract_json
 from typing import Any
 
 from pydantic import Field
@@ -133,7 +133,7 @@ class ManualInputAnalystAgent(Agent[ManualInputAnalystInput]):
                 ),
             )
             if out.success:
-                return dict(json.loads(getattr(out, "response", "") or "{}"))
+                return extract_json(getattr(out, "response", None))
         except Exception as exc:
             self._log.warning("manual_input_llm_failed", error=str(exc))
         return {}

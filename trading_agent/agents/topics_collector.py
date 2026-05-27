@@ -9,7 +9,6 @@ LLM（llm_call）は **低重要度記事の重要度補強のみ** に使う（
 
 from __future__ import annotations
 
-import json
 import re
 from collections import Counter
 from datetime import datetime, timedelta
@@ -22,6 +21,7 @@ from sqlmodel import Session, col, select
 from trading_agent.agents.base import Agent, AgentInput, AgentOutput
 from trading_agent.agents.context import AgentContext
 from trading_agent.agents.serialization import save_topics
+from trading_agent.llm.json_extract import extract_json
 from trading_agent.mcp_tools.disclosure import DisclosureInput
 from trading_agent.mcp_tools.llm_call import LLMCallInput
 from trading_agent.mcp_tools.news import NewsInput
@@ -141,11 +141,27 @@ class TopicsCollectorAgent(Agent[TopicsCollectorInput]):
     required_tools = ["news", "disclosure", "llm_call"]
     default_routing = "cold"
 
+    # LLM 補強の連続失敗をトリップする閾値。これを超えたら以降の LLM 呼出をスキップし
+    # ルールベースで進む（cold path が壊れている時にバッチ全体を道連れにしない安全装置）。
+    _LLM_FAILURE_TRIP = 5
+
+    # 1バッチあたりの LLM 補強の上限。topics は数百件来ることがあり、低重要度全件を LLM で
+    # 再評価すると簡単に日次予算を食い潰す。上位 N 件だけ補強する（ニュース順 = 新しい順を想定）。
+    _LLM_CALL_CAP_PER_BATCH = 30
+
     def __init__(self, context: AgentContext) -> None:
         self._ctx = context
         self._log = get_logger("agent").bind(agent=self.name)
+        self._llm_failure_count = 0
+        self._llm_circuit_open = False
+        self._llm_call_count = 0
 
     async def execute(self, agent_input: TopicsCollectorInput) -> AgentOutput:
+        # 各バッチで状態をリセット（再実行時にトリップ状態を引きずらない）
+        self._llm_failure_count = 0
+        self._llm_circuit_open = False
+        self._llm_call_count = 0
+
         since = utcnow() - timedelta(hours=agent_input.since_hours)
         items = await self._collect(agent_input, since)
 
@@ -208,7 +224,19 @@ class TopicsCollectorAgent(Agent[TopicsCollectorInput]):
         return items
 
     async def _llm_reinforce(self, item: Item, affected: list[str]) -> str | None:
-        """低重要度記事を LLM で再評価。失敗・未登録時は None（ルール結果維持）。"""
+        """低重要度記事を LLM で再評価。失敗・未登録時は None（ルール結果維持）。
+
+        サーキットブレーカー：同一バッチで連続失敗が `_LLM_FAILURE_TRIP` を超えたら
+        以降の呼出をスキップ（cold path 障害でバッチを長時間ハングさせない）。
+        バッチ上限：1バッチで `_LLM_CALL_CAP_PER_BATCH` 件を超えたら以降スキップ
+        （ニュースが数百件来た時に日次予算を瞬時に消費するのを防ぐ）。
+        """
+        if self._llm_circuit_open:
+            return None
+        if self._llm_call_count >= self._LLM_CALL_CAP_PER_BATCH:
+            return None
+        self._llm_call_count += 1
+
         prompt = (
             "次のニュースの重要度を high/medium/low で判定し JSON で返してください。\n"
             f'タイトル: {item.get("title", "")}\n要約: {item.get("summary", "")}\n'
@@ -227,14 +255,36 @@ class TopicsCollectorAgent(Agent[TopicsCollectorInput]):
                 ),
             )
             if not out.success:
+                self._record_llm_failure("llm_call_unsuccessful")
                 return None
-            parsed = json.loads(getattr(out, "response", "") or "{}")
+            parsed = extract_json(getattr(out, "response", None))
             importance = parsed.get("importance")
             if importance in _IMPORTANCE and importance != "low":
+                # 成功 → カウンタリセット（散発的失敗ならトリップしない）
+                self._llm_failure_count = 0
                 return str(importance)
+            # 期待値が取れなかった＝レスポンス形式問題。失敗としてカウント
+            if not parsed:
+                self._record_llm_failure("empty_or_unparseable_json")
         except Exception as exc:
             self._log.warning("topics_llm_reinforce_failed", error=str(exc))
+            self._record_llm_failure(str(exc))
         return None
+
+    def _record_llm_failure(self, reason: str) -> None:
+        """LLM 呼出失敗をカウントし、閾値超過でサーキットを開く。"""
+        self._llm_failure_count += 1
+        if (
+            not self._llm_circuit_open
+            and self._llm_failure_count >= self._LLM_FAILURE_TRIP
+        ):
+            self._llm_circuit_open = True
+            self._log.warning(
+                "topics_llm_circuit_open",
+                consecutive_failures=self._llm_failure_count,
+                last_reason=reason,
+                note="以降の LLM 補強をスキップしルールベースで進行",
+            )
 
 
 def _build_topic(

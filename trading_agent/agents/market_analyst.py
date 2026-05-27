@@ -22,6 +22,7 @@ from sqlmodel import Session, col, select
 from trading_agent.agents.base import Agent, AgentInput, AgentOutput
 from trading_agent.agents.context import AgentContext
 from trading_agent.agents.serialization import save_buy_signals
+from trading_agent.llm.json_extract import extract_json
 from trading_agent.mcp_tools.fundamentals import FundamentalsInput, is_jp_ticker
 from trading_agent.mcp_tools.llm_call import LLMCallInput
 from trading_agent.mcp_tools.market_data import MarketDataInput
@@ -377,7 +378,7 @@ class MarketAnalystAgent(Agent[MarketAnalystInput]):
                 ),
             )
             if out.success:
-                return dict(json.loads(getattr(out, "response", "") or "{}"))
+                return extract_json(getattr(out, "response", None))
         except Exception as exc:
             self._log.warning("market_analyst_llm_failed", ticker=ticker, error=str(exc))
         return {}
