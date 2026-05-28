@@ -78,10 +78,12 @@ def _fetch_from_yfinance(tickers: list[str]) -> dict[str, dict[str, float]]:
     """yfinance から quote を取得する。失敗は NetworkError に正規化する。"""
     import yfinance as yf  # 重い import は遅延
 
+    from trading_agent.mcp_tools.fundamentals import to_yfinance_symbol
+
     result: dict[str, dict[str, float]] = {}
     try:
         for ticker in tickers:
-            info = yf.Ticker(ticker).fast_info
+            info = yf.Ticker(to_yfinance_symbol(ticker)).fast_info
             current = float(info.last_price)
             prev = float(info.previous_close)
             result[ticker] = {

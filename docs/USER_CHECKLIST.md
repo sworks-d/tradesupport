@@ -66,39 +66,38 @@ D-25 で JP 90% に絞った結果、**優先度は下がった**（日本ニュ
 
 ---
 
-## 🔴 常駐機セットアップ（実装PC ≠ 開発PC）
+## 🟢 常駐機セットアップ（**このPC（`shotaro`）を常駐機として運用**）
 
-**重要**：本ツールは **24/7 常駐機**（このノートPCではなく別マシン）で動かす。launchd の登録・OpenD 常駐・cron相当の自動化は**常駐機側のみ**で行う。
+**2026-05-26 追記**：構成変更。「実装PC ≠ 開発PC」前提を廃止し、**このリポジトリが置かれている `shotaro` PC を常駐機として運用**する方針に切り替えた。下記 S1〜S4 はこの PC 上で実施済（2026-05-26）。
 
 ### S1. 常駐機の確定
 
-- [ ] 常駐機の選定（Mac mini など・常時電源 ON・スリープ無効化済）
-- [ ] 常駐機の macOS ユーザー名 / ホームディレクトリのパスを確認
+- [x] 常駐機の選定 — このPC（`shotaro`）を常駐機とする（スリープ無効化済：`pmset sleep=0 / displaysleep=0`）
+- [x] 常駐機の macOS ユーザー名 / パス：`shotaro` / `/Users/shotaro/tradesupport`
 
-### S2. tradesupport の常駐機への配置
+### S2. tradesupport の配置
 
-- [ ] `git clone` または rsync で常駐機に配置
-- [ ] 配置先パスを決定（仮：`/Users/<常駐機user>/tradesupport`）
-- [ ] `uv sync` で依存解決
-- [ ] `.env` を常駐機に転送（必須3キー + 取得済オプションキー）
-- [ ] `python scripts/init_db.py` で DB 初期化
-- [ ] `python scripts/load_universe.py` で universe 投入
+- [x] 配置済（`/Users/shotaro/tradesupport`・`feat/magi-rebuild` ブランチ）
+- [x] `uv sync` 完了
+- [x] `.env` 必須3キー + EDINET_API_KEY 設定済
+- [x] `python scripts/init_db.py` 実行済（22 テーブル / `~/.trading-agent/db.sqlite`）
+- [x] `python scripts/load_universe.py` 実行済（JP30 + US ETF2 = 32 銘柄）
 
-### S3. moomoo OpenD を常駐機に常駐
+### S3. moomoo OpenD 常駐
 
-- [ ] 常駐機に moomoo OpenD インストール
-- [ ] OpenD 起動・自動ログイン設定
-- [ ] 常駐機の :11111 で LISTEN を確認
-- [ ] `.env` に常駐機の OpenD ホスト/ポートを反映
+- [x] moomoo OpenD インストール済
+- [x] OpenD 起動済（`lsof -i :11111` で `moomoo_Op` LISTEN 確認）
+- [x] `.env` に `MOOMOO_OPEND_HOST=localhost` / `MOOMOO_OPEND_PORT=11111` 設定済
+- ※ JP は moomoo SIMULATE 非対応のため StandIn フォールバック（docs/progress/0057 参照）
 
-### S4. launchd の常駐機への登録
+### S4. launchd の登録
 
-- [ ] **plist のパスを常駐機の実パスに書き換える**（`ops/launchd/*.plist` のテンプレ化が必要）
-- [ ] 常駐機で `cp ops/launchd/com.tradesupport.*.plist ~/Library/LaunchAgents/`
-- [ ] 常駐機で `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.tradesupport.*.plist`
+- [x] plist のパス書換え済（`/Users/a05/...` → `/Users/shotaro/...`、`~/Library/LaunchAgents/` に配置）
+- [x] `launchctl bootstrap` 実行済（`com.tradesupport.morning-batch` / `com.tradesupport.evaluation`）
+- [x] 朝バッチ手動 dry-run 検証済（2026-05-26 23:xx：11/12 ノード success、決裁待ち 10 件 materialize）
 - [ ] 数日 `data/logs/*.log` を確認
 
-> **このノートPC（開発機）には launchd を絶対に登録しない**。誤って登録した場合は `launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.tradesupport.*.plist` ＋ plist 削除で撤回。
+> **別 PC を開発機として併用する場合**は、その PC 側には launchd を登録しない（または `launchctl bootout` する）。本ツールの自動実行は **この常駐機の 1 箇所のみ** にする。
 
 ---
 

@@ -40,17 +40,20 @@ class TestPaperFill:
         f = res.fills[0]
         assert f.ticker == "7203"
         assert f.shares == 16  # budget=min(1R/stop=16667, cap20k, cash80k)=16667 → 16株@1000
-        assert res.cash_after == 100_000.0 - 16_000.0
+        # moomoo シミュ：JP 単元未満は手数料 0、寄付スリッページ 0.2% で fill_price = 1002
+        # cost = 16 × 1002 = 16,032、現金 = 100,000 - 16,032 = 83,968
+        assert res.cash_after == 100_000.0 - 16_032.0
         with Session(eng) as s:
             pos = s.exec(select(Portfolio).where(col(Portfolio.ticker) == "7203")).one()
             assert pos.status == "active"
             assert pos.qty == 16
-            assert pos.buy_price == 1000.0
+            # Portfolio.buy_price は実約定価格（slippage 適用後）
+            assert pos.buy_price == 1002.0
             assert pos.stop_loss_pct == -0.12  # 損切りは負値
             assert pos.target_pct == 0.0  # B'：利確で刻まない
             d = s.get(Decision, did)
             assert d.status == "holding"
-            assert d.entry_price == 1000.0  # record_entry が刻む
+            assert d.entry_price == 1002.0  # record_entry が実約定価格を刻む
             assert d.evaluation_date is not None  # 評価期日が付く
 
     def test_only_approved_touched(self, tmp_path: Path) -> None:

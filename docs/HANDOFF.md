@@ -98,7 +98,7 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.tradesupport.evaluat
 launchctl list | grep tradesupport
 ```
 
-⚠ **このノート PC で動かしている開発側の launchd は登録しないこと**。一度誤登録したことがあるので注意。
+> **2026-05-26 追記**：このリポジトリが置かれている PC（`shotaro`）自体を常駐機として運用開始。plist は配置済・`bootstrap` 済（`com.tradesupport.morning-batch` / `com.tradesupport.evaluation` の 2 ジョブ）。別 PC を開発機として併用するなら、その PC 側は登録しない（または `bootout` する）。
 
 ### Step 4：初回ペーパー運用（朝 5 分の流れ・[DEPLOYMENT.md §4](DEPLOYMENT.md) 参照）
 
@@ -119,10 +119,10 @@ launchctl list | grep tradesupport
 |---|---|
 | `new_dashboard.html`（モック）| F0 ゴールデンマスター。視覚回帰の基準 |
 | D-19 の "UI 変更ゲート"（スコア痕跡撤去）| ユーザー再確認後に実施。**まだ承認していない** |
-| Ollama インストール（このノート） | 常駐機側で入れる。開発機では不要 |
-| `~/Library/LaunchAgents/com.tradesupport.*.plist`（このノート） | 開発機には登録しない |
 | `data/trading.sqlite` の手動編集 | スキーマ整合性が壊れる。Alembic か uv 経由で |
 | 個別株 US 銘柄追加 | D-25 で禁止（増額ゲート達成後の段階拡大対象） |
+
+> **2026-05-26 追記**：従来あった「Ollama / LaunchAgents は開発機（このノート）に入れない／登録しない」の 2 行は、`shotaro` PC を常駐機として運用する構成に切り替えたため削除した。Ollama・LaunchAgents は常駐機（このPC）側で運用する（Ollama はユーザー側で別途インストール作業中）。
 
 ---
 

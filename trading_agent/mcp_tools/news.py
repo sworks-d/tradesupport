@@ -179,11 +179,14 @@ class NewsTool(MCPTool[NewsInput]):
             if a.get("url")
         ]
         asof = [r.as_of for r in refs if r.as_of is not None]
+        # 記事に published_at が全件無い場合でも「収集時点」を data_asof に入れる。
+        # これが None だと CASPER の data_asof も None になり、defense.verify で
+        # figures_checked=False → default_hold=True で「推し」が永久にブロックされる。
         return NewsOutput(
             success=True,
             articles=deduped,
             total_before_dedupe=total_before,
-            data_asof=max(asof) if asof else None,
+            data_asof=max(asof) if asof else utcnow(),
             source_refs=refs,
             metadata={"source_failures": failures},
         )

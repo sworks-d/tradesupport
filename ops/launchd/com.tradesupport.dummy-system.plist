@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- ダミーシステム自動操縦：朝バッチ後 07:15 に 3 ダミー（守式・攻式・中庸式）を順次起動 -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.tradesupport.dummy-system</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/a05/tradesupport/.venv/bin/python</string>
+    <string>/Users/a05/tradesupport/scripts/run_paper.py</string>
+    <string>--personality</string>
+    <string>all</string>
+    <string>--auto-approve</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/a05/tradesupport</string>
+
+  <!-- 07:15 = 朝バッチ完了想定の 15 分後 -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key><integer>7</integer>
+    <key>Minute</key><integer>15</integer>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/Users/a05/tradesupport/data/logs/dummy-system.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/a05/tradesupport/data/logs/dummy-system.err.log</string>
+
+  <key>RunAtLoad</key>
+  <false/>
+</dict>
+</plist>

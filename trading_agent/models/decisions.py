@@ -75,4 +75,10 @@ class Decision(SQLModel, table=True):
     # 紐付いたトピックス
     supporting_topic_ids: list[int] = Field(default_factory=list, sa_column=Column(JSON))
 
+    # ペーパー検証：どの性格が auto-approve / 紙約定したか（複数 fill 可）。
+    # JSON 配列で蓄積（["defender", "aggressor"] 等）。空＝未約定。
+    personalities_filled: list[str] = Field(
+        default_factory=list, sa_column=Column(JSON)
+    )
+
     created_at: dt.datetime = Field(default_factory=utcnow)

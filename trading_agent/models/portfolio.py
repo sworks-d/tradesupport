@@ -42,6 +42,10 @@ class Portfolio(SQLModel, table=True):
     moomoo_position_id: str | None = None
     last_synced_at: dt.datetime = Field(default_factory=utcnow)
 
+    # ペーパー検証用：性格別 portfolio 振り分け（defender / aggressor / balanced）。
+    # None は単一 portfolio 運用（旧挙動）として扱う。
+    personality: str | None = Field(default=None, index=True)
+
     created_at: dt.datetime = Field(default_factory=utcnow)
     updated_at: dt.datetime = Field(default_factory=utcnow)
 

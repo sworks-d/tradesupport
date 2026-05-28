@@ -197,10 +197,14 @@ class ScreeningTool(MCPTool[ScreeningInput]):
                 calculate_theme_score(d) if "theme" in tool_input.strategies else (0.0, {})
             )
             composite = max(v_score, t_score)
+            # 浮動小数点の境界値（例: composite=19.9999... が min_score=20.0 を下回って判定漏れする）
+            # を防ぐため、微小な許容誤差を入れる。境界値（A=B）は通すという意図を明示。
+            eps = 1e-9
+            threshold = tool_input.min_score - eps
             matched = []
-            if "v_shape" in tool_input.strategies and v_score >= tool_input.min_score:
+            if "v_shape" in tool_input.strategies and v_score >= threshold:
                 matched.append("v_shape")
-            if "theme" in tool_input.strategies and t_score >= tool_input.min_score:
+            if "theme" in tool_input.strategies and t_score >= threshold:
                 matched.append("theme")
             scored.append(
                 {
@@ -216,7 +220,7 @@ class ScreeningTool(MCPTool[ScreeningInput]):
                     "matched_strategies": matched,
                     "v_shape_details": v_details,
                     "theme_details": t_details,
-                    "screening_passed": composite >= tool_input.min_score,
+                    "screening_passed": composite >= threshold,
                 }
             )
 

@@ -15,6 +15,7 @@ class Universe(SQLModel, table=True):
     ticker: str = Field(primary_key=True)
     name: str
     name_en: str | None = None
+    name_ja: str | None = None  # JP 銘柄の日本語名（JPX 公式 Excel 由来）
     market: str  # "US" / "JP"
     sector: str
     industry: str | None = None

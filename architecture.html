@@ -1266,6 +1266,274 @@ td code, .code { font-family: ui-monospace, "SF Mono", Menlo, monospace; backgro
 
 <p>D-24 確定により、D-23 の「外骨格」が<b>抽象論から実装可能な仕様</b>になった（X-2 spec で詳細化）。</p>
 
+
+<h2>8. ダミーシステム（DS）— 並行ペーパー検証 × 自動運用</h2>
+
+<div class="status-bar">
+  <strong>2026-05-28 実装完了</strong> ｜ エヴァンゲリオン命名の 4 機（REI/ASUKA/SHINJI/KAWORU）が独立した
+  ¥100,000 で同時にペーパー検証する。MAGI 判定（推し/要検討/静観）に対して各機の性格で
+  auto-approve → 紙約定 → 自動売却 → 日次レポート生成までを自走する。
+</div>
+
+<h3>8.1 ダミーシステム 4 機の比較</h3>
+
+<table>
+  <tr>
+    <th>機体</th>
+    <th>採用 stance</th>
+    <th>1 銘柄上限<br>（基準）</th>
+    <th>保有期限</th>
+    <th>Stop loss</th>
+    <th>動的調整</th>
+    <th>性格</th>
+  </tr>
+  <tr>
+    <td><b>🔵 DS/REI</b><br>零号機・守り</td>
+    <td>推し + 要検討</td>
+    <td>15%</td>
+    <td>180 日</td>
+    <td>-15%</td>
+    <td>PnL ±5% で max ±20%</td>
+    <td>静粛・長期保有・タイトな stop で「動くが負けない」</td>
+  </tr>
+  <tr>
+    <td><b>🔴 DS/ASUKA</b><br>弐号機・攻め</td>
+    <td>推し + 要検討</td>
+    <td>20%</td>
+    <td>60 日</td>
+    <td>-8%</td>
+    <td>PnL ±5% で max ±20%</td>
+    <td>1 銘柄集中・短期回転・stop タイトの真の攻め型</td>
+  </tr>
+  <tr>
+    <td><b>🟣 DS/SHINJI</b><br>初号機・中庸</td>
+    <td>推し + 要検討</td>
+    <td>7%</td>
+    <td>90 日</td>
+    <td>-10%</td>
+    <td>PnL ±5% で max ±20%</td>
+    <td>守りと攻めの間。中サイズ・中期保有</td>
+  </tr>
+  <tr>
+    <td><b>🌒 DS/KAWORU</b><br>第17使徒・異質</td>
+    <td>推し + 要検討 + <b>静観</b></td>
+    <td>20%</td>
+    <td>21 日</td>
+    <td>-5%</td>
+    <td>PnL ±5% で max ±20%</td>
+    <td>いいとこどり。REI/ASUKA/SHINJI の <b>3 機合議銘柄を最優先</b> + 独自眼で静観も拾う</td>
+  </tr>
+</table>
+
+<h3>8.2 1 日のタイムライン（launchd 自動化）</h3>
+
+<table>
+  <tr>
+    <th>時刻</th>
+    <th>ジョブ</th>
+    <th>plist</th>
+    <th>処理内容</th>
+  </tr>
+  <tr>
+    <td><code>07:00</code></td>
+    <td>morning-batch</td>
+    <td><code>com.tradesupport.morning-batch</code></td>
+    <td>universe (JPX TOPIX500) → topics → screening → MAGI 評価 → decisions materialize</td>
+  </tr>
+  <tr>
+    <td><code>07:15</code></td>
+    <td>dummy-system</td>
+    <td><code>com.tradesupport.dummy-system</code></td>
+    <td>4 機が順次：① 保有の stop/期限到達分を自動売却 → ② accept_stances に応じて auto-approve → ③ 翌寄り価格で紙約定（moomoo 手数料・スリッページ・FX 込み）</td>
+  </tr>
+  <tr>
+    <td><code>07:30</code></td>
+    <td>evaluation</td>
+    <td><code>com.tradesupport.evaluation</code></td>
+    <td>評価期日到来の decision を採点（hit/miss・平均 R・プロセス遵守）</td>
+  </tr>
+  <tr>
+    <td><code>18:00</code></td>
+    <td>daily-report</td>
+    <td><code>com.tradesupport.daily-report</code></td>
+    <td><code>autoreport/YYYY-MM-DD.html</code> 出力（時価評価・前日比・累積 PnL・思考ログ・自動売買ルール）</td>
+  </tr>
+</table>
+
+<h3>8.3 データフロー（朝バッチ → DS 自動運用 → 日次レポート）</h3>
+
+<div class="diagram">
+<svg class="diagram-svg" viewBox="0 0 1200 540" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arrow8" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L9,3 L0,6 Z" fill="#444"/>
+    </marker>
+  </defs>
+
+  <!-- 朝バッチ -->
+  <rect x="20" y="40" width="220" height="80" rx="6" fill="#fff" stroke="#2980b9" stroke-width="1.5"/>
+  <text x="130" y="62" text-anchor="middle" font-size="13" font-weight="600" fill="#2980b9">朝バッチ 07:00</text>
+  <text x="130" y="82" text-anchor="middle" font-size="11" fill="#444">universe 495 → screening</text>
+  <text x="130" y="98" text-anchor="middle" font-size="11" fill="#444">→ MAGI 3 審判</text>
+  <text x="130" y="113" text-anchor="middle" font-size="11" fill="#444">→ decisions materialize</text>
+
+  <!-- decisions テーブル -->
+  <rect x="290" y="40" width="200" height="80" rx="6" fill="#fff" stroke="#8e44ad" stroke-width="1.5"/>
+  <text x="390" y="62" text-anchor="middle" font-size="13" font-weight="600" fill="#8e44ad">decisions</text>
+  <text x="390" y="82" text-anchor="middle" font-size="11" fill="#444">gendo_stance:</text>
+  <text x="390" y="98" text-anchor="middle" font-size="11" fill="#444">推し / 要検討 / 静観</text>
+  <text x="390" y="113" text-anchor="middle" font-size="11" fill="#444">status: awaiting</text>
+
+  <line x1="240" y1="80" x2="290" y2="80" stroke="#444" stroke-width="1.5" marker-end="url(#arrow8)"/>
+
+  <!-- DS 4 機 -->
+  <text x="700" y="30" font-size="14" font-weight="600" fill="#333">ダミーシステム（07:15）</text>
+  <rect x="540" y="40" width="155" height="80" rx="6" fill="#e1f5ff" stroke="#4a90e2" stroke-width="1.5"/>
+  <text x="617" y="62" text-anchor="middle" font-size="13" font-weight="600">🔵 DS/REI</text>
+  <text x="617" y="82" text-anchor="middle" font-size="10.5" fill="#555">accept: 推し+要検討</text>
+  <text x="617" y="97" text-anchor="middle" font-size="10.5" fill="#555">max 15% / 180日</text>
+  <text x="617" y="112" text-anchor="middle" font-size="10.5" fill="#555">stop -15%</text>
+
+  <rect x="705" y="40" width="155" height="80" rx="6" fill="#fff0f0" stroke="#e74c3c" stroke-width="1.5"/>
+  <text x="782" y="62" text-anchor="middle" font-size="13" font-weight="600">🔴 DS/ASUKA</text>
+  <text x="782" y="82" text-anchor="middle" font-size="10.5" fill="#555">accept: 推し+要検討</text>
+  <text x="782" y="97" text-anchor="middle" font-size="10.5" fill="#555">max 20% / 60日</text>
+  <text x="782" y="112" text-anchor="middle" font-size="10.5" fill="#555">stop -8%</text>
+
+  <rect x="870" y="40" width="155" height="80" rx="6" fill="#f0e8ff" stroke="#9b59b6" stroke-width="1.5"/>
+  <text x="947" y="62" text-anchor="middle" font-size="13" font-weight="600">🟣 DS/SHINJI</text>
+  <text x="947" y="82" text-anchor="middle" font-size="10.5" fill="#555">accept: 推し+要検討</text>
+  <text x="947" y="97" text-anchor="middle" font-size="10.5" fill="#555">max 7% / 90日</text>
+  <text x="947" y="112" text-anchor="middle" font-size="10.5" fill="#555">stop -10%</text>
+
+  <rect x="1035" y="40" width="155" height="80" rx="6" fill="#f4f0ff" stroke="#5d3fd3" stroke-width="1.5"/>
+  <text x="1112" y="62" text-anchor="middle" font-size="13" font-weight="600">🌒 DS/KAWORU</text>
+  <text x="1112" y="82" text-anchor="middle" font-size="10.5" fill="#555">accept: 全 stance</text>
+  <text x="1112" y="97" text-anchor="middle" font-size="10.5" fill="#555">max 20% / 21日</text>
+  <text x="1112" y="112" text-anchor="middle" font-size="10.5" fill="#555">stop -5% + 合議優先</text>
+
+  <line x1="490" y1="80" x2="540" y2="80" stroke="#444" stroke-width="1.5" marker-end="url(#arrow8)"/>
+
+  <!-- 各機の処理 -->
+  <text x="600" y="160" font-size="13" font-weight="600" fill="#333">各機の処理サイクル（独立した ¥100,000 で同時実行）</text>
+  <rect x="20" y="180" width="1170" height="100" rx="6" fill="#fafafa" stroke="#aaa"/>
+
+  <rect x="50" y="200" width="220" height="60" rx="4" fill="#fff" stroke="#e74c3c" stroke-width="1.5"/>
+  <text x="160" y="222" text-anchor="middle" font-size="12" font-weight="600">① 自動売却</text>
+  <text x="160" y="240" text-anchor="middle" font-size="10.5" fill="#666">stop_loss 到達</text>
+  <text x="160" y="254" text-anchor="middle" font-size="10.5" fill="#666">or 保有期限到達</text>
+
+  <rect x="320" y="200" width="220" height="60" rx="4" fill="#fff" stroke="#f39c12" stroke-width="1.5"/>
+  <text x="430" y="222" text-anchor="middle" font-size="12" font-weight="600">② auto-approve</text>
+  <text x="430" y="240" text-anchor="middle" font-size="10.5" fill="#666">accept_stances にマッチする</text>
+  <text x="430" y="254" text-anchor="middle" font-size="10.5" fill="#666">awaiting → approved</text>
+
+  <rect x="590" y="200" width="220" height="60" rx="4" fill="#fff" stroke="#16a085" stroke-width="1.5"/>
+  <text x="700" y="222" text-anchor="middle" font-size="12" font-weight="600">③ 紙約定（buy）</text>
+  <text x="700" y="240" text-anchor="middle" font-size="10.5" fill="#666">翌寄り価格・moomoo シミュ</text>
+  <text x="700" y="254" text-anchor="middle" font-size="10.5" fill="#666">手数料・スリッページ・FX 込み</text>
+
+  <rect x="860" y="200" width="290" height="60" rx="4" fill="#fff" stroke="#8e44ad" stroke-width="1.5"/>
+  <text x="1005" y="222" text-anchor="middle" font-size="12" font-weight="600">④ Portfolio に記録</text>
+  <text x="1005" y="240" text-anchor="middle" font-size="10.5" fill="#666">personality 別の独立した portfolio</text>
+  <text x="1005" y="254" text-anchor="middle" font-size="10.5" fill="#666">Decision.personalities_filled[] に追加</text>
+
+  <line x1="270" y1="230" x2="320" y2="230" stroke="#444" stroke-width="1.5" marker-end="url(#arrow8)"/>
+  <line x1="540" y1="230" x2="590" y2="230" stroke="#444" stroke-width="1.5" marker-end="url(#arrow8)"/>
+  <line x1="810" y1="230" x2="860" y2="230" stroke="#444" stroke-width="1.5" marker-end="url(#arrow8)"/>
+
+  <!-- 評価 -->
+  <rect x="290" y="320" width="220" height="60" rx="6" fill="#fff" stroke="#16a085" stroke-width="1.5"/>
+  <text x="400" y="342" text-anchor="middle" font-size="13" font-weight="600" fill="#16a085">評価ジョブ 07:30</text>
+  <text x="400" y="362" text-anchor="middle" font-size="11" fill="#444">hit/miss・平均 R・プロセス遵守</text>
+
+  <!-- レポート -->
+  <rect x="590" y="320" width="320" height="60" rx="6" fill="#fff" stroke="#c0392b" stroke-width="1.5"/>
+  <text x="750" y="342" text-anchor="middle" font-size="13" font-weight="600" fill="#c0392b">日次レポート 18:00</text>
+  <text x="750" y="362" text-anchor="middle" font-size="11" fill="#444">autoreport/YYYY-MM-DD.html 自動生成</text>
+
+  <line x1="510" y1="350" x2="590" y2="350" stroke="#444" stroke-width="1.5" marker-end="url(#arrow8)"/>
+
+  <!-- レポート中身 -->
+  <text x="600" y="420" font-size="13" font-weight="600" fill="#333">レポートの中身（4 機並列）</text>
+  <rect x="20" y="440" width="1170" height="80" rx="6" fill="#fffbf3" stroke="#d4a72c"/>
+  <text x="40" y="465" font-size="11" fill="#444">• 各機の総資産（時価）・累積 PnL・前日比・含み損益（手数料・スリッページ込み）</text>
+  <text x="40" y="482" font-size="11" fill="#444">• 銘柄テーブル（日本語名・取得価格・時価・含み損益）</text>
+  <text x="40" y="499" font-size="11" fill="#444">• 自動売買ルール 1 行サマリ・動的 max（PnL 連動で↑強気/↓守り）・思考ログ折りたたみ</text>
+
+</svg>
+</div>
+
+<h3>8.4 moomoo 実弾相当シミュレーション</h3>
+
+<p>紙約定の各 buy/sell に対して、moomoo 実弾で発生するコストを再現する：</p>
+
+<table>
+  <tr><th>項目</th><th>moomoo 実弾</th><th>シミュレーション値</th></tr>
+  <tr><td>JP 単元未満手数料（1〜99 株）</td><td>0%（D-25 採用理由）</td><td>0 円</td></tr>
+  <tr><td>JP 単元手数料（100 株以上）</td><td>0.088% 税込 / 上限 ¥1,070</td><td>同左</td></tr>
+  <tr><td>US ETF 手数料</td><td>0.495% 税込 / 上限 $22</td><td>同左</td></tr>
+  <tr><td>USD/JPY スプレッド</td><td>25 銭/$</td><td>同左</td></tr>
+  <tr><td>寄付スリッページ</td><td>±0.1〜0.5%</td><td>±0.2%（中央値）</td></tr>
+  <tr><td>約定タイミング</td><td>翌営業日 09:00 (JP) / 23:30 (US)</td><td>翌寄り価格固定</td></tr>
+</table>
+
+<h3>8.5 KAWORU の「いいとこどり」ロジック</h3>
+
+<p>KAWORU は 3 機（REI/ASUKA/SHINJI）が <b>共通で保有している銘柄</b>を最優先で買い付ける：</p>
+
+<pre style="background:#f5f5f0;padding:12px;border-radius:4px;font-size:12px;line-height:1.5;border:1px solid #ddd;overflow-x:auto">
+def _consensus_tickers(engine, peers=("REI", "ASUKA", "SHINJI")) -> set[str]:
+    """3 機が全員 active 保有している ticker の集合を返す。"""
+    return set.intersection(
+        *(set of tickers held by each peer)
+    )
+
+# KAWORU の fill 順序を consensus 優先でソート
+if personality.name == "KAWORU":
+    consensus = _consensus_tickers(engine)
+    decisions = sorted(decisions,
+        key=lambda d: 0 if d.ticker in consensus else 1)
+</pre>
+
+<p>合議シグナル（皆が買う = 強い）を盗み、加えて 3 機が見ない「静観」も独自眼で組み入れる。
+検証データの多様性を最大化する <b>異形枠</b>。</p>
+
+<h3>8.6 動的 max_position_pct（PnL 連動）</h3>
+
+<p>各機の 1 銘柄上限は累積 PnL に応じて自動調整される（勝ってる時は強気・負けてる時は守り）：</p>
+
+<table>
+  <tr><th>累積 PnL</th><th>調整</th><th>意図</th></tr>
+  <tr><td>+5% 超</td><td>max × 1.2（上限 30%）</td><td>↑強気モード：勝てる場面で集中</td></tr>
+  <tr><td>-5% 〜 +5%</td><td>標準</td><td>判定不能領域・基準値</td></tr>
+  <tr><td>-5% 未満</td><td>max × 0.8</td><td>↓守りモード：負け方を制限</td></tr>
+</table>
+
+<h3>8.7 データモデル（追加）</h3>
+
+<table>
+  <tr><th>テーブル</th><th>追加カラム</th><th>用途</th></tr>
+  <tr><td><code>universe</code></td><td><code>name_ja</code></td><td>JPX 公式 Excel から日本語名取得（494 銘柄）</td></tr>
+  <tr><td><code>portfolio</code></td><td><code>personality</code></td><td>性格別 portfolio 振り分け（"REI"/"ASUKA"/"SHINJI"/"KAWORU"）</td></tr>
+  <tr><td><code>decisions</code></td><td><code>personalities_filled[]</code></td><td>どの性格が紙約定したかの配列（JSON）</td></tr>
+</table>
+
+<h3>8.8 関連ファイル</h3>
+
+<table>
+  <tr><th>ファイル</th><th>役割</th></tr>
+  <tr><td><code>trading_agent/portfolio/personality.py</code></td><td>DS 4 機の性格定義 + 動的 max + ルール要約</td></tr>
+  <tr><td><code>trading_agent/portfolio/paper_exec.py</code></td><td>paper_fill_approved + paper_close_due + _consensus_tickers</td></tr>
+  <tr><td><code>trading_agent/portfolio/moomoo_sim.py</code></td><td>手数料・スリッページ・FX スプレッドの実弾相当シミュ</td></tr>
+  <tr><td><code>trading_agent/reporting/builder.py</code></td><td>レポート用データ集約（時価評価・前日比・累積 PnL）</td></tr>
+  <tr><td><code>trading_agent/reporting/templates/daily.html</code></td><td>Jinja2 HTML テンプレート</td></tr>
+  <tr><td><code>scripts/run_paper.py</code></td><td><code>--personality {REI|ASUKA|SHINJI|KAWORU|all} --auto-approve</code></td></tr>
+  <tr><td><code>scripts/build_report.py</code></td><td><code>autoreport/YYYY-MM-DD.html</code> 出力</td></tr>
+  <tr><td><code>ops/launchd/com.tradesupport.dummy-system.plist</code></td><td>07:15 ダミーシステム launchd</td></tr>
+  <tr><td><code>ops/launchd/com.tradesupport.daily-report.plist</code></td><td>18:00 日次レポート launchd</td></tr>
+</table>
+
 </div>
 
 </body>

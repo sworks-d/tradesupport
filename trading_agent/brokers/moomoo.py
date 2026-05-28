@@ -64,8 +64,12 @@ class MoomooBroker:
 
     @classmethod
     def from_settings(cls, settings: Any) -> MoomooBroker:
-        """Settings（config.py）から構築する。trading_mode→trd_env を対応付け。"""
-        trd_env = "REAL" if getattr(settings, "trading_mode", "paper") == "live" else "SIMULATE"
+        """Settings（config.py）から構築する。
+
+        JP は moomoo SIMULATE 非対応のため、paper / live とも **REAL 口座を読み取る**設計に統一。
+        紙運用の仮想入金は `load_account` の overlay で表現（実弾化は `TRADING_MODE=live` のみで
+        切替＝overlay が自動で外れる）。
+        """
         markets = tuple(
             m.strip()
             for m in str(getattr(settings, "moomoo_markets", "US,JP")).split(",")
@@ -74,7 +78,7 @@ class MoomooBroker:
         return cls(
             host=getattr(settings, "moomoo_opend_host", "127.0.0.1"),
             port=int(getattr(settings, "moomoo_opend_port", 11111)),
-            trd_env=trd_env,
+            trd_env="REAL",
             markets=markets or ("US", "JP"),
             security_firm=getattr(settings, "moomoo_security_firm", "FUTUJP"),
             currency=getattr(settings, "moomoo_currency", "JPY"),

@@ -1,11 +1,15 @@
 """P4-3 ペーパー運用 一気通貫（監視=日次／コア積立=月次DCA／決裁=人間）。
 
-  python scripts/run_paper.py            # 監視：朝バッチ→GENDO推奨カード提示（決裁待ち）
-  python scripts/run_paper.py --fill     # 承認(approved)分を翌寄りで紙約定（月次DCA想定）
-  python scripts/run_paper.py --evaluate # 評価期日到来分を実価格で採点
+  python scripts/run_paper.py                              # 監視：朝バッチ→GENDO推奨カード提示
+  python scripts/run_paper.py --fill                       # 承認(approved)分を紙約定（手動運用）
+  python scripts/run_paper.py --evaluate                   # 評価期日到来分を実価格で採点
+  python scripts/run_paper.py --personality defender --auto-approve
+      # 性格別の自動承認＋紙約定（accept_stances にマッチする awaiting を一括処理）
 
-決裁は人間（原則2）：カードを見て承認は別操作（decision.status を approved に更新）。
-攻めは情報のみ＝枠0（GENDOカードで灰色表示）。前提：universe投入済・.env（LLM/ネット使用）。
+性格モード（--personality）:
+  defender   守り（推しのみ・5% 上限・180 日保有・stop -12%）
+  aggressor  攻め（推し+要検討・10%・60 日・stop -8%）
+  balanced   中庸（推し+要検討・7%・90 日・stop -10%）
 """
 
 from __future__ import annotations
@@ -18,14 +22,17 @@ from pathlib import Path
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, col, select
 
-from trading_agent.brokers.standin import StandInBroker
+from trading_agent.brokers import load_account, load_personality_account
+from trading_agent.config import load_settings
 from trading_agent.db import create_all, get_engine
 from trading_agent.evaluation.job import evaluate_due_decisions
 from trading_agent.evaluation.paper_review import check_process_adherence
+from trading_agent.models.decisions import Decision
 from trading_agent.models.universe import Universe
 from trading_agent.orchestrator.morning_batch import run_morning_batch
 from trading_agent.portfolio.operator_view import operator_cards, render_card
-from trading_agent.portfolio.paper_exec import paper_fill_approved
+from trading_agent.portfolio.paper_exec import paper_close_due, paper_fill_approved
+from trading_agent.portfolio.personality import PERSONALITIES, all_personalities, get_personality
 from trading_agent.screening import fetch_financials
 
 PriceFn = Callable[[str], float | None]
@@ -60,8 +67,9 @@ def _live_lookups(engine: Engine) -> tuple[PriceFn, IsJpFn]:
 
 
 def _cash(engine: Engine) -> float:
-    acct = StandInBroker().get_account()
-    return acct.cash if acct is not None else 100_000.0
+    """口座 cash（live は moomoo そのまま / paper は moomoo + overlay − 紙約定累計）。"""
+    acct, _ = load_account(engine, load_settings())
+    return acct.cash
 
 
 async def _monitor(engine: Engine) -> None:
@@ -101,9 +109,116 @@ def _evaluate(engine: Engine) -> None:
     print("※守り(自爆回避)は数ヶ月のリターンに現れない＝正常。履歴が貯まればコアvsパッシブのリスク調整で測る。")
 
 
+def _auto_approve_for_personality(engine: Engine, personality_name: str) -> int:
+    """指定性格の accept_stances にマッチする awaiting decisions を approved に進める。
+
+    既に approved/holding な行は触らない（冪等）。
+    """
+    personality = get_personality(personality_name)
+    accept = set(personality.accept_stances)
+    count = 0
+    with Session(engine) as session:
+        rows = session.exec(
+            select(Decision)
+            .where(col(Decision.status) == "awaiting")
+            .where(col(Decision.action) == "buy")
+        ).all()
+        for d in rows:
+            if d.gendo_stance in accept:
+                d.status = "approved"
+                session.add(d)
+                count += 1
+        session.commit()
+    return count
+
+
+def _close_due_for_personality(engine: Engine, personality_name: str) -> None:
+    """その性格の保有のうち stop_loss / time_exit に到達したものを自動売却する。"""
+    personality = get_personality(personality_name)
+    price, is_jp = _live_lookups(engine)
+    res = paper_close_due(
+        engine,
+        price_lookup=price,
+        is_jp_lookup=is_jp,
+        personality_filter=personality_name,
+    )
+    if res.closes:
+        print(
+            f"[{personality.icon} {personality.label}] 自動売却 {len(res.closes)} 件"
+        )
+        for c in res.closes:
+            sign = "+" if c.pnl_jpy >= 0 else ""
+            print(
+                f"  {c.ticker} {c.qty}株 ¥{c.buy_price:,.0f}→¥{c.sell_price:,.0f}"
+                f" / {c.reason} / PnL {sign}¥{c.pnl_jpy:,.0f}"
+            )
+
+
+def _fill_for_personality(engine: Engine, personality_name: str) -> None:
+    """1 つの性格で auto-close → auto-approve → 紙約定の連続実行。"""
+    # 先に保有チェック（stop / 期限到達分を売却）してから新規買い fill
+    _close_due_for_personality(engine, personality_name)
+    personality = get_personality(personality_name)
+    approved_n = _auto_approve_for_personality(engine, personality_name)
+    print(
+        f"[{personality.icon} {personality.label}] auto-approved {approved_n} 件"
+        f" (stances={list(personality.accept_stances)})"
+    )
+
+    # 性格別の cash を計算（性格固有の overlay − その性格の active コスト）
+    acct = load_personality_account(
+        engine,
+        personality=personality_name,
+        overlay_cash_jpy=personality.overlay_cash_jpy,
+    )
+    price, is_jp = _live_lookups(engine)
+    res = paper_fill_approved(
+        engine,
+        price_lookup=price,
+        is_jp_lookup=is_jp,
+        cash_jpy=acct.cash,
+        personality=personality,
+    )
+    print(
+        f"[{personality.icon} {personality.label}] 紙約定 {len(res.fills)} 件 /"
+        f" 残現金 ¥{res.cash_after:,.0f}"
+    )
+    for f in res.fills:
+        print(f"  {f.ticker} {f.shares}株 @¥{f.price:,.0f} = ¥{f.amount_jpy:,.0f}")
+    for t, why in res.skipped:
+        print(f"  skip {t}: {why}")
+
+
 def main() -> None:
     engine = get_engine(Path("data") / "trading.sqlite")
     create_all(engine)
+
+    # 性格モード: --personality {defender|aggressor|balanced|all} と --auto-approve
+    personality_arg: str | None = None
+    for i, a in enumerate(sys.argv):
+        if a == "--personality" and i + 1 < len(sys.argv):
+            personality_arg = sys.argv[i + 1]
+            break
+
+    if personality_arg:
+        auto = "--auto-approve" in sys.argv
+        if not auto:
+            print(
+                "⚠ --personality 指定時は --auto-approve も必須です（性格モードは自動運用）。"
+            )
+            return
+        targets = (
+            [p.name for p in all_personalities()]
+            if personality_arg == "all"
+            else [personality_arg]
+        )
+        for name in targets:
+            if name not in PERSONALITIES:
+                print(f"⚠ unknown personality: {name}（候補: {list(PERSONALITIES.keys())}）")
+                continue
+            _fill_for_personality(engine, name)
+        return
+
     if "--fill" in sys.argv:
         _fill(engine)
     elif "--evaluate" in sys.argv:

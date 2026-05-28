@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 日次運用レポートを毎日 18:00 に autoreport/YYYY-MM-DD.html へ出力 -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.tradesupport.daily-report</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/a05/tradesupport/.venv/bin/python</string>
+    <string>/Users/a05/tradesupport/scripts/build_report.py</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/a05/tradesupport</string>
+
+  <!-- 毎日 18:00（朝バッチ・自動売買・評価が完了済の時刻） -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key><integer>18</integer>
+    <key>Minute</key><integer>0</integer>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/Users/a05/tradesupport/data/logs/daily-report.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/a05/tradesupport/data/logs/daily-report.err.log</string>
+
+  <key>RunAtLoad</key>
+  <false/>
+</dict>
+</plist>

@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ダミーシステム運用レポート {{ payload.date }}</title>
+<style>
+  :root {
+    --bg: #1a1a1f;
+    --bg-2: #252530;
+    --ink: #ece9de;
+    --ink-2: #a8a89e;
+    --ink-3: #6b6962;
+    --up: #4ade80;
+    --down: #f87171;
+    --warn: #fbbf24;
+    --key: #ff8c42;
+    --border: rgba(255,255,255,0.08);
+    --r: 8px;
+  }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif;
+    margin: 0;
+    padding: 32px 24px;
+    line-height: 1.6;
+  }
+  .wrap { max-width: min(96vw, 1600px); margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 4px 0; letter-spacing: 0.5px; }
+  .subtitle { color: var(--ink-2); font-size: 12px; margin-bottom: 24px; }
+  .card {
+    background: var(--bg-2); border: 1px solid var(--border);
+    border-radius: var(--r); padding: 18px 20px; margin-bottom: 16px;
+  }
+  .card h2 {
+    font-size: 14px; letter-spacing: 1px; color: var(--ink-2);
+    margin: 0 0 12px 0; font-weight: 600;
+  }
+  /* レスポンシブ：画面幅に合わせて 1-4 列に自動調整・各カード最低 240px 確保 */
+  .grid-4 { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+  .grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+  .stat { background: var(--bg); border-radius: 6px; padding: 12px 14px; }
+  .stat-label { color: var(--ink-2); font-size: 11px; letter-spacing: 1px; }
+  .stat-value { font-size: 22px; font-weight: 600; margin-top: 4px; }
+  .stat-sub { color: var(--ink-3); font-size: 11px; margin-top: 2px; }
+  .ds-card {
+    background: var(--bg); border-radius: 6px; padding: 16px;
+    border: 1px solid var(--border); display: flex; flex-direction: column;
+  }
+  .ds-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .ds-icon { font-size: 22px; }
+  .ds-name { font-weight: 700; font-size: 15px; letter-spacing: 0.5px; }
+  .ds-desc { color: var(--ink-3); font-size: 11px; line-height: 1.4; min-height: 36px; }
+  .ds-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+  .ds-stat-lbl { color: var(--ink-2); font-size: 10px; letter-spacing: 0.5px; }
+  .ds-stat-val { font-size: 14px; font-weight: 600; }
+  .pnl.up { color: var(--up); }
+  .pnl.down { color: var(--down); }
+  .pnl.flat { color: var(--ink-2); }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--border); }
+  th { color: var(--ink-2); font-weight: 600; letter-spacing: 0.5px; font-size: 10px; }
+  .stance-推し  { background: rgba(74, 222, 128, 0.15); color: var(--up); padding: 1px 6px; border-radius: 3px; font-size: 11px; font-weight: 600; }
+  .stance-要検討 { background: rgba(251, 191, 36, 0.15); color: var(--warn); padding: 1px 6px; border-radius: 3px; font-size: 11px; font-weight: 600; }
+  .stance-静観  { background: rgba(168, 168, 158, 0.15); color: var(--ink-2); padding: 1px 6px; border-radius: 3px; font-size: 11px; font-weight: 600; }
+  .filled-tag { background: rgba(255, 140, 66, 0.15); color: var(--key); padding: 1px 4px; border-radius: 2px; font-size: 10px; margin-right: 3px; }
+  .cost-bar { background: var(--bg); border-radius: 4px; height: 10px; overflow: hidden; margin: 6px 0 4px 0; }
+  .cost-bar-fill { height: 100%; background: var(--key); }
+  .footer { color: var(--ink-3); font-size: 11px; margin-top: 24px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>🤖 ダミーシステム運用レポート</h1>
+  <div class="subtitle">
+    {{ payload.date }} ・ 生成 {{ payload.generated_at.strftime('%Y-%m-%d %H:%M') }}
+    ・ ペーパー検証（DS/REI・DS/ASUKA・DS/SHINJI・DS/KAWORU の 4 機並行）
+  </div>
+  <div style="background: rgba(74,222,128,0.08); border-left: 3px solid var(--up); padding: 8px 12px; border-radius: 3px; margin-bottom: 16px; font-size: 11px; line-height: 1.5;">
+    🔬 <b>moomoo 実弾相当シミュレーション</b>：
+    JP 単元未満手数料 0%・JP 単元 0.088%・US ETF 0.495%・USD/JPY スプレッド ¥0.25/$・寄付スリッページ ±0.2%。
+    各機の PnL は手数料・スリッページ・FX 込みの実弾相当値です。
+  </div>
+
+  <div class="card">
+    <h2>本日のサマリー</h2>
+    <div class="grid-4">
+      <div class="stat">
+        <div class="stat-label">UNIVERSE</div>
+        <div class="stat-value">{{ payload.universe_size }}</div>
+        <div class="stat-sub">active 銘柄</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">本日 DECISIONS</div>
+        <div class="stat-value">{{ payload.summary.decisions_total }}</div>
+        <div class="stat-sub">推し {{ payload.summary['推し'] }} ・ 要検討 {{ payload.summary['要検討'] }} ・ 静観 {{ payload.summary['静観'] }}</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">TOPICS 取得</div>
+        <div class="stat-value">{{ payload.topics_today }}</div>
+        <div class="stat-sub">本日新規</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">本日 LLM コスト</div>
+        <div class="stat-value">¥{{ "{:,.0f}".format(payload.cost_today_jpy) }}</div>
+        <div class="cost-bar"><div class="cost-bar-fill" style="width: {{ (payload.cost_month_jpy / payload.cost_month_budget * 100) | round(1) }}%"></div></div>
+        <div class="stat-sub">月次 ¥{{ "{:,.0f}".format(payload.cost_month_jpy) }} / ¥{{ "{:,.0f}".format(payload.cost_month_budget) }}</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>ダミーシステム 4 機（並行ペーパー検証）</h2>
+    <div class="grid-4">
+      {% for p in payload.personalities %}
+      <div class="ds-card">
+        <div class="ds-head">
+          <span class="ds-icon">{{ p.icon }}</span>
+          <span class="ds-name">{{ p.label }}</span>
+        </div>
+        <div class="ds-desc">{{ p.description }}</div>
+        <!-- 自動売買ルール 1 行サマリ（要点だけ）-->
+        <div style="margin-top: 10px; padding: 6px 10px; background: rgba(255,140,66,0.06); border-left: 2px solid var(--key); border-radius: 3px; font-size: 11px; line-height: 1.4; color: var(--ink-2);">
+          {{ p.rule_summary }}
+        </div>
+        <!-- 動的 max（PnL 連動で調整された 1 銘柄上限）-->
+        <div style="margin-top: 6px; font-size: 11px; color: var(--ink-3);">
+          現在の 1 銘柄上限:
+          <b style="color: var(--ink);">{{ (p.effective_max_pct * 100) | round(0) }}%</b>
+          (¥{{ "{:,.0f}".format(p.overlay_cash_jpy * p.effective_max_pct) }})
+          {% if p.effective_max_pct > p.max_position_pct %}
+            <span style="color: var(--up);">↑強気モード</span>
+          {% elif p.effective_max_pct < p.max_position_pct %}
+            <span style="color: var(--down);">↓守りモード</span>
+          {% else %}
+            <span>標準</span>
+          {% endif %}
+        </div>
+        <div class="ds-stats">
+          <div>
+            <div class="ds-stat-lbl">総資産（時価）</div>
+            <div class="ds-stat-val">¥{{ "{:,.0f}".format(p.total_value_jpy) }}</div>
+          </div>
+          <div>
+            <div class="ds-stat-lbl">PnL（累積）</div>
+            <div class="ds-stat-val pnl {% if p.pnl_jpy > 0 %}up{% elif p.pnl_jpy < 0 %}down{% else %}flat{% endif %}">
+              {% if p.pnl_jpy >= 0 %}+{% endif %}¥{{ "{:,.0f}".format(p.pnl_jpy) }}<br>
+              <span style="font-size:11px;">({{ "%+.2f"|format(p.pnl_pct) }}%)</span>
+            </div>
+          </div>
+          <div>
+            <div class="ds-stat-lbl">前日比</div>
+            <div class="ds-stat-val pnl {% if p.day_change_jpy > 0 %}up{% elif p.day_change_jpy < 0 %}down{% else %}flat{% endif %}">
+              {% if p.day_change_jpy >= 0 %}+{% endif %}¥{{ "{:,.0f}".format(p.day_change_jpy) }}
+            </div>
+          </div>
+          <div>
+            <div class="ds-stat-lbl">保有 / 残現金</div>
+            <div class="ds-stat-val">{{ p.holdings_count }} 件<br><span style="font-size:11px;">¥{{ "{:,.0f}".format(p.cash_jpy) }}</span></div>
+          </div>
+        </div>
+        {% if p.holdings %}
+        <table style="margin-top:12px;">
+          <tr><th>銘柄</th><th>株</th><th>取得</th><th>時価</th><th>含み損益</th></tr>
+          {% for h in p.holdings %}
+          <tr>
+            <td>
+              <div style="font-weight:600;">{{ h.ticker }}</div>
+              <div style="color: var(--ink-3); font-size: 10px;">{{ h.name }}</div>
+            </td>
+            <td>{{ h.qty }}</td>
+            <td>¥{{ "{:,.0f}".format(h.cost) }}</td>
+            <td>¥{{ "{:,.0f}".format(h.market_value) }}</td>
+            <td class="{% if h.unrealized > 0 %}pnl up{% elif h.unrealized < 0 %}pnl down{% else %}pnl flat{% endif %}">
+              {% if h.unrealized >= 0 %}+{% endif %}¥{{ "{:,.0f}".format(h.unrealized) }}<br>
+              <span style="font-size:10px;">{{ "%+.1f"|format(h.unrealized_pct) }}%</span>
+            </td>
+          </tr>
+          {% endfor %}
+        </table>
+        {% else %}
+        <div style="margin-top:12px; color: var(--ink-3); font-size: 12px;">保有なし</div>
+        {% endif %}
+        <!-- DS の思考ログ：各保有銘柄を採用した理由 -->
+        {% if p.thoughts %}
+        <details style="margin-top: 12px; font-size: 11px;">
+          <summary style="cursor: pointer; color: var(--ink-2); letter-spacing: 0.5px;">💭 思考ログ ({{ p.thoughts | length }})</summary>
+          <ul style="margin: 6px 0 0 0; padding-left: 16px; color: var(--ink-3); line-height: 1.5;">
+            {% for t in p.thoughts %}
+            <li style="margin-bottom: 4px;">{{ t }}</li>
+            {% endfor %}
+          </ul>
+        </details>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>本日の MAGI 判定（決裁待ち）</h2>
+    {% if payload.decisions_today %}
+    <table>
+      <tr><th>ID</th><th>銘柄</th><th>STANCE</th><th>STATUS</th><th>紙約定したダミー</th></tr>
+      {% for d in payload.decisions_today %}
+      <tr>
+        <td>{{ d.id }}</td>
+        <td>
+          <div style="font-weight:600;">{{ d.ticker }}</div>
+          <div style="color: var(--ink-3); font-size: 10px;">{{ d.name }}</div>
+        </td>
+        <td><span class="stance-{{ d.stance }}">{{ d.stance }}</span></td>
+        <td>{{ d.status }}</td>
+        <td>
+          {% for f in d.filled %}<span class="filled-tag">DS/{{ f }}</span>{% endfor %}
+          {% if not d.filled %}<span style="color: var(--ink-3); font-size: 11px;">なし</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% else %}
+    <div style="color: var(--ink-3); font-size: 13px;">本日の新規 decisions はありません</div>
+    {% endif %}
+  </div>
+
+  <div class="footer">
+    tradesupport · ダミーシステム自動運用レポート · 朝バッチ 07:00 → DS 自動操縦 07:15 → 評価 07:30 → 本レポート 18:00
+  </div>
+
+</div>
+</body>
+</html>

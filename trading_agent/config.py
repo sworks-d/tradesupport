@@ -60,6 +60,11 @@ class Settings(BaseSettings):
     trading_mode: Literal["paper", "live"] = "paper"
     log_level: str = "INFO"
 
+    # === ペーパー運用の仮想残高 ===
+    # `trading_mode=paper` の時、moomoo の実残高に上乗せする仮想入金（実弾化したら
+    # 実際に入金して overlay は無効化＝live モードでは加算しない）。D-23 元本 ¥100,000。
+    paper_overlay_cash_jpy: int = 100_000
+
     # === パス ===
     db_path: Path = Path("~/.trading-agent/db.sqlite")
     log_dir: Path = Path("~/.trading-agent/logs")
