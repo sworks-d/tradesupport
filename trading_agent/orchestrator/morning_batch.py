@@ -46,7 +46,7 @@ from trading_agent.models.topics import Topic
 from trading_agent.models.universe import Universe
 from trading_agent.orchestrator.dag import DAGExecutor, DAGNode, overall_status
 from trading_agent.utils.logger import get_logger
-from trading_agent.utils.time_utils import utcnow
+from trading_agent.utils.time_utils import today_jst, utcnow
 
 _log = get_logger("orchestrator")
 
@@ -78,13 +78,23 @@ def build_host(engine: Engine) -> MCPHost:
 
 
 def _candidate_tickers(engine: Engine, limit: int = 10) -> list[str]:
-    """直近スクリーニングの合格候補（composite 上位）を返す。"""
+    """直近スクリーニングの合格候補（composite 上位）を返す。
+
+    v2.10: composite_score 同点時は市場規模昇順（小型優先）で「成長銘柄を追う」設計。
+    旧: 同点時順序が SQLite 任せで大型偏向していた。
+    """
+    # v2.10 ハルシネーション防壁: Universe.is_active=True に限定
     with Session(engine) as session:
         rows = list(
             session.exec(
                 select(ScreeningResult)
+                .join(Universe, col(Universe.ticker) == col(ScreeningResult.ticker))
                 .where(col(ScreeningResult.screening_passed))
-                .order_by(col(ScreeningResult.composite_score).desc())
+                .where(col(Universe.is_active))
+                .order_by(
+                    col(ScreeningResult.composite_score).desc(),
+                    col(Universe.market_cap_jpy).asc().nullslast(),
+                )
             )
         )
     seen: set[str] = set()
@@ -98,16 +108,81 @@ def _candidate_tickers(engine: Engine, limit: int = 10) -> list[str]:
     return out
 
 
-def _buy_candidate_tickers(engine: Engine, limit: int = 10) -> list[str]:
+def _filter_affordable_tickers(
+    tickers: list[str], available_jpy: float, *, pool_multiplier: int = 4
+) -> list[str]:
+    """予算内で買える銘柄を優先して並べ替え（v2.10 少額運用対応）。
+
+    available_jpy が指定された場合、yfinance で株価取得して
+    単元株コスト ≤ available_jpy の銘柄を前に並べる。
+    予算外の銘柄も末尾に残す（universe に予算内が少ない場合の fallback）。
+
+    pool_multiplier: 候補リストの何倍まで価格取得するか（API コスト制御）
+
+    Returns:
+        並べ替え後の ticker リスト。順序: 予算内（元順序）→ 予算外（元順序）。
+    """
+    if available_jpy <= 0 or not tickers:
+        return tickers
+
+    from trading_agent.mcp_tools.fundamentals import to_yfinance_symbol
+    from trading_agent.utils.lot_size import get_lot_size
+
+    affordable: list[str] = []
+    unaffordable: list[str] = []
+    # 上位 N 件だけ価格取得（API コスト制御）
+    check_limit = min(len(tickers), pool_multiplier * 10)
+    try:
+        import yfinance as yf
+    except ImportError:
+        return tickers
+
+    for t in tickers[:check_limit]:
+        try:
+            sym = to_yfinance_symbol(t)
+            price = float(yf.Ticker(sym).fast_info.last_price or 0)
+            if price <= 0:
+                # 価格取れない → 予算外扱い（推測しない）
+                unaffordable.append(t)
+                continue
+            lot = get_lot_size(t)
+            unit_cost = price * lot
+            if unit_cost <= available_jpy:
+                affordable.append(t)
+            else:
+                unaffordable.append(t)
+        except Exception as exc:
+            _log.warning(
+                "affordability_check_failed",
+                ticker=t,
+                error_type=type(exc).__name__,
+            )
+            unaffordable.append(t)
+
+    # 残りの未チェック分（pool_multiplier×10 を超えた分）も末尾に
+    unchecked = tickers[check_limit:]
+    return affordable + unaffordable + unchecked
+
+
+def _buy_candidate_tickers(
+    engine: Engine, limit: int = 10, *, available_jpy: float | None = None
+) -> list[str]:
     """MAGI 検証にかける買い候補。active な buy_signals を優先し、無ければ screening 上位で代替。
 
     （IMPROVEMENT_PLAN A-4：「active な buy/sell signals (or screening上位)」）。
+
+    v2.10: available_jpy が指定されたら、予算内で買える銘柄を優先する
+    （少額運用でも分散投資できるよう、株価 × 単元株 ≤ available_jpy の銘柄を上位に）。
     """
+    # v2.10 ハルシネーション防壁: BuySignal も Universe.is_active=True に限定
+    # （inactive 銘柄が awaiting で残ってもユーザーに推奨しない）
     with Session(engine) as session:
         buys = list(
             session.exec(
                 select(BuySignal)
+                .join(Universe, col(Universe.ticker) == col(BuySignal.ticker))
                 .where(col(BuySignal.is_active))
+                .where(col(Universe.is_active))
                 .order_by(col(BuySignal.score).desc())
             )
         )
@@ -117,25 +192,32 @@ def _buy_candidate_tickers(engine: Engine, limit: int = 10) -> list[str]:
         if b.ticker not in seen:
             seen.add(b.ticker)
             out.append(b.ticker)
-        if len(out) >= limit:
-            return out
-    if out:
-        return out
-
-    # フォールバック：screening 上位（passed 問わず・composite 降順）。MAGIが深く検証する。
-    with Session(engine) as session:
-        rows = list(
-            session.exec(
-                select(ScreeningResult).order_by(col(ScreeningResult.composite_score).desc())
+    if not out:
+        # フォールバック：screening 上位（passed 問わず）。MAGIが深く検証する。
+        # v2.10: composite_score 降順 + market_cap 昇順（小型優先・成長銘柄を追う）
+        # ハルシネーション防壁: Universe.is_active=True に限定
+        with Session(engine) as session:
+            rows = list(
+                session.exec(
+                    select(ScreeningResult)
+                    .join(Universe, col(Universe.ticker) == col(ScreeningResult.ticker))
+                    .where(col(Universe.is_active))
+                    .order_by(
+                        col(ScreeningResult.composite_score).desc(),
+                        col(Universe.market_cap_jpy).asc().nullslast(),
+                    )
+                )
             )
-        )
-    for r in rows:
-        if r.ticker not in seen:
-            seen.add(r.ticker)
-            out.append(r.ticker)
-        if len(out) >= limit:
-            break
-    return out
+        for r in rows:
+            if r.ticker not in seen:
+                seen.add(r.ticker)
+                out.append(r.ticker)
+
+    # v2.10: 予算内で買える銘柄を優先（少額運用対応）
+    if available_jpy is not None and available_jpy > 0:
+        out = _filter_affordable_tickers(out, available_jpy)
+
+    return out[:limit]
 
 
 def _sector_lookup(engine: Engine) -> Callable[[str], str | None]:
@@ -146,7 +228,7 @@ def _sector_lookup(engine: Engine) -> Callable[[str], str | None]:
 
 
 def _summary(engine: Engine) -> str:
-    today = utcnow().date()
+    today = today_jst()
     with Session(engine) as session:
         buys = len(list(session.exec(select(BuySignal).where(col(BuySignal.is_active)))))
         sells = len(list(session.exec(select(SellSignal).where(col(SellSignal.is_active)))))
@@ -167,14 +249,79 @@ async def run_morning_batch(
     （MELCHIOR反証＋credibility_flag）。既定 None＝OFF（テストはネット非依存）。実運用は
     `fetch_financials` を渡す。業種除外は universe の sector を引く。
     """
-    invocation_id = f"morning_{utcnow().date().isoformat()}"
+    invocation_id = f"morning_{today_jst().isoformat()}"
     resolved_host = host if host is not None else build_host(engine)
     ctx = AgentContext(host=resolved_host, engine=engine, invocation_id=invocation_id)
     started_at = utcnow()
     sector_of = _sector_lookup(engine) if financials_fetcher is not None else None
 
-    async def pre_check() -> dict[str, bool]:
-        return {"ok": True}
+    async def pre_check() -> dict[str, object]:
+        """v2.10: 3 データソース（J-Quants / NewsAPI / EDINET）の設定確認。
+
+        ここでは軽量に "設定があるか" のみ確認する。実 API の疎通は各ノードで個別に
+        行われる（失敗時は warning ログ + fallback / 空 list を返す設計）。
+        朝バッチを止めない（halt しない）。
+        """
+        from trading_agent.config import load_settings
+        from trading_agent.mcp_tools.jquants import get_default_client
+        from trading_agent.utils.logger import get_logger
+
+        _log = get_logger("orchestrator.pre_check")
+        s = load_settings()
+        result: dict[str, object] = {"ok": True}
+
+        # J-Quants（JP 株の財務正本）
+        jq_client = get_default_client()
+        result["jquants_configured"] = jq_client is not None
+        if jq_client is None:
+            _log.warning("pre_check_jquants_not_configured")
+
+        # NewsAPI（CASPER / topics_collector のニュース補強）
+        result["newsapi_configured"] = bool(s.newsapi_key)
+        if not s.newsapi_key:
+            _log.warning("pre_check_newsapi_not_configured")
+
+        # EDINET（disclosure フラグ・財務反証用）
+        result["edinet_configured"] = bool(s.edinet_api_key)
+        if not s.edinet_api_key:
+            _log.warning("pre_check_edinet_not_configured")
+
+        # Anthropic（必須）
+        result["anthropic_configured"] = bool(s.anthropic_api_key)
+        if not s.anthropic_api_key:
+            _log.warning("pre_check_anthropic_not_configured")
+            result["ok"] = False  # LLM 無しでは朝バッチは意味を成さない
+
+        # v2.10: 前日以前の未完了 awaiting Decision を自動 cancel（翌日繰越処理）
+        # ユーザーが楽天で発注しなかった Decision は今日の朝バッチで新たに評価し直す
+        # （同じ銘柄が候補なら今日の Decision として再登録される）
+        from trading_agent.models.decisions import Decision as _Decision
+
+        today_now = today_jst()
+        with Session(engine, expire_on_commit=False) as sess:
+            stale = list(
+                sess.exec(
+                    select(_Decision)
+                    .where(col(_Decision.status) == "awaiting")
+                    .where(col(_Decision.date) < today_now)
+                ).all()
+            )
+            for d in stale:
+                d.status = "cancelled"
+                d.thesis_at_decision = (
+                    (d.thesis_at_decision or "") + " | 翌日繰越で auto-cancel"
+                )
+                sess.add(d)
+            sess.commit()
+            result["stale_awaiting_cancelled"] = len(stale)
+            if stale:
+                _log.info(
+                    "pre_check_stale_awaiting_cancelled",
+                    count=len(stale),
+                    tickers=[d.ticker for d in stale[:5]],
+                )
+
+        return result
 
     async def run_topics() -> object:
         return await execute_agent(
@@ -230,10 +377,181 @@ async def run_morning_batch(
             engine,
         )
 
+    async def run_trailing_check() -> dict:
+        """v2.10 Phase 1A-Step2: 保有銘柄の真の trailing stop チェック。
+        peak_pnl_pct を更新し、trail_price 到達銘柄に sell Decision を登録。"""
+        from trading_agent.portfolio.trailing_check import (
+            run_trailing_check as _rtc,
+        )
+
+        return _rtc(engine)
+
+    async def run_pyramid_check() -> dict:
+        """v2.10 Phase 1A-Step2: 含み益で planned_total_qty まで追加買付。"""
+        from trading_agent.portfolio.pyramid_check import (
+            run_pyramid_check as _rpc,
+        )
+
+        return _rpc(engine)
+
+    async def run_auto_fill() -> dict:
+        """v2.10 Phase J + G-1: 自動売買モードのみ朝バッチで buy Decision を即 fill。
+
+        manual モード: skip（人間が misato_dispatch.py で手動執行）
+        auto モード: status=approved の buy Decision を即 fill
+        I-10 ガード: HALT 中は強制 skip
+        H-7 ガード: 累計 DD ≤ -10% で新規 buy 抑制
+        H-6 ガード: 保有銘柄と相関 |r| ≥ 0.7 の銘柄は skipped 化
+        """
+        from sqlmodel import Session, col, select
+
+        from trading_agent.models.decisions import Decision
+        from trading_agent.portfolio.anomaly_detector import check_dd_brake, is_halted
+        from trading_agent.portfolio.correlation import assess_new_buy_correlation
+        from trading_agent.utils.lot_size import is_auto_mode
+
+        if not is_auto_mode():
+            return {"status": "skipped", "reason": "automation_mode=manual"}
+        if is_halted():
+            return {"status": "skipped", "reason": "halted"}
+
+        from trading_agent.portfolio.misato import treasury_view
+        from trading_agent.portfolio.paper_exec import paper_fill_approved
+        from trading_agent.utils.lot_size import get_broker_mode
+
+        broker_mode = get_broker_mode()
+
+        # v2.10 Phase H-7: ポートフォリオ DD ブレーキ
+        dd_check = check_dd_brake(engine)
+        if dd_check["brake_active"]:
+            return {
+                "status": "skipped",
+                "reason": "dd_brake",
+                "dd_check": dd_check,
+            }
+
+        # v2.10 Phase H-6: 保有銘柄と高相関の buy Decision を skipped 化
+        # perf 改善: 保有銘柄リターンは候補ループ前後で 1 回しか取得しないよう共有 cache
+        blocked_correlations: list[dict] = []
+        returns_cache: dict[str, list[float] | None] = {}
+        with Session(engine) as s:
+            approved_buys = list(
+                s.exec(
+                    select(Decision)
+                    .where(col(Decision.action) == "buy")
+                    .where(col(Decision.status) == "approved")
+                ).all()
+            )
+            for d in approved_buys:
+                # ピラミッディング Decision は H-6 対象外（既保有 = 相関判定不要）
+                if "ピラミッディング" in (d.thesis_at_decision or ""):
+                    continue
+                corr_check = assess_new_buy_correlation(
+                    engine,
+                    d.ticker,
+                    broker_mode=broker_mode,
+                    returns_cache=returns_cache,
+                )
+                if corr_check["blocked"]:
+                    d.status = "skipped"
+                    d.thesis_at_decision = (
+                        (d.thesis_at_decision or "")
+                        + f" | H-6 ブロック: {corr_check['reason']}"
+                    )
+                    s.add(d)
+                    blocked_correlations.append(
+                        {"ticker": d.ticker, **corr_check}
+                    )
+            s.commit()
+
+        tv = treasury_view(engine, broker_mode)
+        cash = float(tv.get("available_jpy") or 0)
+        if cash <= 0:
+            return {
+                "status": "skipped",
+                "reason": "no_cash_available",
+                "h6_blocked": blocked_correlations,
+            }
+
+        def _price_lookup(ticker: str) -> float | None:
+            try:
+                import yfinance as yf
+
+                from trading_agent.mcp_tools.fundamentals import to_yfinance_symbol
+
+                symbol = to_yfinance_symbol(ticker)
+                p = float(yf.Ticker(symbol).fast_info.last_price or 0)
+                return p if p > 0 else None
+            except Exception:
+                return None
+
+        def _is_jp_lookup(ticker: str) -> bool:
+            return len(ticker) == 4 and ticker.isdigit() or (
+                len(ticker) == 4 and ticker[:3].isdigit() and ticker[3].isalpha()
+            )
+
+        result = paper_fill_approved(
+            engine,
+            price_lookup=_price_lookup,
+            is_jp_lookup=_is_jp_lookup,
+            cash_jpy=cash,
+        )
+        return {
+            "status": "active",
+            "fills": len(result.fills),
+            "skipped": len(result.skipped),
+            "cash_after": result.cash_after,
+            "h6_blocked": blocked_correlations,
+            "dd_check": dd_check,
+        }
+
+    async def run_close_due() -> dict:
+        """v2.10 Phase 1A-Step2 修正 (致命 1) + Phase J: trailing 由来の sell は両モードで実行。
+
+        設計判断 (致命候補 3 修正):
+          - trailing は機械判定 (stop に届いた) → 執行も機械で問題ない
+          - manual モードは「buy 候補の判定」を人間が承認するための機構であり、
+            stop loss まで人間任せにすると損失拡大リスク
+          - したがって両モードで close_due を実行
+        I-10 ガード: HALT 中は強制 skip
+        """
+        from trading_agent.portfolio.anomaly_detector import is_halted
+
+        if is_halted():
+            return {"status": "skipped", "reason": "halted"}
+
+        from trading_agent.portfolio.paper_exec import paper_close_approved
+
+        def _price_lookup(ticker: str) -> float | None:
+            try:
+                import yfinance as yf
+
+                from trading_agent.mcp_tools.fundamentals import to_yfinance_symbol
+
+                symbol = to_yfinance_symbol(ticker)
+                p = float(yf.Ticker(symbol).fast_info.last_price or 0)
+                return p if p > 0 else None
+            except Exception:
+                return None
+
+        return paper_close_approved(engine, price_lookup=_price_lookup)
+
     async def run_materialize() -> dict[str, int]:
         # 買い候補を Decision(status="verifying") として保存（A-4）
-        ids = materialize_decisions(engine, _buy_candidate_tickers(engine))
-        return {"decisions": len(ids)}
+        # v2.10: Treasury 残高を渡して予算内で買える銘柄を優先（少額運用対応）
+        try:
+            from trading_agent.portfolio.misato import treasury_view
+            from trading_agent.utils.lot_size import get_broker_mode
+
+            tv = treasury_view(engine, get_broker_mode())
+            available = float(tv.get("available_jpy") or 0)
+        except Exception:
+            available = 0.0
+        candidates = _buy_candidate_tickers(
+            engine, available_jpy=available if available > 0 else None
+        )
+        ids = materialize_decisions(engine, candidates)
+        return {"decisions": len(ids), "available_jpy": available}
 
     async def run_magi_verify() -> dict[str, int]:
         # 当日の未検証 decision に 3審判→防御→統合→碇 を回して保存（決定論・コスト0）
@@ -244,29 +562,185 @@ async def run_morning_batch(
         )
         return await magi_verify(engine, ids, judge_fn)
 
+    async def run_katsuragi_dispatch() -> dict:
+        """PIPELINE v3 Phase 1 M1.1 + M1.2: KATSURAGI 統合ノード。
+
+        portfolio/misato.py:dispatch() を approve=False で呼び、DispatchPlan を生成。
+        Assignment（pilot 割当・source・score・picked）を Decision.thesis_at_decision に
+        反映して永続化する（M1.2 統合）。実 fill は後段 auto_fill で実施。
+        """
+        from trading_agent.models.decisions import Decision as _Decision
+        from trading_agent.portfolio.misato import dispatch as _dispatch
+
+        try:
+            plan = _dispatch(
+                engine=engine,
+                total_budget_jpy=None,  # treasury から自動取得
+                approve=False,           # 朝バッチでは dry-run
+            )
+        except Exception as exc:
+            _log.warning(
+                "katsuragi_dispatch_failed",
+                error_type=type(exc).__name__,
+                msg=str(exc)[:200],
+            )
+            return {"failed": True, "error_type": type(exc).__name__}
+
+        # Assignment を Decision に反映（picked / pilot / source / score / preset）
+        today_now = today_jst()
+        updated = 0
+        with Session(engine, expire_on_commit=False) as sess:
+            for a in plan.assignments:
+                # ZEELE 由来（real_decision=None）は decision_id が負値（-1000 -...）
+                if a.decision_id < 0:
+                    continue
+                d = sess.get(_Decision, a.decision_id)
+                if d is None or d.date != today_now:
+                    continue
+                parts = [
+                    f"KATSURAGI: pilot={a.assigned_to}",
+                    f"source={a.source}",
+                    f"score={a.score:.2f}",
+                    f"picked={a.picked}",
+                ]
+                if a.preset:
+                    parts.append(f"preset={a.preset}")
+                note = " ".join(parts)
+                d.thesis_at_decision = (
+                    (d.thesis_at_decision or "") + " | " + note
+                ).strip(" |")
+                sess.add(d)
+                updated += 1
+            sess.commit()
+
+        return {
+            "halted": plan.halted,
+            "halt_reason": plan.halt_reason or "",
+            "total_budget_jpy": float(plan.total_budget_jpy or 0),
+            "n_assignments": len(plan.assignments),
+            "n_picked": sum(1 for a in plan.assignments if a.picked),
+            "n_decisions_updated": updated,
+            "n_promotions": len(plan.promotions),
+        }
+
     async def link_topics() -> dict[str, bool]:
         return {"skipped": True}  # Phase 1：トピックス↔decisions 紐付けは後日
 
     async def summary() -> str:
         return _summary(engine)
 
-    async def notify() -> dict[str, bool]:
-        _log.info("morning_batch_notify", invocation_id=invocation_id)  # 実通知は Phase 1.7
-        return {"notified": False}
+    async def notify() -> dict[str, bool | str | int]:
+        _log.info("morning_batch_notify", invocation_id=invocation_id)
+        result: dict[str, bool | str | int] = {"notified": False}
+        # v2.10: 発注リスト HTML を生成（autoreport/orders/YYYY-MM-DD.html）
+        try:
+            from trading_agent.reporting.order_list import generate_order_list
+
+            path = generate_order_list(engine)
+            _log.info("order_list_generated", path=str(path))
+            result["order_list_path"] = str(path)
+        except Exception as exc:
+            _log.warning(
+                "order_list_generation_failed",
+                error_type=type(exc).__name__,
+            )
+            result["order_list_path"] = ""
+
+        # v2.10: 試験運用継続のため、paper モード自動 fill を実行
+        # 「ユーザーが推奨通りに買った想定」で Portfolio を作成し、
+        # 翌日の trailing_check / close_due が自動執行する流れを担保
+        try:
+            from trading_agent.models.decisions import Decision as _Decision
+            from trading_agent.models.portfolio import Portfolio as _Portfolio
+            from trading_agent.portfolio.misato import treasury_view
+            from trading_agent.reporting.order_list import build_order_items
+
+            tv = treasury_view(engine, "paper")
+            available = float(tv.get("available_jpy") or 0)
+            if available > 0:
+                items = build_order_items(engine, available_jpy=available)
+                items_by_decision = {it.decision_id: it for it in items}
+                today_now = today_jst()
+                filled_count = 0
+                with Session(engine, expire_on_commit=False) as sess:
+                    decs = list(
+                        sess.exec(
+                            select(_Decision)
+                            .where(col(_Decision.date) == today_now)
+                            .where(col(_Decision.status) == "awaiting")
+                            .where(col(_Decision.action) == "buy")
+                        ).all()
+                    )
+                    import datetime as _dt
+
+                    for d in decs:
+                        it = items_by_decision.get(d.id)
+                        if (
+                            it is None
+                            or it.recommended_shares == 0
+                            or it.current_price is None
+                        ):
+                            continue
+                        d.status = "filled"
+                        d.entry_price = it.current_price
+                        d.shares_filled = float(it.recommended_shares)
+                        sess.add(d)
+                        period = int(getattr(d, "target_period_days", None) or 90)
+                        sess.add(
+                            _Portfolio(
+                                ticker=d.ticker,
+                                buy_date=today_now,
+                                buy_price=it.current_price,
+                                qty=it.recommended_shares,
+                                currency="JPY",
+                                strategy_category=getattr(d, "strategy_category", None)
+                                or "中期",
+                                target_period_days=period,
+                                target_pct=0.20,
+                                stop_loss_pct=float(d.stop_pct or 0.10),
+                                target_date=today_now + _dt.timedelta(days=period),
+                                thesis=d.thesis_at_decision or "",
+                                status="active",
+                                broker_mode="paper",
+                                planned_total_qty=it.recommended_shares,
+                            )
+                        )
+                        filled_count += 1
+                    sess.commit()
+                result["paper_auto_filled"] = filled_count
+                _log.info("paper_auto_filled", count=filled_count)
+        except Exception as exc:
+            _log.warning(
+                "paper_auto_fill_failed",
+                error_type=type(exc).__name__,
+            )
+
+        return result
+
+    async def run_anomaly_check_node() -> dict:
+        """v2.10 Phase I-10: 異常検知 + HALT。auto モードのみ HALT 発火。"""
+        from trading_agent.portfolio.anomaly_detector import run_anomaly_check
+        from trading_agent.utils.lot_size import get_broker_mode
+
+        return run_anomaly_check(engine, broker_mode=get_broker_mode())
 
     nodes = [
         DAGNode("pre_check", pre_check, timeout_s=30),
+        # v2.10 Phase I-10: 異常検知 + HALT を pre_check 直後に
+        DAGNode("anomaly_check", run_anomaly_check_node, depends_on=["pre_check"], timeout_s=60),
         DAGNode("topics_collector", run_topics, depends_on=["pre_check"], timeout_s=600),
         DAGNode("universe_refresh", universe_refresh, depends_on=["pre_check"], timeout_s=300),
         DAGNode("screening", run_screening, depends_on=["topics_collector"], timeout_s=900),
         DAGNode("zeele_curator", run_zeele_curator, depends_on=["screening"], timeout_s=60),
+        # PIPELINE v3 Phase 2 M2.1: market_analyst は AKAGI (wille/ritsuko) に役割移管予定。
+        # 現状は news_sentiment_score の供給源として screening 後に並列保持（Phase 3 M3.1 で wille/ritsuko 経由に統合）。
         DAGNode("market_analyst", run_market_analyst, depends_on=["screening"], timeout_s=600),
-        DAGNode("sell_recommender", run_sell, depends_on=["market_analyst"], timeout_s=300),
-        DAGNode("portfolio_builder", run_portfolio, depends_on=["sell_recommender"], timeout_s=60),
+        # PIPELINE v3 Phase 2 M2.1: materialize_decisions と magi_verify を screening 直後に移動。
+        # 旧: auto_fill の後（事後検証）/ 新: katsuragi_dispatch の前（事前判定 → 候補プール入力）
         DAGNode(
             "materialize_decisions",
             run_materialize,
-            depends_on=["portfolio_builder"],
+            depends_on=["market_analyst", "zeele_curator"],
             timeout_s=60,
         ),
         DAGNode(
@@ -275,7 +749,54 @@ async def run_morning_batch(
             depends_on=["materialize_decisions"],
             timeout_s=600,
         ),
-        DAGNode("link_topics", link_topics, depends_on=["magi_verify"], timeout_s=60),
+        # PIPELINE v3 Phase 1 M1.1+M1.2: KATSURAGI 統合ノード。
+        # MAGI awaiting + ZEELE active を候補プールに、AKAGI Brief + DS scout + priority + opportunity fill 統合。
+        DAGNode(
+            "katsuragi_dispatch",
+            run_katsuragi_dispatch,
+            depends_on=["magi_verify"],
+            timeout_s=900,
+        ),
+        DAGNode(
+            "sell_recommender",
+            run_sell,
+            depends_on=["katsuragi_dispatch"],
+            timeout_s=300,
+        ),
+        # PIPELINE v3 Phase 2 M2.2: portfolio_builder(review) を廃止。
+        # 旧: warnings を返すだけで Decision に介入しない / 新: katsuragi_dispatch の Assignment 構築 + check_proposal_exceptions で代替。
+        # （PortfolioBuilderAgent の initial mode は外部用に残置・朝バッチでは呼ばない）
+        DAGNode(
+            "trailing_check",
+            run_trailing_check,
+            depends_on=["sell_recommender"],
+            timeout_s=300,
+        ),
+        # v2.10 Phase 1A-Step2 修正 (致命 1): trailing で登録された sell Decision
+        # を即座に実行して Portfolio を close する（DB だけに残らないように）
+        DAGNode(
+            "close_due",
+            run_close_due,
+            depends_on=["trailing_check"],
+            timeout_s=300,
+        ),
+        DAGNode(
+            "pyramid_check",
+            run_pyramid_check,
+            depends_on=["close_due"],
+            timeout_s=300,
+        ),
+        # v2.10 Phase J + G-1: auto モードのみ朝バッチで approved Decision を即 fill
+        # 対象: trailing/pyramid が登録した status="approved" の Decision
+        # 新規 buy 候補（materialize → magi_verify → katsuragi_dispatch 経由）は status="awaiting" のままで
+        # 手動承認待ち（人間決済）または別ジョブで処理
+        DAGNode(
+            "auto_fill",
+            run_auto_fill,
+            depends_on=["pyramid_check"],
+            timeout_s=600,
+        ),
+        DAGNode("link_topics", link_topics, depends_on=["auto_fill"], timeout_s=60),
         DAGNode("summary", summary, depends_on=["link_topics"], timeout_s=30),
         DAGNode("notify", notify, depends_on=["summary"], timeout_s=30),
     ]
