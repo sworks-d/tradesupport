@@ -168,7 +168,7 @@ class TestMorningBatch:
         batch = await run_morning_batch(engine, host=_mock_host(engine))
 
         assert batch.status in {"success", "partial"}
-        assert len(batch.node_status) == 13  # +zeele_curator（Phase 3 ZEELE 本配線）
+        assert len(batch.node_status) == 18  # v2.10 Phase I-10: +anomaly_check
         assert batch.node_status["screening"] == "success"
         assert batch.node_status["zeele_curator"] == "success"
         assert batch.node_status["materialize_decisions"] == "success"
@@ -223,9 +223,12 @@ class TestMorningBatch:
             assert any(m.counter_within_domain for m in mels)  # 信用性反証が乗る
 
     async def test_batch_state_persisted(self, tmp_path: Path) -> None:
+        from trading_agent.utils.time_utils import today_jst as _today_jst
+
         engine = _engine(tmp_path)
         await run_morning_batch(engine, host=_mock_host(engine))
-        inv = f"morning_{utcnow().date().isoformat()}"
+        # invocation_id は run_morning_batch 内で today_jst() で組まれるため統一
+        inv = f"morning_{_today_jst().isoformat()}"
         with Session(engine) as s:
             row = s.get(BatchState, inv)
         assert row is not None

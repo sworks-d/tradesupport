@@ -16,7 +16,7 @@ from trading_agent.llm.router import estimate_cost_jpy
 from trading_agent.models.analytics import CostLog
 from trading_agent.models.settings import Setting
 from trading_agent.utils.logger import get_logger
-from trading_agent.utils.time_utils import utcnow
+from trading_agent.utils.time_utils import today_jst, utcnow
 
 # 【たたき台】USD 換算用の固定レート（cost_usd 算出用。Phase 1 簡易）
 USD_JPY_FALLBACK = 150.0
@@ -42,7 +42,7 @@ class BudgetGuard:
         self._engine = engine
 
     def today_cost_jpy(self) -> float:
-        today = utcnow().date()
+        today = today_jst()
         with Session(self._engine) as session:
             stmt = select(func.coalesce(func.sum(CostLog.cost_jpy), 0.0)).where(
                 CostLog.date == today
@@ -50,7 +50,7 @@ class BudgetGuard:
             return float(session.exec(stmt).one())
 
     def month_cost_jpy(self) -> float:
-        month_start = utcnow().date().replace(day=1)
+        month_start = today_jst().replace(day=1)
         with Session(self._engine) as session:
             stmt = select(func.coalesce(func.sum(CostLog.cost_jpy), 0.0)).where(
                 CostLog.date >= month_start
@@ -98,10 +98,12 @@ def record_cost(
 ) -> float:
     """1回の LLM 呼び出しを cost_logs に記録し、コスト（円）を返す。"""
     now = utcnow()
+    # JST/UTC 整合: BudgetGuard.today_cost_jpy() が today_jst() でクエリするため
+    # date も JST で統一する（UTC で挿入すると日付境界で集計から漏れる）
     cost_jpy = estimate_cost_jpy(model, tokens_in, tokens_out)
     row = CostLog(
         timestamp=now,
-        date=now.date(),
+        date=today_jst(),
         model=model,
         agent=agent,
         purpose=purpose,

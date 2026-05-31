@@ -157,14 +157,15 @@ class TestTool:
 
 
 def _insert_cost(engine, cost_jpy: float) -> None:
-    from trading_agent.utils.time_utils import utcnow
+    from trading_agent.utils.time_utils import today_jst, utcnow
 
+    # JST 統一: BudgetGuard.today_cost_jpy() が today_jst() でクエリするため
     now = utcnow()
     with Session(engine) as session:
         session.add(
             CostLog(
                 timestamp=now,
-                date=now.date(),
+                date=today_jst(),
                 model=MODEL_OPUS,
                 agent="test",
                 purpose="test",

@@ -26,8 +26,11 @@ def engine(tmp_path: Path):
 
 
 def _seed(engine, ticker: str, status: str = "awaiting") -> int:
+    # JST 統一: approved_buy_decisions が today_jst() でクエリするため
+    from trading_agent.utils.time_utils import today_jst as _today_jst
+
     with Session(engine, expire_on_commit=False) as s:
-        d = Decision(date=utcnow().date(), ticker=ticker, action="buy", status=status)
+        d = Decision(date=_today_jst(), ticker=ticker, action="buy", status=status)
         s.add(d)
         s.commit()
         s.refresh(d)
