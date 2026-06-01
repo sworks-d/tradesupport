@@ -72,6 +72,7 @@ def opportunity_driven_fill(
     boost_lookup: dict[str, float] | None = None,
     blocked_tickers: set[str] | None = None,
     pilot_multipliers: dict[str, float] | None = None,
+    account_total_jpy: float | None = None,
 ) -> OpportunityFillPlan:
     """全 proposal を priority 降順で並べ、ガードレール内で greedy fill。
 
@@ -84,6 +85,10 @@ def opportunity_driven_fill(
         blocked_tickers: 例外判定でブロックされた銘柄集合
         pilot_multipliers: 機別の予算上限重み（feedback ループから）。
             None or 1.0 なら通常 (max_pilot_pct)。1.2 なら 20% 拡張、0.5 なら半減。
+        account_total_jpy: 口座総額 (N1: G-7 逓減と整合させるため)。
+            指定時は params_for_account の cash_floor を使用して min_cash_reserve_pct
+            を口座規模に合わせて動的に取得（少額時 0.20 / 大額時 0.10）。
+            None なら config.min_cash_reserve_pct を使用（後方互換）。
 
     Returns:
         OpportunityFillPlan
@@ -93,6 +98,14 @@ def opportunity_driven_fill(
     boost_lookup = boost_lookup or {}
     blocked_tickers = blocked_tickers or set()
     pilot_multipliers = pilot_multipliers or {}
+
+    # N1: G-7 逓減と整合した min_cash_reserve_pct を動的取得
+    if account_total_jpy is not None and account_total_jpy > 0:
+        from trading_agent.risk.params import params_for_account
+
+        effective_cash_reserve = float(params_for_account(account_total_jpy).cash_floor)
+    else:
+        effective_cash_reserve = config.min_cash_reserve_pct
 
     plan = OpportunityFillPlan(total_budget=total_budget_jpy)
 
@@ -197,7 +210,8 @@ def opportunity_driven_fill(
 
         # cash 余力ハード制約: 買付後の cash 残が min_cash_reserve_pct を下回るなら拒否
         # 「上昇株が来た時の身動き」を確保するための死守ライン
-        cash_floor = total_budget_jpy * config.min_cash_reserve_pct
+        # N1: account_total_jpy 指定時は G-7 逓減と整合した cash_floor を使う
+        cash_floor = total_budget_jpy * effective_cash_reserve
         cash_after = remaining - lot_cost
         if cash_after < cash_floor:
             plan.rejected.append({
