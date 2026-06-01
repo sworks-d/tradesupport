@@ -538,7 +538,11 @@ async def run_morning_batch(
 
     async def run_materialize() -> dict[str, int]:
         # 買い候補を Decision(status="verifying") として保存（A-4）
-        # v2.10: Treasury 残高を渡して予算内で買える銘柄を優先（少額運用対応）
+        # PIPELINE v3: 質優先 (B 式) に統一。予算フィルタは下流 (DS Scout / opportunity_fill)
+        # で効かせる。
+        #   旧: 上位 10 件のうち予算内銘柄を優先で並び替え → 予算外の質高銘柄が消える
+        #   新: 質スコア降順そのまま上位 10 件 → 予算拡張時にも既存 Decision を活用可能
+        # Treasury 残高は観察用に取得・記録のみ。
         try:
             from trading_agent.portfolio.misato import treasury_view
             from trading_agent.utils.lot_size import get_broker_mode
@@ -547,9 +551,7 @@ async def run_morning_batch(
             available = float(tv.get("available_jpy") or 0)
         except Exception:
             available = 0.0
-        candidates = _buy_candidate_tickers(
-            engine, available_jpy=available if available > 0 else None
-        )
+        candidates = _buy_candidate_tickers(engine)  # 質優先・予算フィルタなし
         ids = materialize_decisions(engine, candidates)
         return {"decisions": len(ids), "available_jpy": available}
 
