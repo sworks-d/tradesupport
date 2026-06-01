@@ -42,7 +42,11 @@ def _news(articles: list[dict]) -> NewsOutput:
 
 # --- MELCHIOR（業績） -------------------------------------------------------
 def test_melchior_buy_on_strong_fundamentals() -> None:
-    v = melchior("NVDA", _fund({"revenue_growth": 0.15, "operating_margin": 0.12}))
+    # v2.1 TASK-M1: seen >= 3 必須化（指標 3 つ以上で buy 判定）
+    v = melchior(
+        "NVDA",
+        _fund({"revenue_growth": 0.15, "operating_margin": 0.12, "roe": 0.20}),
+    )
     assert v.judge == "MELCHIOR"
     assert v.verdict == "buy"
     assert v.confidence == "高"
@@ -84,8 +88,11 @@ def test_melchior_warn_on_liquidity_shortfall() -> None:
 
 
 def test_melchior_buy_via_roe_path() -> None:
-    # マージン欠損でも、増収＋高ROEなら growth_ok ∧ profit_ok で buy
-    v = melchior("X", _fund({"revenue_growth": 0.12, "roe": 0.22}))
+    # v2.1 TASK-M1: seen >= 3 必須。マージン欠損でも増収＋高ROE＋増益で buy。
+    v = melchior(
+        "X",
+        _fund({"revenue_growth": 0.12, "roe": 0.22, "earnings_growth": 0.15}),
+    )
     assert v.verdict == "buy"
     assert v.confidence == "高"
     assert "ROE22%" in v.reason

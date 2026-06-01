@@ -91,8 +91,16 @@ def _ctx(tmp_path: Path, news: list[dict], disc: list[dict], llm_importance: str
 
 class TestHelpers:
     def test_extract_explicit_and_known(self) -> None:
-        out = extract_affected_tickers("$AAPL up, トヨタ (7203) も", {"7203"})
+        # v2.1 TASK-S2: known_tickers でフィルタするので、AAPL が universe にあれば通る
+        out = extract_affected_tickers("$AAPL up, トヨタ (7203) も", {"7203", "AAPL"})
         assert "AAPL" in out and "7203" in out
+
+    def test_extract_filters_false_positives(self) -> None:
+        # v2.1 TASK-S2: "USA"・"BUY"・"2024" 等の false positive を弾く
+        text = "USA economy improves, but no BUY signal yet. In 2024, market grew."
+        out = extract_affected_tickers(text, {"USA", "BUY", "2024"})
+        # 明示記法 ($XXX, (NNNN), NNNN.T) が無いので 1 件も拾わない
+        assert out == []
 
     def test_rule_importance_portfolio_is_high(self) -> None:
         item = {"title": "x", "summary": "", "source_type": "news"}

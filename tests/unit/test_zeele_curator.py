@@ -210,9 +210,9 @@ def test_existing_state_increments_weeks(tmp_path: Path) -> None:
 
 
 def test_stale_zeele_state_is_deactivated(tmp_path: Path) -> None:
-    """ZEELE 在籍だが28日以上 screening に登場しない銘柄は降格される。"""
+    """v2.4 TASK-Z4: 28日以上沈黙 + 直近 28 日に screening が 20 回以上走った場合に降格。"""
     engine = _engine(tmp_path)
-    _add_universe(engine, [("7203", "トヨタ")])
+    _add_universe(engine, [("7203", "トヨタ"), ("OTHER", "ダミー")])
     long_ago = AS_OF - dt.timedelta(days=60)
     with Session(engine) as s:
         s.add(
@@ -230,7 +230,13 @@ def test_stale_zeele_state_is_deactivated(tmp_path: Path) -> None:
         )
         s.commit()
 
-    # screening_results には何も入れない（28日以上沈黙）
+    # v2.4 TASK-Z4: screening_results に 7203 以外を 20 日連続で入れる
+    # （screening 自体は走ってるが 7203 は未登場 → 降格対象）
+    _insert_screening(
+        engine,
+        [_screening("OTHER", days_ago=d, v=70, theme=30) for d in range(1, 22)],
+    )
+
     out = _run(engine)
     assert "7203" in out.deactivated
 
@@ -257,26 +263,29 @@ def test_dry_run_does_not_persist(tmp_path: Path) -> None:
 
 
 def test_preset_inferred_from_score_dominance(tmp_path: Path) -> None:
-    """v_shape > theme なら pullback、theme > v_shape なら momentum。"""
+    """v2.1 TASK-Z1: V字>50 でかつ details に price_bottom/value_trap が無ければ contrarian、
+    theme>50 でかつ keyword_count<5 なら growth、≥5 なら momentum。
+    """
     engine = _engine(tmp_path)
     _add_universe(engine, [("AAA", "A"), ("BBB", "B")])
     _insert_screening(
         engine,
         [
-            # AAA: V字優位
-            _screening("AAA", 2, v=70, theme=30),
-            _screening("AAA", 9, v=70, theme=30),
-            _screening("AAA", 16, v=70, theme=30),
-            # BBB: テーマ優位
-            _screening("BBB", 2, v=20, theme=80),
-            _screening("BBB", 9, v=20, theme=80),
-            _screening("BBB", 16, v=20, theme=80),
+            # v2.10: 閾値 50→30 に下げたので theme は閾値未満（10）で V 字単独優位を作る
+            # AAA: V字優位（v=70 ≥ 30, theme=10 < 30 → V 字主軸）→ contrarian
+            _screening("AAA", 2, v=70, theme=10),
+            _screening("AAA", 9, v=70, theme=10),
+            _screening("AAA", 16, v=70, theme=10),
+            # BBB: テーマ優位（v=10 < 30, theme=80 ≥ 30）→ growth
+            _screening("BBB", 2, v=10, theme=80),
+            _screening("BBB", 9, v=10, theme=80),
+            _screening("BBB", 16, v=10, theme=80),
         ],
     )
     out = _run(engine)
     by_ticker = {c["ticker"]: c["preset"] for c in out.candidates}
-    assert by_ticker["AAA"] == "pullback"
-    assert by_ticker["BBB"] == "momentum"
+    assert by_ticker["AAA"] == "contrarian"  # V 字主軸 + details なし → contrarian
+    assert by_ticker["BBB"] == "growth"  # テーマ主軸 + keyword<5 → growth
 
 
 def test_topic_narrative_joined_when_available(tmp_path: Path) -> None:

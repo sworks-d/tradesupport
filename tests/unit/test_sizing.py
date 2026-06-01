@@ -59,12 +59,13 @@ def test_cash_floor_blocks_when_at_floor() -> None:
 
 
 def test_jp_single_share_granularity() -> None:
-    # JPはmoomoo単元未満＝1株単位。¥3,000株・budget¥16,667(stop12%) → 5株=¥15,000
+    # v2.2 TASK-SZ2: 端数 ≥ 0.5 なら切り上げ（予算 1.1 倍以内）
+    # ¥3,000株・budget¥16,667(stop12%) → 5.56 株 → 6 株=¥18,000（予算消化 108%）
     rec = recommend_position(
         price_jpy=3_000.0, total_assets_jpy=TOTAL, cash_jpy=CASH, is_jp=True, stop_pct=0.12
     )
-    assert rec.shares == 5.0  # 単元100でなく1株単位
-    assert rec.amount_jpy == 15_000
+    assert rec.shares == 6.0  # 旧 5.0 → 新 6.0（端数 0.56 で切り上げ）
+    assert rec.amount_jpy == 18_000
     assert "単元未満" in rec.note
 
 

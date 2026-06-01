@@ -196,7 +196,12 @@ class TestMagiVerify:
             )
             return Financials(ticker="X", current=cur, prior=None, market_cap=100.0)
 
-        judge = make_live_judge_fn(call_tool, financials_fetcher=fin_fetcher)
+        # v2.2 TASK-Z7: sector 必須化のため sector_lookup を渡す
+        judge = make_live_judge_fn(
+            call_tool,
+            financials_fetcher=fin_fetcher,
+            sector_lookup=lambda _t: "Technology",
+        )
         verdicts, _split, vr, _cmd = await judge("X")
         assert vr.credibility_flag == "warn"
         assert vr.default_hold is True  # 信用性warnは保留へ寄せる

@@ -35,8 +35,13 @@ from trading_agent.utils.time_utils import utcnow
 
 class TestComponents:
     def test_loss_magnitude(self) -> None:
-        assert loss_magnitude(92, 100, -0.08) == pytest.approx(1.0)
-        assert loss_magnitude(96, 100, -0.08) == pytest.approx(0.5)
+        # v2.1 TASK-SZ4: stop_loss_pct は正値で統一（旧 -0.08 → 新 0.08）
+        assert loss_magnitude(92, 100, 0.08) == pytest.approx(1.0)
+        assert loss_magnitude(96, 100, 0.08) == pytest.approx(0.5)
+        # 含み益や損失ゼロは 0.0
+        assert loss_magnitude(105, 100, 0.08) == pytest.approx(0.0)
+        # 後方互換性: 負値が渡された時は 0 を返す（古い呼び出し側からの安全装置）
+        assert loss_magnitude(92, 100, -0.08) == pytest.approx(0.0)
 
     def test_stop_score(self) -> None:
         assert stop_loss_score(0.5, 0.5, 0.5, 0.5) == pytest.approx(50.0)
@@ -110,7 +115,7 @@ def _engine(tmp_path: Path, *, buy_offset_days: int, target_offset_days: int):
                 strategy_category="中期",
                 target_period_days=90,
                 target_pct=0.2,
-                stop_loss_pct=-0.08,
+                stop_loss_pct=0.08,  # v2.1 TASK-SZ4: 正値で統一
                 target_date=today + dt.timedelta(days=target_offset_days),
                 thesis="t",
                 status="active",

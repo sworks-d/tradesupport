@@ -10,6 +10,7 @@ from sqlmodel import Session, col, select
 from trading_agent.db import create_all, get_engine
 from trading_agent.models.decisions import Decision
 from trading_agent.models.portfolio import Portfolio
+from trading_agent.models.universe import Universe
 from trading_agent.portfolio.paper_exec import paper_fill_approved
 
 
@@ -21,6 +22,22 @@ def _engine(tmp_path: Path):
 
 def _add(eng, ticker: str, status: str) -> int:
     with Session(eng, expire_on_commit=False) as s:
+        # v2.10: paper_fill_approved の Universe 照合（ハルシネーション防壁）通過のため
+        # テスト fixture にも Universe を追加する。
+        existing = s.exec(select(Universe).where(col(Universe.ticker) == ticker)).first()
+        if existing is None:
+            s.add(
+                Universe(
+                    ticker=ticker,
+                    name=ticker,
+                    market="JP",
+                    sector="Industrials",
+                    market_cap=1.0e12,
+                    market_cap_jpy=1.0e12,
+                    avg_volume_30d=1.0e6,
+                    is_active=True,
+                )
+            )
         d = Decision(date=dt.date(2026, 5, 25), ticker=ticker, action="buy", status=status)
         s.add(d)
         s.commit()
@@ -39,21 +56,23 @@ class TestPaperFill:
         assert len(res.fills) == 1
         f = res.fills[0]
         assert f.ticker == "7203"
-        assert f.shares == 16  # budget=min(1R/stop=16667, cap20k, cash80k)=16667 → 16株@1000
-        # moomoo シミュ：JP 単元未満は手数料 0、寄付スリッページ 0.2% で fill_price = 1002
-        # cost = 16 × 1002 = 16,032、現金 = 100,000 - 16,032 = 83,968
-        assert res.cash_after == 100_000.0 - 16_032.0
+        # v2.2 TASK-SZ2: 端数 0.67 切り上げで 17 株（旧 16 株）
+        assert f.shares == 17
+        # v2.4 TASK-F1: volume データ無し → slippage 1.5x（0.2% × 1.5 = 0.3%） → fill_price ≈ 1003
+        # cost = 17 × 1003 = 17,051、現金 ≈ 82,949
+        import pytest
+        assert res.cash_after == pytest.approx(82_949.0, abs=0.001)
         with Session(eng) as s:
             pos = s.exec(select(Portfolio).where(col(Portfolio.ticker) == "7203")).one()
             assert pos.status == "active"
-            assert pos.qty == 16
-            # Portfolio.buy_price は実約定価格（slippage 適用後）
-            assert pos.buy_price == 1002.0
-            assert pos.stop_loss_pct == -0.12  # 損切りは負値
+            assert pos.qty == 17
+            # Portfolio.buy_price は実約定価格（slippage 適用後・float 精度で 1002.99...）
+            assert pos.buy_price == pytest.approx(1003.0, abs=0.001)
+            assert pos.stop_loss_pct == 0.12  # v2.1 TASK-SZ4: 正値で統一
             assert pos.target_pct == 0.0  # B'：利確で刻まない
             d = s.get(Decision, did)
             assert d.status == "holding"
-            assert d.entry_price == 1002.0  # record_entry が実約定価格を刻む
+            assert d.entry_price == pytest.approx(1003.0, abs=0.001)  # v2.4 TASK-F1
             assert d.evaluation_date is not None  # 評価期日が付く
 
     def test_only_approved_touched(self, tmp_path: Path) -> None:
