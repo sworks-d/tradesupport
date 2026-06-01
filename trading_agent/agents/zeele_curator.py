@@ -26,7 +26,7 @@ from trading_agent.models.topics import Topic
 from trading_agent.models.universe import Universe
 from trading_agent.models.zeele import ZeeleState
 from trading_agent.utils.logger import get_logger
-from trading_agent.utils.time_utils import utcnow
+from trading_agent.utils.time_utils import today_jst, utcnow
 
 # preset 推定マップ：screening の matched_strategies / theme_details → ZEELE preset
 # screening 側は "v_shape" / "theme" の2系統のみだが、ZEELE UI は7プリセットを持つ。
@@ -43,8 +43,11 @@ _LOOKBACK_DAYS = 21
 _WEEK_DAYS = 7
 _QUALIFICATION_WEEKS = 3  # 3週連続で entry 確定
 
-# 降格判定：4週以上、screening にすら登場しなかった ZEELE 銘柄は inactive
-_DEACTIVATION_DAYS = 28
+# 降格判定：v2.4 TASK-Z4
+# 旧: 4 週（28 日）screening に登場しなかったら降格 → 障害/休止日もカウントする問題
+# 新: screening が走った日のうち N 回連続未登場で降格（暦日でなくスクリーニング回数）
+_DEACTIVATION_DAYS = 28  # 旧式互換（フォールバック）
+_DEACTIVATION_SCREENING_RUNS = 20  # screening が 20 回走って未登場なら降格
 
 
 class ZeeleCuratorInput(AgentInput):
@@ -104,42 +107,118 @@ def _latest_screening_by_ticker(
     return latest
 
 
-def _infer_preset(row: ScreeningResult) -> str:
-    """screening_results 1行から ZEELE preset を推定する。
+# v2.10 致命候補 A 修正: 上流 screening の実態に整合した閾値
+# spec は 50 だったが universe 全件 50 未満で 7 戦略が機能不全 → alpha 一色に退化していた。
+# 上流データで発火する 30 に下げる（メモリ [[feedback_pipeline_observability]] の教訓）。
+# スコア計算の根本改善は別タスク（screening_agent / mcp_tools/screening.py の signal 拡充）。
+#
+# PIPELINE v3 Phase 4-A (2026-06-01): 30 でも alpha 76% (200/263) のまま、再校正。
+# 上流 screening は v_shape/theme とも最高 30 前後実態。20 まで下げて preset 分類を有効化。
+# 根本対策の screening signal 拡充は別タスク (S1 動的閾値化と統合検討)。
+_PRESET_AXIS_THRESHOLD = 20.0  # v_shape / theme スコアの分類閾値
+_PRESET_COMPOSITE_THRESHOLD = 20.0  # composite の フォールバック分類閾値
+_PRESET_V_SECONDARY_THRESHOLD = 10.0  # value 分類用の二次閾値
 
-    現状 screening 側は v_shape / theme 2系統のみ：
-    - V字回復スコアが上回る → "pullback"
-    - テーマスコアが上回る → "momentum"
-    今後 screening を拡張したらここを細分化する。
+
+def _infer_preset(row: ScreeningResult) -> str:
+    """screening_results 1行から ZEELE preset を推定する（7 種類対応・v2.1 TASK-Z1）。
+
+    screening 側が出すスコアは v_shape / theme の 2 軸＋詳細（v_shape_details, theme_details）。
+    v2.10: 閾値を 50 → 30 に下げた（上流データが 50 に届かないため）。
+
+    分類:
+      - contrarian: V 字スコア >= 30 ∩ value_trap=True
+      - pullback:   V 字 >= 30 ∩ price_bottom + earnings_turnaround
+      - growth-value: V 字 + テーマ両方 30 以上
+      - momentum:   テーマ >= 30 ∩ keyword_match >= 5 ∩ sector_outperformance > 0.05
+      - growth:     テーマ >= 30 ∩ それ以外
+      - value:      composite >= 30 ∩ v >= 20（しぶとい底値）
+      - alpha:      上記非該当（フォールバック）
     """
-    if row.v_shape_score > row.theme_score:
-        return _PRESET_FROM_STRATEGY["v_shape"]
-    if row.theme_score > 0:
-        return _PRESET_FROM_STRATEGY["theme"]
-    return _DEFAULT_PRESET
+    v = row.v_shape_score or 0.0
+    t = row.theme_score or 0.0
+    composite = row.composite_score or 0.0
+    v_details = row.v_shape_details if isinstance(row.v_shape_details, dict) else {}
+    t_details = row.theme_details if isinstance(row.theme_details, dict) else {}
+
+    # 1. 両方が高い: growth-value（V 字反転 + テーマ追い風）
+    if v >= _PRESET_AXIS_THRESHOLD and t >= _PRESET_AXIS_THRESHOLD:
+        return "growth-value"
+
+    # 2. V 字主軸
+    if v >= _PRESET_AXIS_THRESHOLD:
+        # value_trap シグナル（点火なしで底だけ）→ 逆張り
+        if v_details.get("value_trap") is True:
+            return "contrarian"
+        # price_bottom + ignition → pullback（押し目）
+        if v_details.get("price_bottom") and v_details.get("earnings_turnaround"):
+            return "pullback"
+        # それ以外（業績反転だが株価未転換等）→ contrarian 寄り
+        return "contrarian"
+
+    # 3. テーマ主軸
+    if t >= _PRESET_AXIS_THRESHOLD:
+        keyword_count = t_details.get("keyword_matches") or 0
+        sector_outperf = t_details.get("sector_outperformance") or 0.0
+        # 高キーワード一致 + 強いセクター → momentum
+        if keyword_count >= 5 and sector_outperf > 0.05:
+            return "momentum"
+        return "growth"
+
+    # 4. composite だけある（軸が立っていない）→ alpha or value
+    if composite >= _PRESET_COMPOSITE_THRESHOLD:
+        # V 字が二次閾値以上ある → value（しぶとい底値）
+        if v >= _PRESET_V_SECONDARY_THRESHOLD:
+            return "value"
+        return "alpha"
+
+    # 5. 最終フォールバック
+    return "alpha"
 
 
 def _thesis_from_row(row: ScreeningResult) -> str:
-    """screening_results 1行から構造的根拠（narrative）を組み立てる。
+    """screening_results 1行から構造的根拠（narrative）を組み立てる（v2.2 TASK-Z5 拡張）。
 
     topics と join 出来なかった時のフォールバック。
+    v_shape_details / theme_details の主要キーをできるだけ拾って具体性を上げる。
     """
     parts: list[str] = []
-    if row.v_shape_score >= 50:
-        if isinstance(row.v_shape_details, dict):
-            ign = row.v_shape_details.get("earnings_turnaround")
-            if ign:
-                parts.append(f"業績反転：{ign}")
-            if row.v_shape_details.get("price_bottom") is True:
-                parts.append("株価底打ちシグナル点灯")
-    if row.theme_score >= 50:
-        if isinstance(row.theme_details, dict):
-            kw = row.theme_details.get("keyword_match_count")
-            if isinstance(kw, int) and kw > 0:
-                parts.append(f"テーマキーワード {kw} 件マッチ")
+    v_det = row.v_shape_details if isinstance(row.v_shape_details, dict) else {}
+    t_det = row.theme_details if isinstance(row.theme_details, dict) else {}
+
+    # V 字側の詳細
+    if row.v_shape_score >= 50 or v_det:
+        ign = v_det.get("earnings_turnaround")
+        if ign:
+            parts.append(f"業績反転：{ign}")
+        if v_det.get("price_bottom") is True:
+            parts.append("株価底打ちシグナル点灯")
+        elif v_det.get("price_bottom"):  # 文字列の場合（例: "底だが点火なし"）
+            parts.append(f"株価：{v_det.get('price_bottom')}")
+        if v_det.get("value_trap") is True:
+            parts.append("⚠ value trap 警戒")
+        if v_det.get("rsi_reversal") is not None:
+            parts.append(f"RSI {v_det['rsi_reversal']:.0f} 反転圏")
+        if v_det.get("macd_cross") is True:
+            parts.append("MACD クロス点灯")
+        if v_det.get("volume_surge") is True:
+            parts.append("出来高サージ")
+
+    # テーマ側の詳細
+    if row.theme_score >= 50 or t_det:
+        kw = t_det.get("keyword_match_count") or t_det.get("keyword_matches")
+        if isinstance(kw, int) and kw > 0:
+            parts.append(f"テーマキーワード {kw} 件マッチ")
+        sec_outperf = t_det.get("sector_outperformance")
+        if isinstance(sec_outperf, int | float) and sec_outperf > 0:
+            parts.append(f"セクター対市場 {sec_outperf*100:+.1f}%")
+        inst = t_det.get("institutional")
+        if isinstance(inst, int | float) and inst > 0:
+            parts.append(f"機関投資家フロー {inst:.0f}")
+
     if not parts:
         parts.append(
-            f"composite={row.composite_score:.0f} 3週連続入賞"
+            f"composite={row.composite_score:.0f}・3週連続入賞（詳細データ薄）"
         )
     return " / ".join(parts)
 
@@ -169,7 +248,7 @@ class ZeeleCuratorAgent(Agent[ZeeleCuratorInput]):
         self._log = get_logger("agent").bind(agent=self.name)
 
     async def execute(self, agent_input: ZeeleCuratorInput) -> AgentOutput:
-        as_of = agent_input.as_of or utcnow().date()
+        as_of = agent_input.as_of or today_jst()
         required = max(1, agent_input.qualification_weeks)
 
         rows = self._load_screening(as_of=as_of, lookback_days=_LOOKBACK_DAYS)
@@ -214,9 +293,10 @@ class ZeeleCuratorAgent(Agent[ZeeleCuratorInput]):
                     )
                     newly_entered.append(ticker)
                 else:
-                    weeks_total = max(
-                        required, (as_of - state.entered_at).days // _WEEK_DAYS + 1
-                    )
+                    # v2.2 TASK-Z3: max(required, ...) を撤去。実滞在週数を素直に出す。
+                    # entry 当日は 1 週、entry+7日 は 2 週、entry+14日 は 3 週。
+                    days_since_entry = (as_of - state.entered_at).days
+                    weeks_total = max(1, days_since_entry // _WEEK_DAYS + 1)
                     state.weeks_in_zeele = weeks_total
                     state.consecutive_weeks = required
                     state.last_screened_at = row.screened_at
@@ -242,6 +322,21 @@ class ZeeleCuratorAgent(Agent[ZeeleCuratorInput]):
                         "zeele_weeks": state.weeks_in_zeele,
                     }
                 )
+
+            # v2.1 TASK-Z2: ZEELE 在籍中の銘柄も reference_score を最新 screening 値で
+            # 再計算する（陳腐化防止）。qualified に入ってない（今週は登場せず）でも
+            # 直近 screening 値で更新する。
+            for ticker, state in existing_states.items():
+                if not state.is_active or ticker in qualified:
+                    continue
+                latest_row = latest.get(ticker)
+                if latest_row is None:
+                    continue
+                state.reference_score = latest_row.composite_score
+                state.last_screened_at = latest_row.screened_at
+                state.updated_at = utcnow()
+                if not agent_input.dry_run:
+                    session.merge(state)
 
             deactivated = self._deactivate_stale(
                 session,
@@ -313,15 +408,31 @@ class ZeeleCuratorAgent(Agent[ZeeleCuratorInput]):
         as_of: dt.date,
         dry_run: bool,
     ) -> list[str]:
-        """4週以上 screening に登場していない ZEELE 銘柄を降格する。"""
+        """ZEELE 銘柄の降格判定（v2.4 TASK-Z4）。
+
+        screening が走った日数（暦日でなく実行回数）でカウント。screening が休んだ日は
+        ノーカウント。次の screening が来る前に降格させない。
+        """
         deactivated: list[str] = []
+        # screening 実行日数を集計（直近 28 日内に行われた screening の日数 = N）
+        cutoff = as_of - dt.timedelta(days=_DEACTIVATION_DAYS)
+        screening_dates_set: set[dt.date] = set()
+        screenings = session.exec(
+            select(ScreeningResult).where(col(ScreeningResult.screened_at) >= dt.datetime.combine(cutoff, dt.time.min))
+        )
+        for sr in screenings:
+            screening_dates_set.add(sr.screened_at.date())
+        screening_runs = len(screening_dates_set)
+
         for ticker, state in existing_states.items():
             if not state.is_active:
                 continue
             if ticker in qualified:
                 continue
-            days_since = (as_of - state.last_screened_at.date()).days
-            if days_since >= _DEACTIVATION_DAYS:
+            # screening 実行回数ベースで判定
+            days_since_last = (as_of - state.last_screened_at.date()).days
+            # 旧基準（暦日） + 新基準（screening 実行回数）の両方を満たす場合に降格
+            if days_since_last >= _DEACTIVATION_DAYS and screening_runs >= _DEACTIVATION_SCREENING_RUNS:
                 state.is_active = False
                 state.exited_at = as_of
                 state.consecutive_weeks = 0
