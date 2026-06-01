@@ -565,14 +565,18 @@ async def run_morning_batch(
         return await magi_verify(engine, ids, judge_fn)
 
     async def run_katsuragi_dispatch() -> dict:
-        """PIPELINE v3 Phase 1 M1.1 + M1.2: KATSURAGI 統合ノード。
+        """PIPELINE v3 Phase 1 M1.1 + M1.2 + N2: KATSURAGI 統合ノード。
 
         portfolio/misato.py:dispatch() を approve=False で呼び、DispatchPlan を生成。
-        Assignment（pilot 割当・source・score・picked）を Decision.thesis_at_decision に
-        反映して永続化する（M1.2 統合）。実 fill は後段 auto_fill で実施。
+        Assignment（pilot 割当・source・score・picked）を Decision に反映して永続化する。
+
+        N2: Assignment.assigned_to (機名) から personality (horizon_days / stop_loss_pct)
+            を引き、Decision.target_period_days / stop_pct を書き込む（旧 fallback 撤去
+            の準備段階）。
         """
         from trading_agent.models.decisions import Decision as _Decision
         from trading_agent.portfolio.misato import dispatch as _dispatch
+        from trading_agent.portfolio.personality import PERSONALITIES
 
         try:
             plan = _dispatch(
@@ -588,9 +592,11 @@ async def run_morning_batch(
             )
             return {"failed": True, "error_type": type(exc).__name__}
 
-        # Assignment を Decision に反映（picked / pilot / source / score / preset）
+        # Assignment を Decision に反映
         today_now = today_jst()
         updated = 0
+        params_filled = 0
+        assigned_ids: set[int] = set()
         with Session(engine, expire_on_commit=False) as sess:
             for a in plan.assignments:
                 # ZEELE 由来（real_decision=None）は decision_id が負値（-1000 -...）
@@ -599,20 +605,59 @@ async def run_morning_batch(
                 d = sess.get(_Decision, a.decision_id)
                 if d is None or d.date != today_now:
                     continue
+                assigned_ids.add(a.decision_id)
+                # N5: KATSURAGI 情報を thesis 先頭に置く
+                #     HTML が thesis.split("|")[0] で先頭セクションを表示するため
                 parts = [
-                    f"KATSURAGI: pilot={a.assigned_to}",
+                    f"KATSURAGI:{a.assigned_to}",
                     f"source={a.source}",
                     f"score={a.score:.2f}",
-                    f"picked={a.picked}",
+                    f"picked={'✓' if a.picked else '−'}",
                 ]
                 if a.preset:
                     parts.append(f"preset={a.preset}")
                 note = " ".join(parts)
-                d.thesis_at_decision = (
-                    (d.thesis_at_decision or "") + " | " + note
-                ).strip(" |")
+                # 既存 thesis があれば末尾に保持、新しい KATSURAGI 情報を先頭へ
+                existing = d.thesis_at_decision or ""
+                if existing.startswith("KATSURAGI:"):
+                    # 過去 KATSURAGI 情報を削除して新しいものに置換
+                    rest = existing.split("|", 1)
+                    existing = rest[1].strip(" |") if len(rest) > 1 else ""
+                d.thesis_at_decision = (note + (" | " + existing if existing else "")).strip(" |")
+                # N2: 機の personality から horizon / stop を Decision に書き込む
+                pers = PERSONALITIES.get(a.assigned_to)
+                if pers is not None:
+                    if d.target_period_days is None:
+                        d.target_period_days = pers.horizon_days
+                    if d.stop_pct is None:
+                        d.stop_pct = pers.stop_loss_pct
+                    params_filled += 1
                 sess.add(d)
                 updated += 1
+
+            # N5: Assignment 0 件 / 一部 Decision が KATSURAGI 対象外の場合に
+            #     「候補プール外（DS scout 申請拒否 or opportunity_fill 質/予算未達）」
+            #     を thesis 先頭に書き込み、HTML に透明性情報として表示する。
+            untouched = 0
+            decs_today = sess.exec(
+                select(_Decision)
+                .where(col(_Decision.date) == today_now)
+                .where(col(_Decision.status) == "awaiting")
+                .where(col(_Decision.action) == "buy")
+            ).all()
+            for d in decs_today:
+                if d.id in assigned_ids:
+                    continue
+                existing = d.thesis_at_decision or ""
+                if existing.startswith("KATSURAGI:"):
+                    continue
+                note = "KATSURAGI:候補プール外（DS未申請 or 質/予算未達）"
+                d.thesis_at_decision = (
+                    note + (" | " + existing if existing else "")
+                ).strip(" |")
+                sess.add(d)
+                untouched += 1
+
             sess.commit()
 
         return {
@@ -622,6 +667,8 @@ async def run_morning_batch(
             "n_assignments": len(plan.assignments),
             "n_picked": sum(1 for a in plan.assignments if a.picked),
             "n_decisions_updated": updated,
+            "n_decisions_params_filled": params_filled,
+            "n_decisions_pool_out": untouched,
             "n_promotions": len(plan.promotions),
         }
 

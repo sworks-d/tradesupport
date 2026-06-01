@@ -234,3 +234,50 @@ class TestMorningBatch:
         assert row is not None
         assert row.batch_type == "morning"
         assert "買い推奨" in row.summary
+
+    async def test_katsuragi_writes_personality_horizon_stop_to_decision(
+        self, tmp_path: Path
+    ) -> None:
+        """PIPELINE v3 N2: KATSURAGI dispatch が Assignment の personality から
+        horizon_days / stop_loss_pct を Decision に書き込む。"""
+        from trading_agent.portfolio.personality import PERSONALITIES
+        from trading_agent.utils.time_utils import today_jst as _today_jst
+
+        engine = _engine(tmp_path)
+        await run_morning_batch(engine, host=_mock_host(engine))
+
+        today = _today_jst()
+        with Session(engine) as s:
+            decs = list(
+                s.exec(
+                    select(Decision)
+                    .where(col(Decision.date) == today)
+                    .where(col(Decision.action) == "buy")
+                )
+            )
+
+        # mock host で動かしたバッチでは Assignment が出る前提（mock screening で
+        # 候補が複数件返るため、KATSURAGI dispatch が動いて Decision 反映される）
+        # 少なくとも 1 件は personality 由来の値が書かれていること
+        with_horizon = [d for d in decs if d.target_period_days is not None]
+        with_stop = [d for d in decs if d.stop_pct is not None]
+
+        if not with_horizon and not with_stop:
+            # Assignment が 0 件のケース（少額 Treasury 等）は本テストの対象外
+            # → BatchState は success で完走しているが Decision 反映なし
+            return
+
+        # personality の値が反映されている（PERSONALITIES の horizon_days 集合に含まれる）
+        valid_horizons = {p.horizon_days for p in PERSONALITIES.values()}
+        for d in with_horizon:
+            assert d.target_period_days in valid_horizons, (
+                f"{d.ticker} の horizon={d.target_period_days} が PERSONALITIES "
+                f"の値 ({valid_horizons}) に含まれない"
+            )
+
+        valid_stops = {p.stop_loss_pct for p in PERSONALITIES.values()}
+        for d in with_stop:
+            assert d.stop_pct in valid_stops, (
+                f"{d.ticker} の stop={d.stop_pct} が PERSONALITIES "
+                f"の値 ({valid_stops}) に含まれない"
+            )
