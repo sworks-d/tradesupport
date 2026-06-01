@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>INVESTIGELION アーキテクチャ図 (v2.8)</title>
+<style>
+  :root {
+    --bg: #1a1a22;
+    --panel: #25252f;
+    --panel-2: #2f2f3b;
+    --text: #ece9de;
+    --sub: #a8a89e;
+    --muted: #888;
+    --rei: #4a90e2;
+    --asuka: #e74c3c;
+    --shinji: #9b59b6;
+    --kaworu: #5d3fd3;
+    --magi: #ff8c42;
+    --zeele: #4ecdc4;
+    --wille: linear-gradient(135deg, #5d3fd3, #4ade80);
+    --katsuragi: rgba(93, 63, 211, 0.18);
+    --akagi: rgba(78, 205, 196, 0.18);
+    --up: #4ade80;
+    --down: #f87171;
+    --warn: #fbbf24;
+  }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Inter", "Noto Sans JP", sans-serif;
+    margin: 0;
+    padding: 30px 40px;
+    line-height: 1.5;
+  }
+  h1 {
+    background: var(--wille);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    font-weight: 800;
+    letter-spacing: 1px;
+    margin: 0 0 4px;
+    font-size: 28px;
+  }
+  .subtitle {
+    color: var(--sub);
+    margin-bottom: 30px;
+    font-size: 13px;
+  }
+  h2 {
+    margin-top: 30px;
+    font-size: 16px;
+    color: var(--text);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    padding-bottom: 6px;
+  }
+  .layer {
+    background: var(--panel);
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-bottom: 12px;
+    border-left: 3px solid #555;
+  }
+  .layer-title {
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 8px;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .layer-desc {
+    font-size: 11px;
+    color: var(--sub);
+    margin-bottom: 8px;
+  }
+  /* === 階層構造 === */
+  .stack {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .row {
+    display: grid;
+    gap: 10px;
+  }
+  .row.cols-2 { grid-template-columns: 1fr 1fr; }
+  .row.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+  .row.cols-4 { grid-template-columns: repeat(4, 1fr); }
+  .card {
+    background: var(--panel-2);
+    border-radius: 6px;
+    padding: 10px 12px;
+    border-top: 3px solid var(--muted);
+  }
+  .card-title {
+    font-weight: 700;
+    font-size: 12px;
+    margin-bottom: 4px;
+  }
+  .card-detail {
+    font-size: 10px;
+    color: var(--sub);
+    line-height: 1.5;
+  }
+  .ds-card {
+    background: var(--panel-2);
+    border-radius: 5px;
+    padding: 8px 10px;
+    border-top: 3px solid;
+  }
+  .ds-rei { border-top-color: var(--rei); }
+  .ds-asuka { border-top-color: var(--asuka); }
+  .ds-shinji { border-top-color: var(--shinji); }
+  .ds-kaworu { border-top-color: var(--kaworu); }
+  /* === 名前タグ === */
+  .tag {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 3px;
+    letter-spacing: 0.5px;
+  }
+  .tag-wille { background: var(--wille); color: #fff; }
+  .tag-katsuragi { background: var(--katsuragi); color: #b9a3ff; }
+  .tag-akagi { background: var(--akagi); color: #4ecdc4; }
+  .tag-magi { background: rgba(255, 140, 66, 0.18); color: var(--magi); }
+  .tag-zeele { background: rgba(78, 205, 196, 0.18); color: var(--zeele); }
+  .tag-ds { background: rgba(255, 255, 255, 0.06); color: var(--text); }
+  /* === 矢印 === */
+  .arrow-down {
+    text-align: center;
+    color: var(--muted);
+    font-size: 14px;
+    margin: 4px 0;
+  }
+  .flow-step {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 8px;
+    align-items: flex-start;
+  }
+  .flow-num {
+    background: var(--katsuragi);
+    color: #b9a3ff;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    font-weight: 700;
+    font-size: 11px;
+  }
+  .flow-detail {
+    font-size: 11px;
+    flex: 1;
+  }
+  .flow-detail b { color: var(--text); }
+  .flow-detail .muted { color: var(--muted); }
+  /* === 役割テーブル === */
+  table.role-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11px;
+    margin-top: 6px;
+  }
+  .role-table th, .role-table td {
+    padding: 6px 10px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    text-align: left;
+    vertical-align: top;
+  }
+  .role-table th {
+    color: var(--muted);
+    font-weight: 600;
+    font-size: 10px;
+  }
+  /* === 安全装置 === */
+  .guard-card {
+    background: rgba(248, 113, 113, 0.06);
+    border: 1px solid rgba(248, 113, 113, 0.25);
+    border-radius: 5px;
+    padding: 8px 10px;
+    font-size: 11px;
+  }
+  .guard-title {
+    color: #f87171;
+    font-weight: 700;
+    margin-bottom: 4px;
+    font-size: 12px;
+  }
+  /* === LLM 投入マップ === */
+  .llm-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 10px;
+  }
+  .llm-card {
+    background: var(--panel-2);
+    border-radius: 5px;
+    padding: 8px 10px;
+    border-left: 2px solid var(--muted);
+  }
+  .llm-card.llm-active { border-left-color: var(--up); background: rgba(74, 222, 128, 0.06); }
+  .llm-card.llm-future { border-left-color: var(--warn); background: rgba(251, 191, 36, 0.05); }
+  .llm-card.llm-off { border-left-color: var(--muted); opacity: 0.7; }
+  .llm-name { font-weight: 700; font-size: 11px; color: var(--text); }
+  .llm-model { font-size: 9px; color: var(--muted); margin-bottom: 4px; }
+  .llm-detail { font-size: 10px; color: var(--sub); }
+  /* === コード参照 === */
+  code {
+    background: rgba(255, 255, 255, 0.05);
+    color: #b9a3ff;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10px;
+  }
+  /* === legend === */
+  .legend {
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+    margin-top: 6px;
+    font-size: 10px;
+    color: var(--sub);
+  }
+  .legend-dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    margin-right: 4px;
+    vertical-align: middle;
+  }
+</style>
+</head>
+<body>
+
+<h1>INVESTIGELION</h1>
+<div class="subtitle">投資判断システム アーキテクチャ図 (v2.8) — WILLE / KATSURAGI / AKAGI + DS 4 機 + MAGI / ZEELE 統合</div>
+
+<!-- ============================================================ -->
+<h2>🏛 全体構造</h2>
+
+<div class="stack">
+
+  <!-- L0: サービス -->
+  <div class="layer" style="border-left-color: #5d3fd3;">
+    <div class="layer-title">
+      <span class="tag tag-wille">L0 SERVICE</span>
+      INVESTIGELION（プロダクト）
+    </div>
+    <div class="layer-desc">
+      ローカル運用の個人向け投資判断システム。Mac の Next.js (port 3100) + Python バッチで構成。
+    </div>
+  </div>
+
+  <!-- L1: 投資判断システム -->
+  <div class="layer" style="border-left-color: #4ade80;">
+    <div class="layer-title">
+      <span class="tag tag-wille">L1 WILLE</span>
+      🛡 WILLE 司令室 — 投資判断の包括組織
+    </div>
+    <div class="layer-desc">
+      MAGI と ZEELE が拾った候補を受け取り、AKAGI が分析、KATSURAGI が配分、DS 4 機が執行する 3 層構造。
+    </div>
+
+    <div class="row cols-2" style="margin-top: 10px;">
+      <!-- KATSURAGI -->
+      <div class="card" style="border-top-color: #5d3fd3;">
+        <div class="card-title">
+          <span class="tag tag-katsuragi">🎖 KATSURAGI</span>
+          作戦指示・予算配分
+        </div>
+        <div class="card-detail">
+          <b>役割</b>: 預かり金管理 → 4 機への配分 → DS 自発 proposal の優先度補正 → 例外判定 → 排他制御<br>
+          <b>戦略パラメータ</b>: balanced / news_focused / trend_focused / peer_focused（重み付け 5 軸）<br>
+          <b>安全装置</b>: HALT / 市場ガード（日経 -3%）/ 1 命令上限 ¥500k / 1 機上限 ¥250k<br>
+          <b>LLM</b>: <span style="color: var(--muted);">不使用（決定論計算のみ）</span><br>
+          <code>trading_agent/wille/misato.py</code><br>
+          <code>trading_agent/portfolio/misato.py</code>
+        </div>
+      </div>
+
+      <!-- AKAGI -->
+      <div class="card" style="border-top-color: #4ecdc4;">
+        <div class="card-title">
+          <span class="tag tag-akagi">🧪 AKAGI</span>
+          銘柄分析・調査
+        </div>
+        <div class="card-detail">
+          <b>役割</b>: TickerBrief を構築（5 中立スコア + 生データ）<br>
+          <b>5 スコア</b>: news_sentiment / industry / peer / event / deep_brief（範囲 -1.0 ~ +1.0）<br>
+          <b>市場 regime</b>: 日経/TOPIX 当日変動 → risk_on / risk_off / neutral 判定<br>
+          <b>LLM</b>: Haiku（ニュース分類・env で有効化）+ Sonnet スポット（5 節目・Phase C）<br>
+          <code>trading_agent/wille/ritsuko.py</code>
+        </div>
+      </div>
+    </div>
+
+    <!-- DS 4 機 -->
+    <div style="margin-top: 12px;">
+      <div class="layer-title" style="font-size: 13px;">
+        <span class="tag tag-ds">DS 4 機</span>
+        執行エージェント（自発 proposal）
+      </div>
+      <div class="row cols-4">
+        <div class="ds-card ds-rei">
+          <div class="card-title" style="color: var(--rei);">🔵 REI</div>
+          <div class="card-detail">
+            守り長期 / horizon 180d / Stop -15%<br>
+            accept: 推し / 要検討<br>
+            preset: value, dividend, contrarian
+          </div>
+        </div>
+        <div class="ds-card ds-asuka">
+          <div class="card-title" style="color: var(--asuka);">🔴 ASUKA</div>
+          <div class="card-detail">
+            攻め中期 / horizon 60d / Stop -8%<br>
+            accept: 推し / 要検討<br>
+            preset: momentum, growth, alpha
+          </div>
+        </div>
+        <div class="ds-card ds-shinji">
+          <div class="card-title" style="color: var(--shinji);">🟣 SHINJI</div>
+          <div class="card-detail">
+            中庸 / horizon 90d / Stop -10%<br>
+            accept: 推し / 要検討 / ZEELE<br>
+            preset: pullback, contrarian
+          </div>
+        </div>
+        <div class="ds-card ds-kaworu">
+          <div class="card-title" style="color: var(--kaworu);">🌒 KAWORU</div>
+          <div class="card-detail">
+            <b>コントラリアン短期</b> / horizon 21d / Stop -5%<br>
+            他機が選ばなかった銘柄を短期エッジで拾う<br>
+            <code>select_kaworu_contrarian</code>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- L2: 候補発掘 -->
+  <div class="layer" style="border-left-color: var(--magi);">
+    <div class="layer-title">
+      <span class="tag tag-magi">L2 MAGI</span>
+      業績スクリーニング + 技術指標 + Gendo 裁定
+    </div>
+    <div class="row cols-3" style="margin-top: 8px;">
+      <div class="card" style="border-top-color: var(--magi);">
+        <div class="card-title">CASPER / BALTHASAR / MELCHIOR</div>
+        <div class="card-detail">
+          3 つの LLM 視点で銘柄を多角評価<br>
+          verdict: buy / hold / warn / na<br>
+          <code>trading_agent/magi/casper_llm.py</code>
+        </div>
+      </div>
+      <div class="card" style="border-top-color: var(--magi);">
+        <div class="card-title">Gendo（裁定）</div>
+        <div class="card-detail">
+          3 体の判定を統合 → 最終 stance<br>
+          <b>推し / 要検討 / 静観 / ZEELE</b>（4 値）<br>
+          <code>trading_agent/magi/gendo.py</code>
+        </div>
+      </div>
+      <div class="card" style="border-top-color: var(--magi);">
+        <div class="card-title">Technicals</div>
+        <div class="card-detail">
+          RSI / MACD / SMA / Bollinger 計算<br>
+          AKAGI が借用（重複計算なし）<br>
+          <code>trading_agent/mcp_tools/technicals.py</code>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="layer" style="border-left-color: var(--zeele);">
+    <div class="layer-title">
+      <span class="tag tag-zeele">L2 ZEELE</span>
+      テーマ駆動・ニュースから銘柄を発掘
+    </div>
+    <div class="row cols-2" style="margin-top: 8px;">
+      <div class="card" style="border-top-color: var(--zeele);">
+        <div class="card-title">topics_collector</div>
+        <div class="card-detail">
+          市場トピックス収集 → テーマ抽出<br>
+          <code>trading_agent/agents/topics_collector.py</code>
+        </div>
+      </div>
+      <div class="card" style="border-top-color: var(--zeele);">
+        <div class="card-title">zeele_curator</div>
+        <div class="card-detail">
+          テーマ → 銘柄 preset 推論<br>
+          composite_score でランク付け<br>
+          <code>trading_agent/agents/zeele_curator.py</code>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- L3: データ層 -->
+  <div class="layer" style="border-left-color: #888;">
+    <div class="layer-title">
+      <span class="tag tag-ds">L3 DATA</span>
+      外部データソース + 永続化
+    </div>
+    <div class="row cols-3" style="margin-top: 8px;">
+      <div class="card">
+        <div class="card-title">yfinance（無料）</div>
+        <div class="card-detail">
+          終値 / RSI 計算用 / .news / .calendar / 同業ピア比較<br>
+          ↳ 5 分自動更新 + 手動ボタン
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">SQLite (data/trading.sqlite)</div>
+        <div class="card-detail">
+          Universe / Portfolio / Decision / Technicals / cost_logs<br>
+          MisatoTreasury / PilotAllocation
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">SnapshotJSON</div>
+        <div class="card-detail">
+          UI が読む完成データ<br>
+          <code>ui/public/data/snapshot.json</code><br>
+          build_snapshot.py で生成
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- L4: 執行 -->
+  <div class="layer" style="border-left-color: var(--up);">
+    <div class="layer-title">
+      <span class="tag tag-ds">L4 EXEC</span>
+      取引執行（Paper / 実弾）
+    </div>
+    <div class="row cols-2" style="margin-top: 8px;">
+      <div class="card" style="border-top-color: var(--up);">
+        <div class="card-title">paper_exec（Paper 検証）</div>
+        <div class="card-detail">
+          機内重複防止 / Stop-loss / time exit / 排他制御<br>
+          機ごとの portfolios を管理<br>
+          <code>trading_agent/portfolio/paper_exec.py</code>
+        </div>
+      </div>
+      <div class="card" style="border-top-color: var(--up);">
+        <div class="card-title">moomoo_sim（実費シミュレート）</div>
+        <div class="card-detail">
+          手数料 / スリッページ / FX スプレッドを実弾相当で適用<br>
+          <code>trading_agent/portfolio/moomoo_sim.py</code>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ============================================================ -->
+<h2>🔄 データフロー（1 日次バッチ）</h2>
+
+<div class="layer">
+  <div class="flow-step">
+    <div class="flow-num">1</div>
+    <div class="flow-detail">
+      <b>候補発掘</b>: MAGI が業績スクリーニング → Gendo stance（推し/要検討/静観）<br>
+      <span class="muted">ZEELE がテーマニュースから別ルートで候補追加（preset 付き）</span>
+    </div>
+  </div>
+  <div class="flow-step">
+    <div class="flow-num">2</div>
+    <div class="flow-detail">
+      <b>候補プール構築</b>: MAGI + ZEELE の和集合 → CandidatePool<br>
+      <span class="muted">_build_candidate_pool: stance × preset × source を保持</span>
+    </div>
+  </div>
+  <div class="flow-step">
+    <div class="flow-num">3</div>
+    <div class="flow-detail">
+      <b>AKAGI Brief 構築</b>: 各銘柄に対し yfinance / news / peer / events を取得 → 5 中立スコア生成<br>
+      <span class="muted">technicals は MAGI 借用 → yfinance フォールバック / news は辞書 → Haiku（env有効時）</span>
+    </div>
+  </div>
+  <div class="flow-step">
+    <div class="flow-num">4</div>
+    <div class="flow-detail">
+      <b>DS 自発 proposal</b>: REI/ASUKA/SHINJI は select_from_pool（自分の accept_stances）<br>
+      KAWORU は select_kaworu_contrarian（他機が選ばなかった銘柄で短期エッジ）
+    </div>
+  </div>
+  <div class="flow-step">
+    <div class="flow-num">5</div>
+    <div class="flow-detail">
+      <b>KATSURAGI 優先度補正</b>: 各 proposal に AKAGI Brief の boost を加算（戦略プリセット重み）<br>
+      <span class="muted">priority = base_confidence + ritsuko_boost × 0.5</span>
+    </div>
+  </div>
+  <div class="flow-step">
+    <div class="flow-num">6</div>
+    <div class="flow-detail">
+      <b>例外判定 + 排他制御</b>: 決算前 7 日 / ピア最下位 / Sonnet 強い売りをブロック<br>
+      同銘柄に複数機 proposal なら priority 最高のみ採用
+    </div>
+  </div>
+  <div class="flow-step">
+    <div class="flow-num">7</div>
+    <div class="flow-detail">
+      <b>予算配分 + 安全装置チェック</b>: 機別需要 × 重み → per_pilot_jpy<br>
+      <span class="muted">HALT / 市場 -3% / 1 命令上限 / 1 機上限 を順次適用</span>
+    </div>
+  </div>
+  <div class="flow-step">
+    <div class="flow-num">8</div>
+    <div class="flow-detail">
+      <b>paper_exec で fill</b>: Stop-loss / time exit / 機内重複防止 → Portfolio に記録<br>
+      <span class="muted">moomoo_sim で手数料・スリッページ・FX 反映</span>
+    </div>
+  </div>
+  <div class="flow-step">
+    <div class="flow-num">9</div>
+    <div class="flow-detail">
+      <b>UI 更新</b>: build_snapshot.py で snapshot.json 再生成 → React が fetch<br>
+      <span class="muted">5 分自動 / 手動ボタンでも実行</span>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<h2>🤖 LLM 投入マップ（コスト管理）</h2>
+
+<div class="llm-grid">
+  <div class="llm-card llm-active">
+    <div class="llm-name">CASPER / BALTHASAR / MELCHIOR</div>
+    <div class="llm-model">Claude Sonnet（既存）</div>
+    <div class="llm-detail">
+      MAGI 3 体の銘柄評価。<br>
+      列挙値検証 + deterministic フォールバックあり。
+    </div>
+  </div>
+  <div class="llm-card llm-active">
+    <div class="llm-name">ZEELE curator</div>
+    <div class="llm-model">Claude Haiku（既存）</div>
+    <div class="llm-detail">
+      テーマ → preset 推論 / 銘柄候補生成。
+    </div>
+  </div>
+  <div class="llm-card llm-future">
+    <div class="llm-name">AKAGI Haiku ニュース分類</div>
+    <div class="llm-model">Claude Haiku（env で有効化）</div>
+    <div class="llm-detail">
+      キーワード辞書で漏れた英語等を分類。<br>
+      <code>RITSUKO_HAIKU_ENABLED=1</code><br>
+      バッチ 15 件 / call、月 $0.5 想定。
+    </div>
+  </div>
+  <div class="llm-card llm-future">
+    <div class="llm-name">AKAGI Sonnet スポット</div>
+    <div class="llm-model">Claude Sonnet（5 節目のみ）</div>
+    <div class="llm-detail">
+      新規候補 deep brief / 重大ニュース反応 / MAGI⇄ZEELE 食い違い / 業界転換 / 機昇格判定。<br>
+      月 $1-2 想定（trigger 条件で予算上限）。
+    </div>
+  </div>
+  <div class="llm-card llm-off">
+    <div class="llm-name">KATSURAGI 配分判断</div>
+    <div class="llm-model">LLM 不使用</div>
+    <div class="llm-detail">
+      数値計算のみ。再現性 + 監査可能性のため意図的に LLM 排除。
+    </div>
+  </div>
+  <div class="llm-card llm-off">
+    <div class="llm-name">outlook テキスト</div>
+    <div class="llm-model">決定論生成</div>
+    <div class="llm-detail">
+      戦略プリセット名 + 市場 regime + 状況分布から短文組み立て。<br>
+      ハルシネーション 0 だが、後述の実配分連動課題あり。
+    </div>
+  </div>
+</div>
+
+<div class="legend">
+  <span><span class="legend-dot" style="background: var(--up);"></span>稼働中</span>
+  <span><span class="legend-dot" style="background: var(--warn);"></span>env / 条件付きで稼働</span>
+  <span><span class="legend-dot" style="background: var(--muted);"></span>意図的に LLM 不使用</span>
+</div>
+
+<!-- ============================================================ -->
+<h2>🛡 安全装置</h2>
+
+<div class="row cols-3">
+  <div class="guard-card">
+    <div class="guard-title">⛔ 手動 HALT</div>
+    全 fill 停止。UI ボタン or 設定ファイル <code>data/MISATO_HALT</code> で発動。
+  </div>
+  <div class="guard-card">
+    <div class="guard-title">📉 市場全体ガード</div>
+    日経 / TOPIX -3% で新規 fill 停止（既存保持・close は走る）。<br>
+    <code>WILLE_MARKET_GUARD=1</code> デフォルト ON。
+  </div>
+  <div class="guard-card">
+    <div class="guard-title">📛 1 命令上限</div>
+    1 回の dispatch で最大 ¥500k。<br>
+    <code>MAX_BUDGET_PER_DISPATCH_JPY</code>
+  </div>
+  <div class="guard-card">
+    <div class="guard-title">🚧 1 機上限</div>
+    各機 ¥250k まで。<br>
+    <code>MAX_PER_PILOT_JPY</code>
+  </div>
+  <div class="guard-card">
+    <div class="guard-title">⛔ Stop-loss</div>
+    機ごとに -5% (KAWORU) ~ -15% (REI) で自動 sell。
+  </div>
+  <div class="guard-card">
+    <div class="guard-title">⏰ Time exit</div>
+    保有日数が horizon_days を超えたら自動 sell。
+  </div>
+  <div class="guard-card">
+    <div class="guard-title">📅 決算前ブロック</div>
+    決算 7 日以内の銘柄は新規 fill 見送り。<br>
+    <code>check_proposal_exceptions</code>
+  </div>
+  <div class="guard-card">
+    <div class="guard-title">🚫 機内重複防止</div>
+    同一機が同一銘柄を二重保有しない（v2.8 追加）。
+  </div>
+  <div class="guard-card">
+    <div class="guard-title">🔀 排他制御</div>
+    同銘柄に複数機 proposal なら priority 最高のみ採用。
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<h2>📂 役割マトリクス</h2>
+
+<table class="role-table">
+  <thead>
+    <tr>
+      <th>担当</th>
+      <th>役割</th>
+      <th>主要ファイル</th>
+      <th>LLM</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><span class="tag tag-magi">MAGI</span></td>
+      <td>業績スクリーニング・3 体評価・stance 裁定</td>
+      <td><code>trading_agent/magi/*</code></td>
+      <td>Sonnet 3 体</td>
+    </tr>
+    <tr>
+      <td><span class="tag tag-zeele">ZEELE</span></td>
+      <td>テーマニュース → 銘柄候補 + preset</td>
+      <td><code>trading_agent/agents/topics_collector.py</code> / <code>zeele_curator.py</code></td>
+      <td>Haiku</td>
+    </tr>
+    <tr>
+      <td><span class="tag tag-akagi">AKAGI</span></td>
+      <td>銘柄 Brief 構築・5 中立スコア・市場 regime</td>
+      <td><code>trading_agent/wille/ritsuko.py</code></td>
+      <td>Haiku（env） + Sonnet（5 節目）</td>
+    </tr>
+    <tr>
+      <td><span class="tag tag-katsuragi">KATSURAGI</span></td>
+      <td>戦略パラメータ・boost 計算・例外判定・配分・outlook</td>
+      <td><code>trading_agent/wille/misato.py</code></td>
+      <td><span style="color: var(--muted);">不使用</span></td>
+    </tr>
+    <tr>
+      <td><span class="tag tag-ds">DS Scout</span></td>
+      <td>各機の自発 proposal 選別（confidence 計算）</td>
+      <td><code>trading_agent/portfolio/ds_scout.py</code></td>
+      <td><span style="color: var(--muted);">不使用</span></td>
+    </tr>
+    <tr>
+      <td><span class="tag tag-ds">paper_exec</span></td>
+      <td>Paper 検証 fill / Stop / time exit / 重複防止</td>
+      <td><code>trading_agent/portfolio/paper_exec.py</code></td>
+      <td><span style="color: var(--muted);">不使用</span></td>
+    </tr>
+    <tr>
+      <td><span class="tag tag-ds">snapshot</span></td>
+      <td>UI が読む snapshot.json 構築</td>
+      <td><code>scripts/build_snapshot.py</code> / <code>refresh_prices.py</code></td>
+      <td><span style="color: var(--muted);">不使用</span></td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- ============================================================ -->
+<h2>🧭 UI 階層 (INVESTIGELION ダッシュボード)</h2>
+
+<div class="layer">
+  <div class="card-detail">
+    <pre style="font-size: 10px; line-height: 1.4; margin: 0; color: var(--text);">┌─ <b style="color: #b9a3ff;">INVESTIGELION</b>（最上部・サービスタイトル）─────────────────┐
+│  最終更新 / 価格自動更新トグル [オフ|30秒|1分|<b>5分</b>]            │
+├─ <b style="color: #b9a3ff;">🛡 WILLE 司令室</b> ──────────────────────────────────────────┤
+│  ┌─ <b style="color: #b9a3ff;">🎖 KATSURAGI 司令</b> (7) ────────┬─ <b style="color: #4ecdc4;">🧪 AKAGI</b> (3) ─┐ │
+│  │ ┌─ 司令操作 (5) ──────┬─ 🎯 戦略 (2) ─┐│ 銘柄分析・5 スコア  │ │
+│  │ │ 預かり金/配分        │ balanced       ││ 状況別件数         │ │
+│  │ │ 入金/承認/リセット   │ 重みバー       ││ boost 上位/下位    │ │
+│  │ │ 📤 各 DS の状態 +    │ 🔭 展望・予測   ││ 全銘柄 Brief 内訳  │ │
+│  │ │   保有銘柄上位       │                ││                    │ │
+│  │ └─────────────────────┴────────────────┘│                    │ │
+│  └─────────────────────────────────────────┴────────────────────┘ │
+├─ <b style="color: #b9a3ff;">🤖 ダミーシステム</b>（検証中）───────────────────────────────┤
+│  [REI] [ASUKA] [SHINJI] [KAWORU] ← DS 4 機カード（保有銘柄詳細）│
+├─ <b style="color: #b9a3ff;">アクションゾーン</b>（既存）───────────────────────────────────┤
+│  ZEELE 攻め / 売り推奨 / 注視 etc                                 │
+└────────────────────────────────────────────────────────────────────┘</pre>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<h2>📊 数字ベース指標まとめ</h2>
+
+<div class="row cols-3">
+  <div class="card">
+    <div class="card-title">テスト</div>
+    <div class="card-detail">500 件 PASS（v2.8 時点）</div>
+  </div>
+  <div class="card">
+    <div class="card-title">LLM 月コスト想定</div>
+    <div class="card-detail">
+      Sonnet 既存（MAGI 3 体・ZEELE）+ Haiku/Sonnet スポット<br>
+      合計 月 $3-5 程度（env 制御で 0 化可能）
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title">価格更新</div>
+    <div class="card-detail">
+      軽量自動: 5 分間隔（yfinance 1 リクエスト）<br>
+      完全更新: 手動ボタン or daily-report 用 launchd
+    </div>
+  </div>
+</div>
+
+<div style="margin-top: 30px; padding: 12px; background: rgba(93, 63, 211, 0.06); border-left: 3px solid #5d3fd3; border-radius: 4px; font-size: 11px; color: var(--sub);">
+  <b style="color: #b9a3ff;">📌 設計思想</b><br>
+  ・<b style="color: var(--text);">責任分離</b>: 発掘（MAGI/ZEELE）/ 調査（AKAGI）/ 判断（KATSURAGI）/ 執行（DS）<br>
+  ・<b style="color: var(--text);">LLM の責任を上層に集中</b>: 配分判断（KATSURAGI）は決定論で監査可能<br>
+  ・<b style="color: var(--text);">フォールバック禁止</b>: データ取れない時は unknown 返す（欺瞞回避）<br>
+  ・<b style="color: var(--text);">機構造の対称性</b>: 4 機が独立した役割を持ち、KAWORU は他機の落ち穂拾い<br>
+  ・<b style="color: var(--text);">Phase 段階導入</b>: A (重複削除) → B (データ配線) → C (Sonnet スポット)
+</div>
+
+</body>
+</html>
