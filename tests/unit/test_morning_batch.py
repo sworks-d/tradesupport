@@ -168,11 +168,14 @@ class TestMorningBatch:
         batch = await run_morning_batch(engine, host=_mock_host(engine))
 
         assert batch.status in {"success", "partial"}
-        assert len(batch.node_status) == 18  # v2.10 Phase I-10: +anomaly_check
+        # PIPELINE v3 Phase 4-B: +zeele_llm_scout で 19 ノード
+        assert len(batch.node_status) == 19
         assert batch.node_status["screening"] == "success"
         assert batch.node_status["zeele_curator"] == "success"
+        assert batch.node_status["zeele_llm_scout"] == "success"
         assert batch.node_status["materialize_decisions"] == "success"
         assert batch.node_status["magi_verify"] == "success"
+        assert batch.node_status["katsuragi_dispatch"] == "success"
 
         with Session(engine) as s:
             assert len(list(s.exec(select(ScreeningResult)))) >= 2

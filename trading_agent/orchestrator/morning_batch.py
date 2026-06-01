@@ -355,6 +355,29 @@ async def run_morning_batch(
             engine,
         )
 
+    async def run_zeele_llm_scout() -> object:
+        """PIPELINE v3 Phase 4-B: ZEELE LLM 探索（zeele_curator 後段）。
+
+        universe.is_active=True で ZEELE プール外の銘柄を Haiku で preset 判定し
+        upsert する。BudgetGuard で日次上限 ¥10 / 月次 ¥200。
+        実 LLM 呼出が発生するため、構築完了前は実バッチで動かさない。
+        """
+        from trading_agent.agents.zeele_llm_scout import (
+            ZeeleLLMScoutAgent,
+            ZeeleLLMScoutInput,
+        )
+
+        return await execute_agent(
+            ZeeleLLMScoutAgent(ctx),
+            ZeeleLLMScoutInput(
+                invocation_id=invocation_id,
+                dry_run=dry_run,
+                max_calls=30,
+                daily_budget_jpy=10.0,
+            ),
+            engine,
+        )
+
     async def run_market_analyst() -> object:
         candidates = _candidate_tickers(engine)
         return await execute_agent(
@@ -781,6 +804,15 @@ async def run_morning_batch(
         DAGNode("universe_refresh", universe_refresh, depends_on=["pre_check"], timeout_s=300),
         DAGNode("screening", run_screening, depends_on=["topics_collector"], timeout_s=900),
         DAGNode("zeele_curator", run_zeele_curator, depends_on=["screening"], timeout_s=60),
+        # PIPELINE v3 Phase 4-B: ZEELE LLM 探索 (zeele_curator 後段)
+        # 決定論的入賞だけでなく、screening 漏れの V字/テーマ/攻め銘柄を Haiku で発掘。
+        # BudgetGuard 日次 ¥10 / 月次 ¥200 で安全装置。
+        DAGNode(
+            "zeele_llm_scout",
+            run_zeele_llm_scout,
+            depends_on=["zeele_curator"],
+            timeout_s=600,
+        ),
         # PIPELINE v3 Phase 2 M2.1: market_analyst は AKAGI (wille/ritsuko) に役割移管予定。
         # 現状は news_sentiment_score の供給源として screening 後に並列保持（Phase 3 M3.1 で wille/ritsuko 経由に統合）。
         DAGNode("market_analyst", run_market_analyst, depends_on=["screening"], timeout_s=600),
@@ -789,7 +821,7 @@ async def run_morning_batch(
         DAGNode(
             "materialize_decisions",
             run_materialize,
-            depends_on=["market_analyst", "zeele_curator"],
+            depends_on=["market_analyst", "zeele_curator", "zeele_llm_scout"],
             timeout_s=60,
         ),
         DAGNode(
