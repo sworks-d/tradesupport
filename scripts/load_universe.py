@@ -37,13 +37,22 @@ _log = get_logger("load_universe")
 # JPX 公式「上場銘柄一覧」Excel（毎月更新）
 JPX_LISTED_URL = "https://www.jpx.co.jp/markets/statistics-equities/misc/tvdivq0000001vg2-att/data_j.xls"
 
-# universe 採用対象の規模区分（TOPIX 500 = Core30 + Large70 + Mid400）
+# universe 採用対象の規模区分（v2.10: TOPIX 1000 = Core30 + Large70 + Mid400 + Small1）
+# 中小型株を主戦場に含めて a/b/c + V字 を狙う（D 案の拡張）。
+# Small2 は流動性低・データ薄なので除外（後で必要なら拡張）。
 TOPIX500_SCALES = frozenset(
-    {"TOPIX Core30", "TOPIX Large70", "TOPIX Mid400"}
+    {"TOPIX Core30", "TOPIX Large70", "TOPIX Mid400", "TOPIX Small 1"}
 )
 
-# 採用対象の市場・商品区分（プライム内国株式のみ・ETF/REIT/外国株は除外）
-ELIGIBLE_MARKETS = frozenset({"プライム（内国株式）"})
+# 採用対象の市場・商品区分（v2.10: 成長株主戦場としてグロース市場も追加）
+# プライム: TOPIX 規模区分でフィルタ（流動性・品質保証）
+# グロース: 規模区分が付与されないため全銘柄を候補に、yfinance 取得時のリスクフィルタで篩い分け
+ELIGIBLE_MARKETS = frozenset({"プライム（内国株式）", "グロース（内国株式）"})
+
+# 入口リスク排除フィルタ（v2.10: ハルシネーション温床を Universe に入れない）
+# 「データが取れない・流動性低・時価総額極小」の銘柄は MAGI/ZEELE が誤判断する元になる
+MIN_MARKET_CAP_JPY = 5_000_000_000      # 時価総額 50 億円（仕手・極小株を排除）
+MIN_DAILY_TURNOVER_JPY = 50_000_000     # 売買代金 5000 万円/日（moomoo 約定リスク回避）
 
 # --- 母集団（実在・検証可能。発明しない）。D-25：JP90% / US ETFサテライト10% ---
 # JP主軸（30銘柄）：TOPIX100中心、セクター分散。moomoo単元未満で1株から買える。
@@ -111,15 +120,57 @@ def _fetch_meta_yfinance(ticker: str, market: str) -> dict | None:
         return None
     if not info:
         return None
+
+    market_cap = float(info.get("marketCap") or 0.0)
+    avg_vol = float(
+        info.get("averageVolume") or info.get("averageDailyVolume10Day") or 0.0
+    )
+    price = float(
+        info.get("currentPrice")
+        or info.get("regularMarketPrice")
+        or info.get("previousClose")
+        or 0.0
+    )
+    sector = info.get("sector")
+
+    # v2.10: 入口リスク排除（ハルシネーション温床を Universe に入れない）
+    # JP 株のみ厳格チェック。US ETF (QQQ/VOO) は marketCap/sector が yfinance で
+    # 取得できないことが多いため、D-25 設計（サテライト）として別軸で通す。
+    if market == "JP":
+        # データ完全性
+        if market_cap <= 0 or avg_vol <= 0 or price <= 0 or not sector:
+            _log.info(
+                "universe_drop_incomplete_data",
+                ticker=ticker, market=market,
+                has_mcap=market_cap > 0, has_vol=avg_vol > 0,
+                has_price=price > 0, has_sector=bool(sector),
+            )
+            return None
+        # 時価総額下限
+        if market_cap < MIN_MARKET_CAP_JPY:
+            _log.info(
+                "universe_drop_low_market_cap",
+                ticker=ticker, market_cap=int(market_cap),
+                threshold=int(MIN_MARKET_CAP_JPY),
+            )
+            return None
+        # 流動性下限（売買代金）
+        daily_turnover = price * avg_vol
+        if daily_turnover < MIN_DAILY_TURNOVER_JPY:
+            _log.info(
+                "universe_drop_low_liquidity",
+                ticker=ticker, daily_turnover=int(daily_turnover),
+                threshold=int(MIN_DAILY_TURNOVER_JPY),
+            )
+            return None
+
     return {
         "name": info.get("longName") or info.get("shortName") or ticker,
         "name_en": info.get("shortName"),
-        "sector": info.get("sector") or "unknown",
+        "sector": sector or "unknown",
         "industry": info.get("industry"),
-        "market_cap": float(info.get("marketCap") or 0.0),
-        "avg_volume_30d": float(
-            info.get("averageVolume") or info.get("averageDailyVolume10Day") or 0.0
-        ),
+        "market_cap": market_cap,
+        "avg_volume_30d": avg_vol,
     }
 
 
@@ -148,10 +199,14 @@ def _fetch_jpx_listed_topix500() -> tuple[tuple[str, str], ...] | None:
         _log.warning("jpx_unexpected_columns", columns=list(df.columns))
         return None
 
-    # フィルタ：プライム内国株式 × TOPIX 500
-    mask_market = df["市場・商品区分"].isin(ELIGIBLE_MARKETS)
-    mask_scale = df["規模区分"].isin(TOPIX500_SCALES)
-    filtered = df[mask_market & mask_scale]
+    # フィルタ（v2.10）:
+    #   プライム → TOPIX 規模区分（Core30/Large70/Mid400/Small 1）でフィルタ
+    #   グロース → 規模区分が付与されないため全銘柄を候補に（yfinance リスクフィルタで篩う）
+    mask_prime = (df["市場・商品区分"] == "プライム（内国株式）") & df["規模区分"].isin(
+        TOPIX500_SCALES
+    )
+    mask_growth = df["市場・商品区分"] == "グロース（内国株式）"
+    filtered = df[mask_prime | mask_growth]
 
     tickers: list[tuple[str, str]] = []
     seen: set[str] = set()

@@ -131,8 +131,12 @@ def _live_secondary(tickers: list[str]) -> dict[str, dict[str, float]]:
     return out
 
 
-def _usdjpy(live: bool) -> float:
-    """USD/JPY レート（米株を¥に換算）。live は yfinance、demo は固定。"""
+def _usdjpy(live: bool) -> float | None:
+    """USD/JPY レート（米株を¥に換算）。
+
+    v2.5 TASK-P11: 取得失敗時 None を返す（旧 150.0 fallback は実レートと乖離）。
+    demo は固定 150（テスト用・現実値からの差は明示）。
+    """
     if not live:
         return 150.0
     try:
@@ -141,7 +145,7 @@ def _usdjpy(live: bool) -> float:
         return float(yf.Ticker("JPY=X").fast_info.last_price)
     except Exception as exc:
         _log.warning("usdjpy_fetch_failed", error=str(exc))
-        return 150.0
+        return None  # 旧 150.0 → None で「取得失敗」を明示
 
 
 # ---- demo: オフライン決定論データ -------------------------------------------
@@ -166,11 +170,25 @@ def _fmt_price(ticker: str, price: float) -> str:
 
 def _holdings_source_label(broker_src: str, trading_mode: str, account_src: str) -> str:
     # broker_src は保有取得（保有 0 件だと "standin" にフォールバックされる仕様）。
-    # 口座側（account_src）が moomoo に繋がっていれば「保有 0 件」のメッセージで明示する。
+    # v2.10: broker_provider 別の表示
+    # 口座側（account_src）が各 broker に繋がっていれば「保有 0 件」のメッセージで明示する。
+    suffix = "実弾" if trading_mode == "live" else "紙運用 overlay"
+    label_map = {
+        "moomoo": "moomoo 実弾" if trading_mode == "live" else "moomoo JP REAL（紙運用：仮想入金 overlay）",
+        "rakuten": f"楽天かぶミニ（{suffix}・手動発注 + mark_filled 経由で記録）",
+        "sbi": f"SBI S 株（{suffix}・手動発注 + mark_filled 経由で記録）",
+        "monex": f"マネックス ワン株（{suffix}・手動発注 + mark_filled 経由で記録）",
+        "kabucom": f"auカブコム kabu STATION API（{suffix}・Phase 2 で実装）",
+        "fractional": f"単元未満株シミュレーション（{suffix}・仮想 broker）",
+    }
+    if broker_src in label_map:
+        return label_map[broker_src]
+    if account_src in label_map:
+        return f"{label_map[account_src]}・保有 0 件"
+    # 既存互換
     if broker_src == "moomoo":
-        return "moomoo 実弾" if trading_mode == "live" else "moomoo JP REAL（紙運用：仮想入金 overlay）"
+        return label_map["moomoo"]
     if account_src in ("moomoo", "moomoo+overlay"):
-        suffix = "実弾" if trading_mode == "live" else "紙運用 overlay"
         return f"moomoo 接続済・保有 0 件（{suffix}）"
     return "サンプル/未接続"
 
@@ -209,6 +227,752 @@ def _fetch_price_histories(tickers: list[str], days: int = 30) -> dict[str, list
         except Exception as exc:
             _log.warning("price_history_extract_failed", ticker=ticker, error=str(exc))
     return out
+
+
+def _build_dummy_system(engine: Engine) -> dict[str, object]:
+    """ダミーシステム 4 機（DS/REI・ASUKA・SHINJI・KAWORU）のサマリーを返す。
+
+    UI 最上段に出すための簡潔版。詳細レポートは autoreport/daily/ にある。
+    時価評価は yfinance 現在価格（ブラウザでリロードする度に最新化される設計）。
+    各機の元本（overlay）は **MISATO の PilotAllocation を優先**して読む。
+    """
+    from trading_agent.models.portfolio import Portfolio as P
+    from trading_agent.models.universe import Universe as Uni
+    from trading_agent.portfolio.misato import get_pilot_allocations
+    from trading_agent.portfolio.personality import (
+        RULE_SUMMARY,
+        all_personalities,
+        effective_max_position_pct,
+    )
+
+    with Session(engine) as s:
+        # v2.8: broker_mode 別に保有を取得
+        from trading_agent.utils.lot_size import get_broker_mode as _gbm_p
+
+        _cur_mode_p = _gbm_p()
+        ports = s.exec(
+            select(P).where(
+                col(P.status) == "active",
+                col(P.broker_mode) == _cur_mode_p,
+            )
+        ).all()
+        uni_rows = s.exec(select(Uni)).all()
+    # 優先順: Universe.name_ja → 辞書フォールバック → Universe.name → ticker
+    from trading_agent.utils.jp_company_names import is_jp_ticker, lookup as _lookup_jp
+    def _resolve_jp(u: Uni) -> str:
+        if u.name_ja:
+            return u.name_ja
+        if is_jp_ticker(u.ticker):
+            d = _lookup_jp(u.ticker, "")
+            if d and d != u.ticker:
+                return d
+        return u.name or u.ticker
+    name_by_ticker = {u.ticker: _resolve_jp(u) for u in uni_rows}
+    by_personality: dict[str | None, list[P]] = {}
+    for p in ports:
+        by_personality.setdefault(p.personality, []).append(p)
+
+    # MISATO の動的配分。未配分（=0）の機は personality.overlay_cash_jpy にフォールバック。
+    # v2.8: broker_mode 別に取得（Paper / Live 並行運用）
+    from trading_agent.utils.lot_size import get_broker_mode as _gbm_for_alloc
+
+    pilot_allocs = get_pilot_allocations(engine, _gbm_for_alloc())
+
+    # yfinance 現在価格を bulk 取得（snapshot 生成時刻＝リロード時の最新値）
+    tickers = sorted({p.ticker for p in ports})
+    price_map: dict[str, float] = {}
+    if tickers:
+        try:
+            import yfinance as yf
+
+            from trading_agent.mcp_tools.fundamentals import to_yfinance_symbol
+
+            sym_map = {to_yfinance_symbol(t): t for t in tickers}
+            df = yf.download(
+                list(sym_map.keys()),
+                period="2d",
+                interval="1d",
+                auto_adjust=True,
+                progress=False,
+                group_by="ticker",
+                threads=True,
+            )
+            if df is not None and not df.empty:
+                for sym, ticker in sym_map.items():
+                    try:
+                        series = df[sym]["Close"] if len(sym_map) > 1 else df["Close"]
+                        closes = [float(x) for x in series.dropna().tolist()]
+                        if closes:
+                            price_map[ticker] = closes[-1]
+                    except Exception:
+                        continue
+        except Exception:
+            pass
+
+    out: list[dict[str, object]] = []
+    for pers in all_personalities():
+        rows = by_personality.get(pers.name, [])
+        invested = sum(float(r.buy_price or 0) * float(r.qty or 0) for r in rows)
+        market_value = 0.0
+        for r in rows:
+            cur = price_map.get(r.ticker, float(r.buy_price or 0))
+            market_value += cur * float(r.qty or 0)
+        # MISATO 配分 > 0 ならそれを元本に使う（動的）。0 (=未配分) なら 0 元本。
+        overlay = float(pilot_allocs.get(pers.name, 0.0))
+        cash = overlay - invested
+        total = cash + market_value
+        pnl = total - overlay
+        pnl_pct = (pnl / overlay * 100.0) if overlay else 0.0
+
+        # 保有銘柄（最大 20 件まで）
+        holdings = []
+        for r in rows[:20]:
+            cur = price_map.get(r.ticker, float(r.buy_price or 0))
+            qty = float(r.qty or 0)
+            cost = float(r.buy_price or 0) * qty
+            mkt = cur * qty
+            unrealized = mkt - cost
+            unrealized_pct = (unrealized / cost * 100) if cost else 0.0
+            # v2.8: 単元株（100 株）での実弾相当金額を併記
+            # 日本株 (4 桁数字) は単元株 = 100 株、それ以外は 1 株単位
+            is_jp_4d = len(r.ticker) == 4 and r.ticker.isdigit()
+            lot_size = 100 if is_jp_4d else 1
+            lot_equivalent_jpy = cur * lot_size
+            # v2.10 Phase 1A-Step2: ピラミッディングステージ
+            # v2.10 Phase 1A-Step2 修正 (UI 6): planned=None は「対象外」と明示
+            from trading_agent.portfolio.pyramiding import get_stage_label
+
+            planned_qty = getattr(r, "planned_total_qty", None)
+            current_alloc_pct: float | None = None
+            if planned_qty is None or planned_qty <= 0:
+                # Phase 1A-Step2 以前の fill or 旧 portfolio → ピラミッド機能の対象外
+                pyramid_stage = "対象外（旧 fill）"
+            else:
+                pnl_pct_frac = unrealized_pct / 100.0
+                pyramid_stage = get_stage_label(pers.name, pnl_pct_frac)
+                current_alloc_pct = round(qty / planned_qty * 100.0, 1)
+
+            holdings.append(
+                {
+                    "ticker": r.ticker,
+                    "name": name_by_ticker.get(r.ticker, r.ticker),
+                    "qty": int(qty),
+                    "buy_price": float(r.buy_price or 0),
+                    "current_price": cur,
+                    "market_value": mkt,
+                    "unrealized": unrealized,
+                    "unrealized_pct": unrealized_pct,
+                    # v2.1 TASK-SZ4: stop_loss_pct は正値（0.15 = -15%）
+                    "stop_price": float(r.buy_price or 0) * (1.0 - float(r.stop_loss_pct or 0)),
+                    "target_date": r.target_date.isoformat() if r.target_date else None,
+                    # v2.8: 単元未満株モード表示用
+                    "lot_size": lot_size,
+                    "lot_equivalent_jpy": lot_equivalent_jpy,
+                    # v2.10 Phase 1A-Step2: ピラミッディング情報
+                    "pyramid_stage": pyramid_stage,
+                    "planned_total_qty": planned_qty,
+                    "current_alloc_pct": current_alloc_pct,
+                    "peak_pnl_pct": (
+                        round(float(getattr(r, "peak_pnl_pct", 0) or 0) * 100, 2)
+                        if getattr(r, "peak_pnl_pct", None) is not None
+                        else None
+                    ),
+                }
+            )
+
+        out.append(
+            {
+                "name": pers.name,
+                "label": pers.label,
+                "icon": pers.icon,
+                "description": pers.description,
+                "rule_summary": RULE_SUMMARY.get(pers.name, ""),
+                "accept_stances": list(pers.accept_stances),
+                "max_position_pct": pers.max_position_pct,
+                "effective_max_pct": effective_max_position_pct(pers, pnl_pct=pnl_pct),
+                "horizon_days": pers.horizon_days,
+                "stop_loss_pct": pers.stop_loss_pct,
+                "overlay_cash_jpy": overlay,
+                "holdings_count": len(rows),
+                "invested_jpy": invested,
+                "cash_jpy": cash,
+                "market_value_jpy": market_value,
+                "total_value_jpy": total,
+                "pnl_jpy": pnl,
+                "pnl_pct": pnl_pct,
+                "holdings": holdings,
+            }
+        )
+
+    from trading_agent.utils.lot_size import get_max_lot_cost_jpy, is_lot_mode, is_moomoo_live
+
+    lot = is_lot_mode()
+    moomoo_live = is_moomoo_live()
+    max_lot_cost = get_max_lot_cost_jpy() if lot else None
+
+    # v2.8: 用語の整理
+    # broker_mode: "paper" (DB 記録のみ) / "moomoo_live" (本番)
+    # share_mode:  "fractional" (1 株) / "lot" (単元株 100 株)
+    broker_mode = "moomoo_live" if moomoo_live else "paper"
+    share_mode = "lot" if lot else "fractional"
+
+    # 接続状態は重いので、build_snapshot 単発実行時のみチェック（軽量モード時はスキップ）
+    moomoo_status = None
+    if moomoo_live:
+        try:
+            from trading_agent.brokers.moomoo import MoomooBroker
+            from trading_agent.config import load_settings
+
+            settings = load_settings()
+            broker = MoomooBroker.from_settings(settings)
+            moomoo_status = broker.is_connected()
+        except Exception as exc:
+            moomoo_status = {"connected": False, "error": str(exc)}
+
+    note_text = (
+        f"単元株モード (Paper): JP 株 100 株単位で fill / DB 記録のみ。1 単元上限 ¥{int(max_lot_cost):,} 超は除外。"
+        if lot and not moomoo_live
+        else "1 株単位 fill / Paper モード (検証専用)"
+        if not lot
+        else f"⚡ moomoo Live (本番): リアルマネーで実発注。1 単元上限 ¥{int(max_lot_cost):,}"
+    )
+
+    # v2.10: 集中投資 KPI サマリー（D 案: ¥100k 集中投資の検証用）
+    # treasury_view から元本/余力を取得し、personalities 集計と組み合わせる
+    try:
+        from trading_agent.portfolio.misato import treasury_view as _tv_kpi
+
+        _tv = _tv_kpi(engine, broker_mode if broker_mode == "paper" else "live")
+        _seed_jpy = float(_tv.get("seed_jpy") or 0)
+        _allocated_jpy = float(_tv.get("allocated_jpy") or 0)
+        _available_jpy = float(_tv.get("available_jpy") or 0)
+    except Exception:
+        _seed_jpy = 0.0
+        _allocated_jpy = 0.0
+        _available_jpy = 0.0
+
+    _total_invested_cost = sum(float(p["invested_jpy"]) for p in out)
+    _total_market_value = sum(float(p["market_value_jpy"]) for p in out)
+    _total_unrealized_pnl = _total_market_value - _total_invested_cost
+    _total_unrealized_pct = (
+        (_total_unrealized_pnl / _total_invested_cost * 100.0) if _total_invested_cost else 0.0
+    )
+    _position_count = sum(int(p["holdings_count"]) for p in out)
+    _cash_reserve_pct = (_available_jpy / _seed_jpy * 100.0) if _seed_jpy else 0.0
+    _investment_pct = (_total_invested_cost / _seed_jpy * 100.0) if _seed_jpy else 0.0
+    # 累積リターン = (現時点総資産 - 元本) / 元本
+    _current_total = _available_jpy + _total_market_value
+    _cumulative_return_jpy = _current_total - _seed_jpy
+    _cumulative_return_pct = (_cumulative_return_jpy / _seed_jpy * 100.0) if _seed_jpy else 0.0
+
+    concentration_kpi = {
+        "seed_jpy": _seed_jpy,                          # 元本（treasury 全体）
+        "invested_jpy": _total_invested_cost,           # 投入額（取得コスト）
+        "market_value_jpy": _total_market_value,        # 現在の時価
+        "cash_reserve_jpy": _available_jpy,             # cash 余力
+        "unrealized_pnl_jpy": _total_unrealized_pnl,    # 含み損益額
+        "unrealized_pnl_pct": _total_unrealized_pct,    # 含み損益率（投入額ベース）
+        "cumulative_return_jpy": _cumulative_return_jpy,  # 累積リターン額（元本比）
+        "cumulative_return_pct": _cumulative_return_pct,  # 累積リターン率（元本比）
+        "position_count": _position_count,              # 保有銘柄数
+        "cash_reserve_pct": _cash_reserve_pct,          # 余力率（元本比）
+        "investment_pct": _investment_pct,              # 投入率（元本比）
+    }
+
+    # v2.10 Phase 2 Mini: 判断精度（過去 30 日）
+    try:
+        from trading_agent.reporting.judgment_accuracy import compute_judgment_accuracy
+
+        judgment_accuracy = compute_judgment_accuracy(engine, lookback_days=30)
+    except Exception as _e:
+        judgment_accuracy = {
+            "lookback_days": 30,
+            "status": "error",
+            "error": str(_e),
+        }
+
+    # v2.10 Phase 1: ポートフォリオ相関分析（隠れ集中の検出）
+    try:
+        from trading_agent.portfolio.correlation import compute_correlation_matrix
+
+        correlation_analysis = compute_correlation_matrix(
+            engine, broker_mode=broker_mode if broker_mode == "paper" else "live"
+        )
+    except Exception as _e:
+        correlation_analysis = {
+            "status": "error",
+            "error": str(_e),
+        }
+
+    # v2.10 Phase 4: テーマ強度
+    try:
+        from trading_agent.portfolio.theme_strength import compute_theme_strength
+
+        theme_strength = compute_theme_strength(engine)
+    except Exception as _e:
+        theme_strength = {"status": "error", "error": str(_e)}
+
+    # v2.10 Phase 5: factor exposure
+    try:
+        from trading_agent.portfolio.factor_exposure import compute_portfolio_exposure
+
+        factor_exposure = compute_portfolio_exposure(
+            engine, broker_mode=broker_mode if broker_mode == "paper" else "live"
+        )
+    except Exception as _e:
+        factor_exposure = {"status": "error", "error": str(_e)}
+
+    # v2.10 Phase 1C: DS 4 機間の銘柄重複度
+    try:
+        from trading_agent.portfolio.ds_overlap import compute_ds_overlap
+
+        ds_overlap = compute_ds_overlap(
+            engine, broker_mode=broker_mode if broker_mode == "paper" else "live"
+        )
+    except Exception as _e:
+        ds_overlap = {"status": "error", "error": str(_e)}
+
+    # v2.10 Phase 2A: portfolio-level リスク指標 (VaR/CVaR/DD)
+    try:
+        from trading_agent.portfolio.risk_metrics import compute_risk_metrics
+
+        risk_metrics = compute_risk_metrics(engine, lookback_days=60)
+    except Exception as _e:
+        risk_metrics = {"status": "error", "error": str(_e)}
+
+    return {
+        "personalities": out,
+        "generated_at": utcnow().strftime("%Y-%m-%d %H:%M"),
+        # v2.8: 用語整理（broker_mode / share_mode の 2 軸）
+        "broker_mode": broker_mode,                # "paper" / "moomoo_live"
+        "share_mode": share_mode,                  # "fractional" / "lot"
+        "moomoo_connected": bool(moomoo_status and moomoo_status.get("connected")),
+        "moomoo_status": moomoo_status,
+        # 旧互換
+        "live_mode": lot,                          # = is_lot_mode（旧 is_live_mode）
+        "fractional_share_mode": not lot,
+        "fractional_share_note": note_text,
+        "max_lot_cost_jpy": max_lot_cost,
+        # v2.10: 集中投資 KPI サマリー（D 案）
+        "concentration_kpi": concentration_kpi,
+        # v2.10 Phase 2 Mini: 判断精度（過去 30 日）
+        "judgment_accuracy": judgment_accuracy,
+        # v2.10 Phase 1: ポートフォリオ相関分析
+        "correlation_analysis": correlation_analysis,
+        # v2.10 Phase 4: テーマ強度
+        "theme_strength": theme_strength,
+        # v2.10 Phase 5: factor exposure
+        "factor_exposure": factor_exposure,
+        # v2.10 Phase 1C: DS 4 機間の銘柄重複度
+        "ds_overlap": ds_overlap,
+        # v2.10 Phase 2A: VaR/CVaR/DD
+        "risk_metrics": risk_metrics,
+    }
+
+
+def _compute_portfolio_dd(engine: Engine, *, current_total: float, lookback_days: int = 60) -> float | None:
+    """v2.2 TASK-EX3: portfolio_snapshots から過去 lookback_days 日のピーク値で DD% を算出。
+
+    DD = (current - peak) / peak。
+    snapshots が無い時は None を返す（hack 値を返さない＝欺瞞回避）。
+    """
+    import datetime as dt_mod
+
+    from trading_agent.models.portfolio import PortfolioSnapshot
+
+    if current_total <= 0:
+        return None
+    cutoff_date = dt_mod.date.today() - dt_mod.timedelta(days=lookback_days)
+    with Session(engine) as s:
+        snaps = s.exec(
+            select(PortfolioSnapshot).where(col(PortfolioSnapshot.date) >= cutoff_date)
+        ).all()
+    if not snaps:
+        return None
+    peak = max(snap.total_assets_jpy for snap in snaps)
+    peak = max(peak, current_total)  # 今日が最大の場合
+    if peak <= 0:
+        return None
+    return (current_total - peak) / peak  # 負値（DD は減少率）
+
+
+def _build_misato_outlook(
+    *,
+    strategy: object,
+    briefs_with_boost: list[dict],
+    situation_counts: dict[str, int],
+    market_info: dict[str, object],
+    live_mode: bool = False,
+    max_lot_cost: float | None = None,
+    max_lot_pct: float | None = None,
+    treasury_jpy: float | None = None,
+    affordable_count: int = 0,
+    opportunity_mode: bool = False,
+    opportunity_planned: float = 0,
+    opportunity_remaining: float = 0,
+    opportunity_selected: int = 0,
+    opportunity_rejected: int = 0,
+) -> list[str]:
+    """KATSURAGI の現状認識・利益期待・予測を決定論で生成（LLM 不使用）。
+
+    KATSURAGI の判断原則: **利益優先**。
+    機ごとに予算を「寄せる」のではなく、boost が高い銘柄＝利益期待が高い銘柄から順に
+    予算を投じる。outlook は機別の誘導はせず、利益機会と現状認識のみを述べる。
+
+    Returns:
+        3-5 行の短文リスト。UI に縦並びで表示する想定。
+    """
+    out: list[str] = []
+    preset = getattr(strategy, "preset", "balanced")
+
+    # v2.9: 機会駆動モード時の説明
+    if opportunity_mode:
+        out.append(
+            f"🎯 機会駆動 fill: 採用 {opportunity_selected} / 却下 {opportunity_rejected} / "
+            f"投入 ¥{int(opportunity_planned):,} / cash 保持 ¥{int(opportunity_remaining):,}"
+        )
+        out.append(
+            "  ↑ 質ありき・枠埋め圧力なし。良い案件がなければ cash 保持（4 ガードレール + 質基準）"
+        )
+
+    # 1. 戦略の意図（重み付けの判断軸）
+    preset_descriptions = {
+        "balanced": "ニュース・業界・ピアを均等重視（標準スタンス）",
+        "news_focused": "ニュース sentiment を最重視（決算シーズン向き）",
+        "trend_focused": "業界トレンドを最重視（業界転換期向き）",
+        "peer_focused": "ピア相対力を最重視（競争激化局面向き）",
+    }
+    out.append(f"📌 {preset}: {preset_descriptions.get(preset, '')}")
+
+    # v2.8: 実弾モード時の予算情報
+    if live_mode and max_lot_cost is not None:
+        total = len(briefs_with_boost)
+        if total > 0:
+            pct_aff = int(affordable_count / total * 100)
+            lot_pct_str = f"{int((max_lot_pct or 0) * 100)}%" if max_lot_pct else "—"
+            treasury_str = f"¥{int(treasury_jpy or 0):,}"
+            out.append(
+                f"💴 実弾モード: treasury {treasury_str} × {lot_pct_str} = 1 単元上限 ¥{int(max_lot_cost):,} → 予算内候補 {affordable_count}/{total} 件 ({pct_aff}%)"
+            )
+
+    # 2. 市場 regime（地合いの認識）
+    regime = market_info.get("regime", "unknown")
+    nikkei = market_info.get("nikkei_change_pct")
+    if regime == "risk_off":
+        out.append(f"⚠ 市場 risk_off（日経 {nikkei:+.1f}%）→ 新規 fill 停止（市場ガード発動）")
+    elif regime == "risk_on" and nikkei is not None:
+        out.append(f"📈 市場 risk_on（日経 {nikkei:+.1f}%）→ 通常配分続行")
+    elif regime == "neutral" and nikkei is not None:
+        out.append(f"➖ 市場 neutral（日経 {nikkei:+.1f}%）→ 通常配分続行")
+
+    # 3. 利益期待の集計（boost 分布から）
+    if briefs_with_boost:
+        sorted_briefs = sorted(briefs_with_boost, key=lambda x: -x["boost"])
+        # 上位 3 件と平均 boost
+        top3 = sorted_briefs[:3]
+        avg_boost = sum(b["boost"] for b in briefs_with_boost) / len(briefs_with_boost)
+        positive_count = sum(1 for b in briefs_with_boost if b["boost"] > 0.05)
+        out.append(
+            f"💰 利益期待: 候補 {len(briefs_with_boost)} 件中 {positive_count} 件で boost > +0.05 / 平均 {avg_boost:+.2f}"
+        )
+        # トップ銘柄を列挙（機関係なく利益優先）
+        top_label = " / ".join(
+            f"{b.get('name') or b['ticker']} ({b['boost']:+.2f})"
+            for b in top3
+            if b["boost"] > 0.05
+        )
+        if top_label:
+            out.append(f"🎯 採用優先: {top_label}")
+
+    # 4. 例外ブロック警告
+    blocked_count = sum(1 for b in briefs_with_boost if b.get("blocked"))
+    if blocked_count > 0:
+        out.append(f"🚧 例外ブロック {blocked_count} 件（決算前/ピア最下位 等）→ 次回 dispatch でも見送り")
+
+    # 5. データ品質の注意喚起（情報透明性）
+    unknown_count = situation_counts.get("unknown", 0)
+    if briefs_with_boost and unknown_count >= len(briefs_with_boost) * 0.3:
+        out.append(f"⚠ 技術指標 unknown {unknown_count} 件 → boost が peer のみ依存のリスク")
+
+    # 6. B3: industry_score 未実装の明示
+    if preset == "trend_focused":
+        out.append("⚠ trend_focused: industry スコア未配線（Phase B-2 で実装予定）→ 現状は事実上 balanced と同等")
+
+    # 7. B1: 全体のデータ品質サマリ
+    if briefs_with_boost:
+        dq_counts = {"measured": 0, "unavailable": 0, "not_implemented": 0}
+        for b in briefs_with_boost:
+            for state in (b.get("data_quality") or {}).values():
+                if state in dq_counts:
+                    dq_counts[state] += 1
+        total_cells = sum(dq_counts.values())
+        if total_cells > 0:
+            measured_pct = int(dq_counts["measured"] / total_cells * 100)
+            out.append(
+                f"📊 データ品質: 実測 {dq_counts['measured']} / 未取得 {dq_counts['unavailable']} / 未実装 {dq_counts['not_implemented']} "
+                f"(measured {measured_pct}%)"
+            )
+
+    return out
+
+
+def _build_wille_section(engine: Engine) -> dict[str, object]:
+    """v2.8 INVESTIGELION: WILLE 組織の RITSUKO Brief + MISATO 戦略を snapshot に。
+
+    新フロー:
+      - RITSUKO: 候補銘柄ごとに TickerBrief（5 中立スコア + 生データ）
+      - MISATO:  戦略パラメータ（balanced 等） + 重み付け boost
+      - 銘柄→1機指名は廃止。priority は dispatch 時に proposals に付与される
+    """
+    try:
+        import os as _os
+
+        from trading_agent.portfolio.misato import _build_candidate_pool
+        from trading_agent.wille import misato as wille_misato
+        from trading_agent.wille import ritsuko as wille_ritsuko
+
+        pool = _build_candidate_pool(engine)
+        if not pool:
+            return {
+                "ritsuko": {"briefs": [], "market": {"regime": "unknown"}, "situation_counts": {}},
+                "misato": {"strategy": wille_misato.MisatoStrategy().as_dict()},
+            }
+
+        # === RITSUKO Brief 構築（5 中立スコア） ===
+        briefs = wille_ritsuko.build_briefs_from_pool(pool, engine=engine)
+
+        # v2.8: 実弾モード時、各銘柄が予算内で買えるかを計算
+        # treasury 残高 × WILLE_MAX_LOT_PCT を 1 単元上限とする
+        from trading_agent.portfolio.misato import treasury_view as _tv
+        from trading_agent.utils.lot_size import (
+            can_afford_one_lot,
+            get_lot_size,
+            get_max_lot_cost_jpy,
+            get_max_lot_pct,
+            is_live_mode,
+        )
+
+        live_mode = is_live_mode()
+        treasury_for_lot = None
+        if live_mode:
+            try:
+                treasury_for_lot = float(_tv(engine).get("seed_jpy") or 0)
+            except Exception:
+                treasury_for_lot = 0.0
+        max_lot_cost = get_max_lot_cost_jpy(treasury_for_lot) if live_mode else None
+        max_lot_pct = get_max_lot_pct(treasury_for_lot) if live_mode else None
+        affordable_count = 0
+        for ticker, brief in briefs.items():
+            price = brief.current_price or 0
+            if price > 0 and (
+                not live_mode or can_afford_one_lot(ticker, price, treasury_for_lot)
+            ):
+                affordable_count += 1
+
+        # === 銘柄名の lookup（Universe テーブル → なければ ticker そのまま）===
+        name_by_ticker: dict[str, str] = {}
+        try:
+            from sqlmodel import Session, col, select as _sel_uv
+
+            from trading_agent.models.universe import Universe
+
+            with Session(engine) as _s:
+                rows = _s.exec(
+                    _sel_uv(Universe).where(col(Universe.ticker).in_(list(briefs.keys())))
+                ).all()
+                # 優先順: name_ja（日本語）→ 辞書フォールバック → name（英語）→ ticker
+                from trading_agent.utils.jp_company_names import is_jp_ticker, lookup as _lookup_jp
+                for r in rows:
+                    jp_dict = _lookup_jp(r.ticker, "") if is_jp_ticker(r.ticker) else ""
+                    name_by_ticker[r.ticker] = (
+                        r.name_ja or (jp_dict if jp_dict and jp_dict != r.ticker else "") or r.name or r.ticker
+                    )
+        except Exception:
+            pass
+
+        # === MISATO 戦略 + 各銘柄の boost を計算 ===
+        preset_name = _os.environ.get("MISATO_STRATEGY", "balanced")
+        if preset_name not in ("balanced", "news_focused", "trend_focused", "peer_focused"):
+            preset_name = "balanced"
+        strategy = wille_misato.MisatoStrategy.from_preset(preset_name)  # type: ignore[arg-type]
+
+        # 各 Brief に対する MISATO boost（戦略適用後）
+        brief_with_boost = []
+        for ticker, brief in briefs.items():
+            boost = wille_misato.compute_boost_from_brief(brief, strategy)
+            verdict = wille_misato.check_proposal_exceptions(ticker, brief)
+            # v2.8: 実弾モード時、1 単元コストと予算内かを判定
+            price_val = brief.current_price or 0
+            lot_size_v = get_lot_size(ticker) if live_mode else 1
+            lot_cost_v = price_val * lot_size_v if price_val > 0 else None
+            affordable = (
+                price_val > 0 and (not live_mode or can_afford_one_lot(ticker, price_val))
+            )
+            brief_with_boost.append(
+                {
+                    "ticker": ticker,
+                    "name": name_by_ticker.get(ticker, ticker),
+                    "current_price": round(brief.current_price, 2) if brief.current_price else None,
+                    "lot_size": lot_size_v,
+                    "lot_cost_jpy": round(lot_cost_v, 0) if lot_cost_v else None,
+                    "affordable": affordable,
+                    "scores": {
+                        "news_sentiment": round(brief.news_sentiment_score, 3),
+                        "industry": round(brief.industry_score, 3),
+                        "peer": round(brief.peer_score, 3),
+                        "event": round(brief.event_score, 3),
+                        "deep": round(brief.deep_brief_score, 3),
+                    },
+                    "boost": round(boost, 3),
+                    "blocked": verdict.blocked,
+                    "block_reason": verdict.reason if verdict.blocked else "",
+                    "technicals": {
+                        "rsi": brief.technicals.rsi,
+                        "macd_signal": brief.technicals.macd_signal,
+                        "trend": brief.technicals.trend,
+                        "situation": brief.technicals.situation,
+                    },
+                    "news_count": len(brief.news),
+                    "industry_sector": brief.industry.sector,
+                    "upcoming_event_count": len(brief.upcoming_events),
+                    "data_quality": dict(brief.data_quality),  # B1: 情報透明性
+                }
+            )
+
+        situation_counts = {
+            s: sum(1 for b in briefs.values() if b.technicals.situation == s)
+            for s in ("bullish", "bearish", "pullback", "neutral", "breakout", "unknown")
+        }
+
+        # 後方互換: 旧 UI が参照する reports[] / misato_orders[] を briefs から派生
+        legacy_reports = [
+            {
+                "ticker": b["ticker"],
+                "situation": b["technicals"]["situation"],
+                "confidence": round(briefs[b["ticker"]].technicals.rsi or 0.0, 2) if briefs[b["ticker"]].technicals.rsi else 0.0,
+                "signals": [
+                    s for s in [
+                        f"RSI={b['technicals']['rsi']:.0f}" if b['technicals']['rsi'] is not None else None,
+                        f"MACD={b['technicals']['macd_signal']}" if b['technicals']['macd_signal'] else None,
+                        f"trend={b['technicals']['trend']}" if b['technicals']['trend'] else None,
+                    ] if s
+                ],
+                "recommended_pilots": [],
+                "reasoning": f"boost={b['boost']:+.2f}",
+            }
+            for b in brief_with_boost
+        ]
+        # v2.8: 市場 regime 実取得（日経/TOPIX 当日変動）
+        market_info = {"regime": "unknown", "notes": []}
+        try:
+            mkt = wille_ritsuko.detect_market_regime_live()
+            nikkei = mkt.get("nikkei_change_pct")
+            topix = mkt.get("topix_change_pct")
+            notes_list = []
+            if nikkei is not None:
+                notes_list.append(f"日経 {nikkei:+.2f}%")
+            if topix is not None:
+                notes_list.append(f"TOPIX {topix:+.2f}%")
+            market_info = {
+                "regime": mkt.get("regime", "unknown"),
+                "nikkei_change_pct": nikkei,
+                "topix_change_pct": topix,
+                "is_risk_off": bool(mkt.get("is_risk_off", False)),
+                "notes": notes_list,
+            }
+        except Exception as exc:
+            _log.warning("wille_market_regime_failed", error=str(exc))
+
+        # v2.8: MISATO 戦略の展望テキスト（決定論で生成・LLM 不使用）
+        outlook_lines = _build_misato_outlook(
+            strategy=strategy,
+            briefs_with_boost=brief_with_boost,
+            situation_counts=situation_counts,
+            market_info=market_info,
+            live_mode=live_mode,
+            max_lot_cost=max_lot_cost,
+            max_lot_pct=max_lot_pct,
+            treasury_jpy=treasury_for_lot,
+            affordable_count=affordable_count,
+        )
+
+        return {
+            "ritsuko": {
+                "briefs": brief_with_boost,
+                "reports": legacy_reports,  # 後方互換
+                "market": market_info,
+                "situation_counts": situation_counts,
+            },
+            "misato": {
+                "strategy": strategy.as_dict(),
+                "blocked_count": sum(1 for b in brief_with_boost if b["blocked"]),
+                "market_guard_armed": bool(market_info.get("is_risk_off", False)),
+                "outlook": outlook_lines,
+                # v2.8: 実弾モード時の上限金額（割合表示用）
+                "max_lot_pct": max_lot_pct,
+                "max_lot_cost_jpy": max_lot_cost,
+                "treasury_for_lot_jpy": treasury_for_lot,
+                "affordable_count": affordable_count,
+            },
+            "misato_orders": [],  # 後方互換
+        }
+    except Exception as exc:
+        _log.warning("wille_section_failed", error=str(exc))
+        return {
+            "ritsuko": {"briefs": [], "reports": [], "market": {"regime": "unknown"}, "situation_counts": {}},
+            "misato": {"strategy": {}},
+            "misato_orders": [],
+            "error": str(exc),
+        }
+
+
+def _build_misato_section(engine: Engine) -> dict[str, object]:
+    """MISATO の現状（treasury・dry-run 配分案・HALT・昇格候補）を snapshot に載せる。
+
+    予算は **treasury の未配分残高** を使う（ユーザー入金から動的）。
+    """
+    from trading_agent.portfolio.misato import (
+        DEFAULT_HALT_FILE,
+        MAX_BUDGET_PER_DISPATCH_JPY,
+        MAX_BUDGET_PER_PILOT_JPY,
+        PROMOTION_THRESHOLDS,
+        auto_trade_view,
+        check_halt,
+        dispatch,
+        plan_to_dict,
+        treasury_view,
+    )
+
+    halted, halt_reason = check_halt()
+    # v2.8: broker_mode 別の treasury（Paper / Live 並行）
+    from trading_agent.utils.lot_size import get_broker_mode as _gbm_t
+
+    treasury = treasury_view(engine, _gbm_t())
+    auto_trade = auto_trade_view(engine)
+    available = float(treasury["available_jpy"])
+
+    base_payload: dict[str, object] = {
+        "halted": halted,
+        "halt_reason": halt_reason,
+        "halt_file_path": str(DEFAULT_HALT_FILE),
+        "treasury": treasury,
+        "auto_trade": auto_trade,
+        "default_budget_jpy": round(min(max(available, 0.0), MAX_BUDGET_PER_DISPATCH_JPY)),
+        "max_per_dispatch_jpy": MAX_BUDGET_PER_DISPATCH_JPY,
+        "max_per_pilot_jpy": MAX_BUDGET_PER_PILOT_JPY,
+        "promotion_thresholds": PROMOTION_THRESHOLDS,
+        "plan": None,
+    }
+    if halted or available <= 0:
+        return base_payload
+
+    try:
+        plan = dispatch(engine, total_budget_jpy=available, approve=False)
+        base_payload["plan"] = plan_to_dict(plan)
+    except Exception as exc:  # noqa: BLE001
+        _log.warning("misato_section_failed", error=str(exc))
+        base_payload["error"] = str(exc)
+    return base_payload
 
 
 def _build_pending_decisions(engine: Engine) -> dict[str, dict[str, object]]:
@@ -404,14 +1168,18 @@ def _market_cap(ticker: str) -> float | None:
 
 
 def _credibility_flag(ticker: str, verdicts: list) -> str:
-    """2期財務→信用性(S5)。MELCHIOR反証(S6)を付与し credibility_flag を返す（失敗はok）。"""
+    """2期財務→信用性(S5)。MELCHIOR反証(S6)を付与し credibility_flag を返す。
+
+    v2.5 TASK-P12: 旧 失敗時 "ok" は false negative（未検証なのに安全扱い）。
+    新 失敗時は "unknown" を返し、defense.verify で default_hold=True に寄せる。
+    """
     try:
         fin = fetch_financials(ticker, market_cap=_market_cap(ticker))
     except Exception as exc:
         _log.warning("credibility_failed", ticker=ticker, error=str(exc))
-        return "ok"
+        return "unknown"  # 旧 "ok" → "unknown"
     if fin is None:
-        return "ok"
+        return "unknown"  # 旧 "ok" → "unknown"
     cred = assess_credibility(fin)
     counter = melchior_credibility_counter(cred)
     if counter:
@@ -586,7 +1354,12 @@ async def build(*, live: bool, prefer_moomoo: bool) -> dict[str, object]:
     account, account_src = load_account(prod_engine, settings)
     total = account.total_assets
     cash = account.cash
-    usdjpy = _usdjpy(live)
+    # v2.5 TASK-P11: 取得失敗時は None。下流で US 銘柄を扱う時は明示エラーが望ましい。
+    usdjpy_raw = _usdjpy(live)
+    # 下流の数値計算（米株換算）は usdjpy を float で受けるため、None → 0.0 で渡し、
+    # それを使う側（候補/保有/ZEELE 等）が is_jp=True 経路だけ動かせば OK。
+    # 同時に snapshot にも raw を出して UI で「取得失敗」を可視化。
+    usdjpy = usdjpy_raw if usdjpy_raw is not None else 0.0
 
     # 保有（口座未接続なら空＝現金100%）
     holdings: dict[str, dict[str, object]] = {}
@@ -622,11 +1395,16 @@ async def build(*, live: bool, prefer_moomoo: bool) -> dict[str, object]:
     sell_section = _build_sell_section(prod_engine)
     topics_section = _build_topics_section(prod_engine)
     pending_decisions = _build_pending_decisions(prod_engine)
+    dummy_system = _build_dummy_system(prod_engine)
+    misato = _build_misato_section(prod_engine)
+    # v2.7 INVESTIGELION: WILLE 組織内 RITSUKO + MISATO の作戦指示
+    wille_section = _build_wille_section(prod_engine)
 
     # === X-2C exposure_coach: 今日のポスチャー ===
     # 実 breadth/uptrend データは未配線（X-2C 完成で接続）。LOW confidence → REDUCE_ONLY フォールバック。
-    # D-23 DD-15% gate のため PF DD を渡す（cash=total なら DD=0）。
-    portfolio_dd_pct = 0.0 if total > 0 and cash == total else None
+    # v2.2 TASK-EX3: portfolio_snapshots の過去 60 日ピーク値から実 DD% を算出する。
+    # 旧版は cash==total なら DD=0 という hack で常にゼロ → DD ハードゲートが発火しなかった。
+    portfolio_dd_pct = _compute_portfolio_dd(prod_engine, current_total=float(total))
     exposure_decision = decide_exposure(
         ExposureInputs(
             # 環境スコアは未配線（X-2C 完成時に market-breadth-analyzer 等から流す）
@@ -683,17 +1461,22 @@ async def build(*, live: bool, prefer_moomoo: bool) -> dict[str, object]:
         available_cash_jpy=float(cash) if cash else float(total) if total else 100000.0,
     )
 
-    return {
+    # v2.10: dashboard が provider 別バッジを表示できるよう broker_provider を出力
+    from trading_agent.utils.lot_size import get_broker_provider as _gbp_for_snap
+
+    snap_out: dict = {
         "generated_at": utcnow().strftime("%Y-%m-%d %H:%M"),
         "mode": "live" if live else "demo",
         "trading_mode": settings.trading_mode,
+        "broker_provider": _gbp_for_snap(),
         "broker": broker_src,
         "account_source": account_src,
         "holdings_source": holdings_source,
         "sell": sell_section,
         "topics": topics_section,
         "pending_decisions": pending_decisions,
-        "usdjpy": round(usdjpy, 2),
+        # v2.5 TASK-P11: raw=None なら null（UI で「取得失敗」表示用）
+        "usdjpy": round(usdjpy_raw, 2) if usdjpy_raw is not None else None,
         # D-24 北極星 / D-25 市場対象（脳裏チップ表示用）
         "north_star": {
             "name": "claude-trading-skills",
@@ -722,18 +1505,75 @@ async def build(*, live: bool, prefer_moomoo: bool) -> dict[str, object]:
         "holding_health_summary": dict(health_report.summary),
         # X-2A theses_summary
         "theses_summary": theses_summary,
-        "account": {
-            "cash": round(cash),
-            "total_assets": round(total),
-            "cash_ratio": round(cash / total * 100) if total else 0,
+        # v2.8: broker_mode で分岐（_build_account_section_v28 で実装）
+        #   - paper:        KATSURAGI 預かり金（DS 4 機の総計） — Paper 検証用
+        #   - moomoo_live:  moomoo 口座の実残高（本番）
+        "account": (lambda: {
+            "cash": round(sum(p["cash_jpy"] for p in dummy_system["personalities"])) if dummy_system["personalities"] else round(cash),
+            "total_assets": round(sum(p["total_value_jpy"] for p in dummy_system["personalities"])) if dummy_system["personalities"] else round(total),
+            "cash_ratio": round(
+                (sum(p["cash_jpy"] for p in dummy_system["personalities"]) /
+                 max(sum(p["total_value_jpy"] for p in dummy_system["personalities"]), 1)) * 100
+            ) if dummy_system["personalities"] else (round(cash / total * 100) if total else 0),
             "currency": account.currency if account else "JPY",
-            "positions": len(positions),
-        },
+            "positions": sum(p["holdings_count"] for p in dummy_system["personalities"]),
+            "source": "paper_treasury",  # KATSURAGI 預かり金（DS 4 機合計）
+        })(),
         "holdings": holdings,
         "candidates": candidates,
         "zeele": zeele,
         "allocation": allocation,
+        "dummy_system": dummy_system,
+        "misato": misato,
+        # v2.7 INVESTIGELION: WILLE 組織内（RITSUKO 分析 + MISATO 作戦指示）
+        "wille": wille_section,
     }
+
+    # v2.8: moomoo Live モード時、account を moomoo 実残高で上書き（本番）
+    try:
+        from trading_agent.utils.lot_size import is_moomoo_live
+
+        if is_moomoo_live():
+            try:
+                from trading_agent.brokers.moomoo import MoomooBroker
+
+                moomoo_broker = MoomooBroker.from_settings(settings)
+                moomoo_acct = moomoo_broker.get_account()
+                if moomoo_acct is not None:
+                    snap_out["account"] = {
+                        "cash": round(moomoo_acct.cash),
+                        "total_assets": round(moomoo_acct.total_assets),
+                        "cash_ratio": round(
+                            moomoo_acct.cash / max(moomoo_acct.total_assets, 1) * 100
+                        ),
+                        "currency": moomoo_acct.currency or "JPY",
+                        "positions": sum(p["holdings_count"] for p in dummy_system["personalities"]),
+                        "source": "moomoo_live",  # ⚡ 本番 moomoo 実口座残高
+                    }
+                else:
+                    snap_out["account"] = {
+                        "cash": 0,
+                        "total_assets": 0,
+                        "cash_ratio": 0,
+                        "currency": "JPY",
+                        "positions": 0,
+                        "source": "moomoo_live_unavailable",
+                        "error": "moomoo 口座読み取り失敗",
+                    }
+            except Exception as exc:
+                snap_out["account"] = {
+                    "cash": 0,
+                    "total_assets": 0,
+                    "cash_ratio": 0,
+                    "currency": "JPY",
+                    "positions": 0,
+                    "source": "moomoo_live_error",
+                    "error": str(exc),
+                }
+    except Exception:
+        pass
+
+    return snap_out
 
 
 # D-26 資金配分の既定値
