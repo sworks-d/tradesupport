@@ -47,6 +47,29 @@ class TestKeywordFilter:
         n = NewsItem(title="C 社が新オフィス移転")
         assert _is_important(n) is False
 
+    def test_english_positive_keyword_detected(self):
+        # yfinance ニュースは英語タイトルが返るため日英両対応必須
+        n = NewsItem(title="Toyota raises guidance for FY26 amid strong sales")
+        assert _is_important(n) is True
+
+    def test_english_negative_keyword_detected(self):
+        n = NewsItem(title="Honda earnings miss expectations")
+        assert _is_important(n) is True
+
+    def test_english_keyword_case_insensitive(self):
+        # 全大文字でも、Title Case でも、混在でも hit する
+        for title in [
+            "TOYOTA RAISES GUIDANCE",
+            "Sony Buyback Program Approved",
+            "Daiwa Downgrade KDDI",
+        ]:
+            n = NewsItem(title=title)
+            assert _is_important(n) is True, f"Failed: {title}"
+
+    def test_english_unimportant_no_keyword(self):
+        n = NewsItem(title="Company opens new office in Asia")
+        assert _is_important(n) is False
+
 
 class TestDedup:
     def test_same_title_prefix_dedup(self):

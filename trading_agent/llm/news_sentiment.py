@@ -41,18 +41,37 @@ from trading_agent.utils.time_utils import utcnow
 _log = get_logger("llm.news_sentiment")
 
 # D1: 重要 keyword（含まれるニュースだけ LLM に投入。それ以外は 50 中立）
+# yfinance.news が英語タイトルを返すため日英両対応。lower() 比較で大文字小文字区別なし。
 _IMPORTANT_KEYWORDS = [
-    # ポジティブ系
+    # === 日本語 ポジティブ系 ===
     "上方修正", "増益", "増収", "黒字転換", "業績好調", "買収", "提携", "新製品",
     "好決算", "増配", "自社株買い", "IPO", "上場", "受注", "契約",
-    # ネガティブ系
+    # === 日本語 ネガティブ系 ===
     "下方修正", "減益", "減収", "赤字", "業績悪化", "不祥事", "粉飾",
     "リコール", "提訴", "決算延期", "上場廃止", "減配", "希薄化", "倒産",
-    # 中立だが影響大
+    # === 日本語 中立だが影響大 ===
     "決算", "業績予想", "配当", "増資", "減資",
+    # === 英語 ポジティブ系 ===
+    "raises guidance", "raised guidance", "earnings beat", "beat estimates",
+    "beats estimates", "upgrade", "upgraded", "buyback", "share repurchase",
+    "dividend increase", "raised dividend", "merger", "acquisition", "acquires",
+    "partnership", "contract win", "wins contract", "all-time high", "record high",
+    "strong results", "outperform",
+    # === 英語 ネガティブ系 ===
+    "lowers guidance", "cuts guidance", "earnings miss", "missed estimates",
+    "downgrade", "downgraded", "bankruptcy", "bankrupt", "fraud", "lawsuit",
+    "recall", "delisting", "delisted", "dividend cut", "cuts dividend",
+    "underperform", "warning", "fraud", "investigation", "probe",
+    # === 英語 中立だが影響大 ===
+    "earnings", "guidance", "dividend", "share issuance", "spin-off",
+    "spinoff", "ipo", "ipo'd",
 ]
 
-_KEYWORD_PATTERN = re.compile("|".join(re.escape(k) for k in _IMPORTANT_KEYWORDS))
+# 大文字小文字を吸収するため lower 比較。\b 境界で部分一致を避ける。
+_KEYWORD_PATTERN = re.compile(
+    "|".join(re.escape(k.lower()) for k in _IMPORTANT_KEYWORDS),
+    re.IGNORECASE,
+)
 
 
 @dataclass
@@ -146,20 +165,36 @@ def _call_haiku_sentiment(
 ) -> tuple[float, str] | None:
     """Haiku を呼んで sentiment + reason を返す。失敗時 None。
 
-    D3: 出力 JSON schema 固定。
+    D3: 出力 JSON schema 固定。Anthropic 公式 SDK 同期 API を直接利用
+    （analyze_news が sync で wille/ritsuko の build_briefs_from_pool から呼ばれる前提）。
     """
     try:
-        from trading_agent.llm.providers.haiku_fallback import HaikuFallbackClient
+        from anthropic import Anthropic
 
-        client = HaikuFallbackClient()
+        from trading_agent.config import load_settings
+
+        settings = load_settings()
+        if not settings.anthropic_api_key:
+            return None
+
+        client = Anthropic(api_key=settings.anthropic_api_key)
         prompt = (
-            f"銘柄 {ticker} に対するニュースのセンチメント (-1.0 〜 +1.0) と 50 字以内の理由を JSON で返してください。"
+            f"銘柄 {ticker} に対するニュースのセンチメント (-1.0 〜 +1.0) と "
+            f"50 字以内の理由を JSON で返してください。\n"
             f"ニュース: {news_text}\n"
             f'出力形式: {{"score": <number>, "reason": "<text>"}}'
         )
-        response = client.complete(prompt, max_tokens=80)
+        response = client.messages.create(
+            model="claude-haiku-4-5",
+            max_tokens=80,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        text = ""
+        for block in response.content:
+            if hasattr(block, "text"):
+                text += block.text
         # JSON 抽出（モデルが余計な前後文を付ける場合）
-        match = re.search(r"\{[^}]+\}", response)
+        match = re.search(r"\{[^}]+\}", text)
         if not match:
             return None
         data = json.loads(match.group(0))
