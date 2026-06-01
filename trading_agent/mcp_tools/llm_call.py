@@ -75,7 +75,11 @@ class LLMCallTool(MCPTool[LLMCallInput]):
 
         # 予算チェック（事前見積り）
         est_in = estimate_tokens(tool_input.prompt + (tool_input.system or ""))
-        est_cost = estimate_cost_jpy(model, est_in, tool_input.max_tokens)
+        # v2.4 TASK-LC1: max_tokens で見積もると実態の 2-3 倍過大評価される。
+        # 実出力は max の 30-50% 程度が一般的なので、安全側 50% を採用。
+        # （上振れ時は実 cost 記録時に超過検知）
+        est_out_realistic = int(tool_input.max_tokens * 0.5)
+        est_cost = estimate_cost_jpy(model, est_in, est_out_realistic)
         ok, reason = self._budget.can_proceed(est_cost, tool_input.routing_hint)
         if not ok:
             return LLMCallOutput(
@@ -97,7 +101,8 @@ class LLMCallTool(MCPTool[LLMCallInput]):
         )
         duration_ms = int((time.time() - start) * 1000)
 
-        # コスト記録（実トークンで）
+        # コスト記録（実トークンで）。事前の予算予測（LC1）で過大評価を防ぎ、
+        # ここでは実消費を記録。v2.5 TASK-LC2: 1 回の超過は許容するが、累積監視は別途必要。
         cost_jpy = record_cost(
             self._engine,
             model=raw.model,
@@ -121,5 +126,10 @@ class LLMCallTool(MCPTool[LLMCallInput]):
     def _select_client(self, model: str) -> LLMClient:
         client = self._ollama if model == MODEL_OLLAMA else self._anthropic
         if client is None:
-            raise AuthError(f"LLM client for '{model}' is not configured")
+            # v2.5 TASK-LC3: ユーザーフレンドリーなエラー（設定なし時の対応案を併記）
+            raise AuthError(
+                f"LLM client for '{model}' is not configured. "
+                f"対応: .env に ANTHROPIC_API_KEY 設定 or Ollama 起動 or "
+                f"casper_llm が決定論版にフォールバック（CASPER のみ）"
+            )
         return client

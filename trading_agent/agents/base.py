@@ -117,17 +117,25 @@ async def execute_agent[TIn: AgentInput](
     invocation_id = agent_input.invocation_id
     start = time.time()
 
-    # 緊急停止チェック
+    # v2.2 TASK-AB2: dry_run なら HALT も予算も bypass（DB に書かない実行なので安全）
+    is_dry_run = bool(getattr(agent_input, "dry_run", False))
+
+    # 緊急停止チェック（dry_run は通す）
     halt = halt_file if halt_file is not None else _settings_halt_file()
-    if halt is not None and halt.exists():
+    if not is_dry_run and halt is not None and halt.exists():
         log.warning("agent_aborted_halt")
         return _abort(invocation_id, "HALT file present, agent execution aborted", "緊急停止中")
+    if is_dry_run and halt is not None and halt.exists():
+        log.info("agent_dry_run_bypass_halt")
 
-    # 予算チェック（既に上限超過なら拒否。critical はバイパス）
-    ok, reason = BudgetGuard(engine).can_proceed(0.0, agent.default_routing)
-    if not ok:
-        log.warning("agent_aborted_budget", reason=reason)
-        return _abort(invocation_id, f"Budget exceeded: {reason}", "予算超過")
+    # 予算チェック（既に上限超過なら拒否。critical はバイパス。dry_run も bypass）
+    # v2.5 TASK-AB1: ここでは 0.0（事前見積もりなし）で「現状超過してるかだけ」確認。
+    # 個別 LLM 呼出の予算予測は llm_call.py で別途行う（v2.4 TASK-LC1）。
+    if not is_dry_run:
+        ok, reason = BudgetGuard(engine).can_proceed(0.0, agent.default_routing)
+        if not ok:
+            log.warning("agent_aborted_budget", reason=reason)
+            return _abort(invocation_id, f"Budget exceeded: {reason}", "予算超過")
 
     _log_start(engine, agent.name, invocation_id, _input_summary(agent_input))
 
@@ -141,6 +149,13 @@ async def execute_agent[TIn: AgentInput](
         output = _abort(invocation_id, str(exc), f"実行失敗: {agent.name}")
         output.duration_ms = int((time.time() - start) * 1000)
         status = "failure"
+    finally:
+        # v2.5 TASK-AB3: 例外が出ても必ず AnalysisLog を閉じる（status="running" 残留防止）
+        # try ブロック内で output が生成されない場合は abort 済みの output を使う
+        if "output" not in locals():
+            output = _abort(invocation_id, "unknown failure", f"未知の実行失敗: {agent.name}")
+            output.duration_ms = int((time.time() - start) * 1000)
+            status = "failure"
 
     _log_end(engine, invocation_id, output, status)
     return output

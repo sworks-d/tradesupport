@@ -20,7 +20,7 @@ class Personality:
     name: str  # 内部キー（"defender" / "aggressor" / "balanced"）
     label: str  # 表示用ラベル（"守り" 等）
     icon: str  # 絵文字（UI / レポート用）
-    overlay_cash_jpy: int  # この性格の初期 cash（仮想入金額）
+    overlay_cash_jpy: int  # MISATO 既定均等配分時の元本（¥25k×4機=¥100k）
     accept_stances: tuple[str, ...]  # auto-approve 対象の gendo_stance
     max_position_pct: float  # 1 銘柄上限（総資産比）
     horizon_days: int  # 保有期限
@@ -33,48 +33,48 @@ PERSONALITIES: dict[str, Personality] = {
         name="REI",
         label="DS/REI",
         icon="🔵",
-        overlay_cash_jpy=100_000,
+        overlay_cash_jpy=25_000,
         # 「守りすぎて何も買わない」を防ぐため、推し が無い日は要検討まで広げる。
         # ただし fallback として用意し、本来は推し優先（builder で stance 別に評価される）。
         accept_stances=("推し", "要検討"),
         max_position_pct=0.15,  # 1 銘柄 ¥15,000 まで（高価格 JP 1 株を許容するサイズ）
         horizon_days=180,        # 長期保有は維持
-        stop_loss_pct=0.15,      # 守りでも buy できるよう stop 緩和（12% → 15%）
+        stop_loss_pct=0.12,      # v2.10: -15% → -12%（攻めるが守る・1段厳格化）
         description=(
             "MAGI 全員一致＋機械照合 OK の「推し」を最優先。推しがない日は「要検討」も拾うが、"
-            "サイジングは中庸・長期保有・stop 緩めで「動くが負けない」を狙う。"
+            "サイジングは中庸・長期保有・stop -12% で「動くが負けない」を狙う。"
         ),
     ),
     "ASUKA": Personality(
         name="ASUKA",
         label="DS/ASUKA",
         icon="🔴",
-        overlay_cash_jpy=100_000,
+        overlay_cash_jpy=25_000,
         accept_stances=("推し", "要検討"),
         max_position_pct=0.20,  # 攻めの名のとおり最大級（REI 15% より大きく・KAWORU と並ぶ）
         horizon_days=60,
-        stop_loss_pct=0.08,
+        stop_loss_pct=0.06,  # v2.10: -8% → -6%（攻めるが守る・1段厳格化）
         description=(
             "「推し」+「要検討」を大胆に採用。1 銘柄あたり最大 20% で集中投資・"
-            "短期回転・stop -8% で素早く撤退する真の攻め型。"
+            "短期回転・stop -6% で素早く撤退する真の攻め型。"
         ),
     ),
     "SHINJI": Personality(
         name="SHINJI",
         label="DS/SHINJI",
         icon="🟣",
-        overlay_cash_jpy=100_000,
+        overlay_cash_jpy=25_000,
         accept_stances=("推し", "要検討"),
         max_position_pct=0.07,
         horizon_days=90,
-        stop_loss_pct=0.10,
-        description="守りと攻めの間。「推し」+「要検討」を中サイズで採用し、中期保有。",
+        stop_loss_pct=0.08,  # v2.10: -10% → -8%（攻めるが守る・1段厳格化）
+        description="守りと攻めの間。「推し」+「要検討」を中サイズで採用し、中期保有・stop -8%。",
     ),
     "KAWORU": Personality(
         name="KAWORU",
         label="DS/KAWORU",
         icon="🌒",
-        overlay_cash_jpy=100_000,
+        overlay_cash_jpy=25_000,
         # 全 stance（静観含む）を採用。さらに 3 機の合議銘柄を最優先で拾う「いいとこどり」。
         accept_stances=("推し", "要検討", "静観"),
         max_position_pct=0.20,

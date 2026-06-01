@@ -84,6 +84,105 @@
     各機の PnL は手数料・スリッページ・FX 込みの実弾相当値です。
   </div>
 
+  {% if payload.misato %}
+  <div class="card" style="border-left: 4px solid #c0392b; background: linear-gradient(135deg, rgba(192,57,43,0.08) 0%, rgba(192,57,43,0.02) 100%);">
+    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+      <span style="font-size: 22px;">📡</span>
+      <div>
+        <div style="font-size: 11px; color: var(--ink-2); letter-spacing: 1.5px;">NERV 作戦本部</div>
+        <div style="font-size: 16px; font-weight: 700; letter-spacing: 0.5px;">葛城ミサト 作戦部長 — 状況報告</div>
+      </div>
+    </div>
+    <div style="background: rgba(0,0,0,0.15); padding: 12px 14px; border-radius: 4px; font-size: 13px; line-height: 1.65; margin-bottom: 10px;">
+      <div style="color: var(--ink-2); font-size: 10px; letter-spacing: 1px; margin-bottom: 4px;">▼ 現状認識</div>
+      {{ payload.misato.verdict }}
+    </div>
+    <!-- 性格別ランキング（合算は出さない・相対比較が主眼）-->
+    <div style="background: rgba(0,0,0,0.12); padding: 10px 12px; border-radius: 4px; margin-bottom: 10px;">
+      <div style="color: var(--ink-2); font-size: 10px; letter-spacing: 1px; margin-bottom: 6px;">▼ 性格別ランキング（PnL %）</div>
+      <table style="background: transparent; font-size: 12px;">
+        <tr><th style="background: transparent; color: var(--ink-2);">順位</th><th style="background: transparent; color: var(--ink-2);">機体</th><th style="background: transparent; color: var(--ink-2);">PnL</th><th style="background: transparent; color: var(--ink-2);">保有</th><th style="background: transparent; color: var(--ink-2);">前日比</th><th style="background: transparent; color: var(--ink-2);">現 max</th><th style="background: transparent; color: var(--ink-2);">観察</th></tr>
+        {% for r in payload.misato.ranking %}
+        <tr>
+          <td><b>{{ r.rank }}</b></td>
+          <td>{{ r.icon }} {{ r.label }}</td>
+          <td class="{% if r.pnl_pct > 0 %}pnl up{% elif r.pnl_pct < 0 %}pnl down{% else %}pnl flat{% endif %}"><b>{{ "%+.2f"|format(r.pnl_pct) }}%</b></td>
+          <td>{{ r.holdings_count }} 件</td>
+          <td class="{% if r.day_change_jpy > 0 %}pnl up{% elif r.day_change_jpy < 0 %}pnl down{% else %}pnl flat{% endif %}">{% if r.day_change_jpy >= 0 %}+{% endif %}¥{{ "{:,.0f}".format(r.day_change_jpy) }}</td>
+          <td>{{ (r.effective_max_pct * 100) | round(0) }}%</td>
+          <td style="color: var(--ink-2); font-size: 11px;">{{ r.comment }}</td>
+        </tr>
+        {% endfor %}
+      </table>
+      <div style="margin-top: 8px; font-size: 11px; color: var(--ink-3);">
+        首位⇔最下位の差：<b style="color: var(--ink);">{{ "%.2f"|format(payload.misato.spread_pct) }}pt</b>
+        （差が広がるほど性格別の特徴が出てる）
+      </div>
+    </div>
+    <div style="background: rgba(0,0,0,0.15); padding: 12px 14px; border-radius: 4px; font-size: 13px; line-height: 1.65;">
+      <div style="color: var(--ink-2); font-size: 10px; letter-spacing: 1px; margin-bottom: 4px;">▼ 次の指示</div>
+      {{ payload.misato.next_action }}
+    </div>
+
+    {% if payload.misato_dispatch %}
+    {# === MISATO オーケストレーター（配分・割当・昇格・HALT）=== #}
+    <div style="margin-top: 12px; background: rgba(93,63,211,0.08); border: 1px solid rgba(93,63,211,0.35); padding: 12px 14px; border-radius: 4px;">
+      <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+        <span style="font-size: 16px;">🎖</span>
+        <div style="font-size: 13px; font-weight: 700; color: var(--ink);">MISATO 司令塔（オーケストレーター）</div>
+        <span style="font-size: 10px; color: var(--ink-3); margin-left: auto;">{{ payload.misato_dispatch.generated_at }}</span>
+      </div>
+      {% if payload.misato_dispatch.halted %}
+      <div style="padding: 8px 10px; background: rgba(248,113,113,0.15); color: #fda4a4; border-radius: 4px; font-size: 12px;">
+        ⛔ HALT 中：{{ payload.misato_dispatch.halt_reason }}
+      </div>
+      {% else %}
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; margin-bottom: 10px;">
+        <div style="font-size: 11px; color: var(--ink-2);">
+          元本: <b style="color: var(--ink); font-size: 13px;">¥{{ "{:,}".format(payload.misato_dispatch.seed_jpy) }}</b>
+        </div>
+        <div style="font-size: 11px; color: var(--ink-2);">
+          配分方式: <b style="color: var(--ink);">{{ payload.misato_dispatch.allocation_mode }}</b>
+          <span style="opacity: 0.7;">（{{ payload.misato_dispatch.allocation_reason }}）</span>
+        </div>
+        <div style="font-size: 11px; color: var(--ink-2);">
+          割当案: <b style="color: var(--ink); font-size: 13px;">{{ payload.misato_dispatch.total_assignments }}</b> 件
+        </div>
+      </div>
+      <table style="background: transparent; font-size: 11px; margin-bottom: 10px;">
+        <tr><th style="background: transparent; color: var(--ink-2);">機体</th><th style="background: transparent; color: var(--ink-2);">配分</th><th style="background: transparent; color: var(--ink-2);">割当</th><th style="background: transparent; color: var(--ink-2);">内訳</th></tr>
+        {% for pilot in ['REI', 'ASUKA', 'SHINJI', 'KAWORU'] %}
+        <tr>
+          <td><b>DS/{{ pilot }}</b></td>
+          <td>¥{{ "{:,}".format(payload.misato_dispatch.allocation.get(pilot, 0)) }}</td>
+          <td>{{ payload.misato_dispatch.assignments_by_pilot.get(pilot, []) | length }} 件</td>
+          <td style="color: var(--ink-2); font-size: 10px;">
+            {% set assigns = payload.misato_dispatch.assignments_by_pilot.get(pilot, []) %}
+            {% if assigns %}
+              {% for a in assigns[:3] %}{{ a.ticker }}({{ a.stance }}){% if not loop.last %} / {% endif %}{% endfor %}{% if assigns|length > 3 %} …他 {{ assigns|length - 3 }}{% endif %}
+            {% else %}
+              —
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </table>
+      {% if payload.misato_dispatch.promotions %}
+      <div style="padding: 8px 10px; background: rgba(74,222,128,0.1); border-left: 2px solid #4ade80; border-radius: 4px; font-size: 11px;">
+        <b style="color: var(--ink);">🎖 昇格候補：</b>
+        {% for p in payload.misato_dispatch.promotions %}{{ p.personality }}（n={{ p.n }}・hit={{ (p.hit_rate*100)|round(0)|int }}%・R={{ "%+.2f"|format(p.avg_r) }}）{% if not loop.last %} / {% endif %}{% endfor %}
+      </div>
+      {% else %}
+      <div style="padding: 6px 10px; background: rgba(0,0,0,0.12); border-radius: 4px; font-size: 11px; color: var(--ink-3);">
+        昇格候補なし（D-23 ゲート未到達: n≥30 ∩ hit≥50% ∩ R≥+0.5）
+      </div>
+      {% endif %}
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
   <div class="card">
     <h2>本日のサマリー</h2>
     <div class="grid-4">
@@ -163,19 +262,40 @@
         </div>
         {% if p.holdings %}
         <table style="margin-top:12px;">
-          <tr><th>銘柄</th><th>株</th><th>取得</th><th>時価</th><th>含み損益</th></tr>
+          <tr>
+            <th>銘柄</th>
+            <th>株</th>
+            <th>含み損益</th>
+            <th>エントリー理由 / 売却予定</th>
+          </tr>
           {% for h in p.holdings %}
           <tr>
             <td>
               <div style="font-weight:600;">{{ h.ticker }}</div>
               <div style="color: var(--ink-3); font-size: 10px;">{{ h.name }}</div>
+              <div style="color: var(--ink-3); font-size: 10px; margin-top: 2px;">
+                取得 ¥{{ "{:,.0f}".format(h.cost) }} → 時価 ¥{{ "{:,.0f}".format(h.market_value) }}
+              </div>
             </td>
             <td>{{ h.qty }}</td>
-            <td>¥{{ "{:,.0f}".format(h.cost) }}</td>
-            <td>¥{{ "{:,.0f}".format(h.market_value) }}</td>
             <td class="{% if h.unrealized > 0 %}pnl up{% elif h.unrealized < 0 %}pnl down{% else %}pnl flat{% endif %}">
               {% if h.unrealized >= 0 %}+{% endif %}¥{{ "{:,.0f}".format(h.unrealized) }}<br>
               <span style="font-size:10px;">{{ "%+.1f"|format(h.unrealized_pct) }}%</span>
+            </td>
+            <td style="font-size: 11px; line-height: 1.4;">
+              <div style="color: var(--ink-2);">
+                <span style="font-size:10px;color:var(--ink-3);">▸ エントリー：</span>
+                MAGI 判定にて採用（{{ p.label }} の運用ルール適用）
+              </div>
+              <div style="margin-top: 4px;">
+                <span style="font-size:10px;color:var(--ink-3);">▸ 売却条件：</span>
+                <span style="color: var(--down);">stop ¥{{ "{:,.0f}".format(h.stop_price) }}</span>
+                <span style="color: var(--ink-3);">（現価まで {{ "%+.1f"|format(h.stop_distance_pct) }}%）</span>
+              </div>
+              <div style="margin-top: 2px;">
+                <span style="font-size:10px;color:var(--ink-3);">▸ 期限売却：</span>
+                {{ h.target_date }}（あと {{ h.days_to_exit }} 日）
+              </div>
             </td>
           </tr>
           {% endfor %}

@@ -154,6 +154,7 @@ def _infer_preset(row: ScreeningResult) -> str:
         if v_details.get("price_bottom") and v_details.get("earnings_turnaround"):
             return "pullback"
         # それ以外（業績反転だが株価未転換等）→ contrarian 寄り
+        # v2.1 TASK-Z1 設計: V字主軸の銘柄は逆張り傾向と分類
         return "contrarian"
 
     # 3. テーマ主軸

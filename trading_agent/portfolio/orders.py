@@ -21,7 +21,7 @@ from trading_agent.models.decisions import Decision
 from trading_agent.portfolio.sizing import recommend_position
 from trading_agent.risk import Candidate, Held, RiskParams, evaluate_portfolio_guard
 from trading_agent.risk.params import DEFAULT_RISK
-from trading_agent.utils.time_utils import utcnow
+from trading_agent.utils.time_utils import today_jst, utcnow
 
 PriceLookup = Callable[[str], float | None]
 SectorLookup = Callable[[str], str]
@@ -64,7 +64,7 @@ def decide(engine: Engine, decision_id: int, *, action: str, reason: str = "") -
 
 def approved_buy_decisions(engine: Engine, *, on_date: dt.date | None = None) -> list[Decision]:
     """承認済みの買い decision（発注リストの素）。"""
-    day = on_date or utcnow().date()
+    day = on_date or today_jst()
     with Session(engine) as session:
         rows = session.exec(
             select(Decision)

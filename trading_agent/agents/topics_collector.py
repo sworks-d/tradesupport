@@ -32,8 +32,29 @@ from trading_agent.models.universe import Universe
 from trading_agent.utils.logger import get_logger
 from trading_agent.utils.time_utils import utcnow
 
-_HIGH_KEYWORDS = ("FOMC", "利上げ", "利下げ", "rate hike", "rate cut")
-_SECTOR_KEYWORDS = ("半導体", "セクター", "業界", "sector", "industry")
+# v2.5 TASK-N3: 重要度キーワードを拡張（市場の話題変化に追随できるよう）
+# 環境変数 TOPICS_HIGH_KEYWORDS / TOPICS_SECTOR_KEYWORDS でカンマ区切り上書き可
+import os as _os_n3
+_HIGH_KEYWORDS_DEFAULT = (
+    # マクロ金融（旧）
+    "FOMC", "利上げ", "利下げ", "rate hike", "rate cut",
+    # マクロ追加
+    "日銀", "BOJ", "ECB", "PMI", "CPI", "GDP", "雇用統計",
+    "緊急", "暴落", "急騰", "ストップ高", "ストップ安",
+    # 個別重要イベント
+    "決算速報", "決算発表", "上方修正", "下方修正",
+    "M&A", "TOB", "公開買付", "業務提携", "資本提携",
+)
+_HIGH_KEYWORDS = tuple(
+    _os_n3.environ.get("TOPICS_HIGH_KEYWORDS", ",".join(_HIGH_KEYWORDS_DEFAULT)).split(",")
+)
+_SECTOR_KEYWORDS_DEFAULT = (
+    "半導体", "セクター", "業界", "sector", "industry",
+    "AI", "EV", "脱炭素", "防衛", "バイオ", "メタバース", "DX",
+)
+_SECTOR_KEYWORDS = tuple(
+    _os_n3.environ.get("TOPICS_SECTOR_KEYWORDS", ",".join(_SECTOR_KEYWORDS_DEFAULT)).split(",")
+)
 _IMPORTANCE = {"high", "medium", "low"}
 
 # 収集した1記事の正規化 dict
@@ -55,19 +76,32 @@ class TopicsCollectorOutput(AgentOutput):
 def extract_affected_tickers(
     text: str, known_tickers: set[str], explicit_ticker: str | None = None
 ) -> list[str]:
-    """テキストから影響先ティッカーを抽出する（明示記法 + universe 既知名）。"""
+    """テキストから影響先ティッカーを抽出する（v2.1 TASK-S2: 厳格化）。
+
+    旧版は「2-5 文字大文字」「4 桁数字」を universe に部分マッチ → false positive 多発
+    （"USA"・"BUY"・"2024 年"・"3,000 万円" 等が銘柄扱いされる問題）。
+
+    新版は **明示記法のみ** を採用：
+      - 米株: `$NVDA`（$ プレフィックス必須）
+      - 米株: `NYSE:NVDA` / `NASDAQ:NVDA`（取引所プレフィックス）
+      - JP 株: `(7203)` / `（7203）` / `7203.T`
+      - explicit_ticker（API からの明示指定）
+    上記以外は紐付けない（false positive < false negative の方が安全）。
+    """
     found: set[str] = set()
     if explicit_ticker:
         found.add(explicit_ticker)
-    found.update(re.findall(r"\$([A-Z]{1,5})", text))  # $NVDA
-    found.update(re.findall(r"[（(](\d{4})[)）]", text))  # (7203)
-    for token in re.findall(r"[A-Z]{2,5}", text):  # 既知の英字ティッカー
-        if token in known_tickers:
-            found.add(token)
-    for token in re.findall(r"\b\d{4}\b", text):  # 既知の4桁コード
-        if token in known_tickers:
-            found.add(token)
-    return sorted(found)
+    # 米株：$NVDA 形式
+    found.update(re.findall(r"\$([A-Z]{1,5})\b", text))
+    # 米株：NYSE: / NASDAQ: プレフィックス
+    found.update(re.findall(r"(?:NYSE|NASDAQ):\s*([A-Z]{1,5})\b", text))
+    # JP 株：(7203) または （7203）
+    found.update(re.findall(r"[（(](\d{4})[)）]", text))
+    # JP 株：7203.T 形式
+    found.update(re.findall(r"\b(\d{4})\.T\b", text))
+
+    # known_tickers でフィルタ（universe にない ticker は除外）
+    return sorted(t for t in found if t in known_tickers)
 
 
 def rule_based_importance(
@@ -90,11 +124,22 @@ def rule_based_importance(
 
 
 def classify_category(item: Item, affected: list[str]) -> str:
-    """macro / sector / stock の分類。"""
+    """macro / sector / stock の分類。
+
+    v2.5 TASK-T2: 複合カテゴリ（stock + macro マッチでも単一分類）の限界を明示。
+    将来は複数カテゴリ list を返す設計に拡張余地あり（DB 構造変更を伴うため別件）。
+    """
+    text = f"{item.get('title', '')} {item.get('summary', '')}"
+    has_sector_kw = any(kw in text for kw in _SECTOR_KEYWORDS)
+    has_high_kw = any(kw in text for kw in _HIGH_KEYWORDS)
+    # 優先順: マクロイベント（FOMC 等）> 個別銘柄 > セクター > その他マクロ
+    if affected and not has_high_kw:
+        return "stock"
+    if has_high_kw:
+        return "macro"
     if affected:
         return "stock"
-    text = f"{item.get('title', '')} {item.get('summary', '')}"
-    if any(kw in text for kw in _SECTOR_KEYWORDS):
+    if has_sector_kw:
         return "sector"
     return "macro"
 
@@ -237,7 +282,16 @@ class TopicsCollectorAgent(Agent[TopicsCollectorInput]):
             return None
         self._llm_call_count += 1
 
+        # v2.10: ハルシネーション抑止指示を明示（CASPER と同じ厳格化）
+        # 与えられた材料以外の事実・数値・将来予測を生成させない。
+        # 「影響先候補」に無い銘柄を LLM が「関連がありそう」と推論で追加するのを禁止。
         prompt = (
+            "あなたはニュースの重要度を判定するアシスタントです。\n\n"
+            "【厳守事項：ハルシネーション禁止】\n"
+            "  - 与えられたタイトル・要約に書かれていない事実・数値・将来予測を生成しないこと\n"
+            "  - 影響先候補に含まれない銘柄を「関連がありそう」と推論で追加しないこと\n"
+            "  - 売買推奨・目標株価・EPS 等の数値を捏造しないこと\n"
+            "  - 情報が不十分な場合は 'low' と判定し reasoning に「情報不足」と明記すること\n\n"
             "次のニュースの重要度を high/medium/low で判定し JSON で返してください。\n"
             f'タイトル: {item.get("title", "")}\n要約: {item.get("summary", "")}\n'
             f"影響先候補: {affected}\n"

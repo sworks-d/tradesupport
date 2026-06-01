@@ -10,7 +10,7 @@ NOTE: ``utcnow`` は ``trading_agent.models._common.utcnow`` と同一契約（n
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta, timezone
 
 # 日本標準時
 JST = timezone(timedelta(hours=9))
@@ -23,6 +23,18 @@ def utcnow() -> datetime:
     SQLModel の ``default_factory`` にそのまま渡せる。
     """
     return datetime.now(UTC).replace(tzinfo=None)
+
+
+def today_jst() -> date:
+    """JST の「今日の日付」を返す（v2.10 致命候補 1 修正）。
+
+    朝バッチ・日次レポート・Decision.date 等の **業務日付** 用。
+    ``utcnow().date()`` を使うと JST 朝 7:00 実行時に UTC 前日が返るため、
+    invocation_id や Decision.date 等の業務キーには不向き。
+
+    datetime（タイムスタンプ・created_at 等）は引き続き UTC 永続化（``utcnow()``）。
+    """
+    return datetime.now(JST).date()
 
 
 def to_jst(value: datetime) -> datetime:

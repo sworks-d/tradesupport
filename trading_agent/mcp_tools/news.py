@@ -47,7 +47,12 @@ DEFAULT_RSS_FEEDS: tuple[str, ...] = (
     "https://9to5mac.com/feed/",                                # Apple 中心テック
 )
 
-_FUZZY_DUP_THRESHOLD = 0.90
+# v2.5 TASK-N1: 類似度閾値（環境変数で調整可）
+# 0.90 = 厳しめ（同じ記事の言い回し違いだけ重複扱い）
+# 日本語/英語混在では文字単位 SequenceMatcher が言語別に違う精度を出すため、
+# 多言語 dedupe には別途 embedding ベースが望ましい（将来課題）。
+import os as _os_n1
+_FUZZY_DUP_THRESHOLD = float(_os_n1.environ.get("NEWS_DUP_THRESHOLD", "0.90"))
 
 # 取得関数の型：NewsInput → 正規化済み記事のリスト
 Fetcher = Callable[["NewsInput"], list[Article]]
@@ -142,7 +147,11 @@ class NewsTool(MCPTool[NewsInput]):
 
     async def _execute(self, tool_input: NewsInput) -> MCPToolOutput:
         log = get_logger("mcp_tool").bind(tool=self.name)
-        since = tool_input.since or (utcnow() - timedelta(hours=24))
+        # v2.5 TASK-N2: 既定 since を 24h → 48h に拡張（月曜朝の土日 48h を確実にカバー）
+        # 環境変数 NEWS_SINCE_HOURS で上書き可
+        import os as _os_n2
+        since_hours = int(_os_n2.environ.get("NEWS_SINCE_HOURS", "48"))
+        since = tool_input.since or (utcnow() - timedelta(hours=since_hours))
 
         collected: list[Article] = []
         failures = 0
@@ -179,14 +188,16 @@ class NewsTool(MCPTool[NewsInput]):
             if a.get("url")
         ]
         asof = [r.as_of for r in refs if r.as_of is not None]
-        # 記事に published_at が全件無い場合でも「収集時点」を data_asof に入れる。
-        # これが None だと CASPER の data_asof も None になり、defense.verify で
+        # v2.5 TASK-P13: published_at 全件欠落時の utcnow() fallback を撤去
+        # 旧: data_asof=max(asof) if asof else utcnow() ← 古ニュースを「新鮮」と偽装
+        # 新: data_asof=max(asof) if asof else None ← 時点不明を明示し defense.verify で警告
+        # （CASPER は data_asof=None でも判定は出すが、verify が「時点なし」フラグを立てる）
         # figures_checked=False → default_hold=True で「推し」が永久にブロックされる。
         return NewsOutput(
             success=True,
             articles=deduped,
             total_before_dedupe=total_before,
-            data_asof=max(asof) if asof else utcnow(),
+            data_asof=max(asof) if asof else None,  # v2.5 TASK-P13: utcnow() 撤去
             source_refs=refs,
             metadata={"source_failures": failures},
         )
@@ -204,9 +215,10 @@ def _default_fetchers() -> list[Fetcher]:
 
 
 def _yf_symbol(ticker: str) -> str:
-    """yfinance 用シンボル。日本株（数字のみの証券コード）は ``.T`` を付す。"""
-    t = ticker.strip()
-    return f"{t}.T" if t.isdigit() else t
+    """yfinance 用シンボル。v2.10: 新型 ticker (141A 等) も含めた共通実装に統一。"""
+    from trading_agent.mcp_tools.fundamentals import to_yfinance_symbol
+
+    return to_yfinance_symbol(ticker.strip())
 
 
 def _epoch_to_iso(epoch: object) -> str:

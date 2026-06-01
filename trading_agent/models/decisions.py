@@ -57,8 +57,9 @@ class Decision(SQLModel, table=True):
     thesis_at_decision: str | None = None
 
     # 発注時の記録（P6評価の前提＝R-multiple算定に entry と stop が要る）
-    entry_price: float | None = None  # エントリー価格（発注時。実約定で更新可）
-    stop_pct: float | None = None  # 損切り幅（R-mult＝実リターン÷stop）
+    entry_price: float | None = None  # エントリー価格（複数 fill 時は加重平均・v2.1 TASK-E2）
+    stop_pct: float | None = None  # 損切り幅（R-mult＝実リターン÷stop・v2.1 で正値統一 TASK-SZ4）
+    shares_filled: float = 0.0  # 累積約定株数（複数 fill の平均化に使う・v2.1 TASK-E2）
 
     # ユーザーの反応
     user_action: str | None = None  # "adopted" / "skipped" / "modified" / "deferred"

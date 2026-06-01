@@ -23,19 +23,23 @@ class RiskParams:
     cash_floor: float = 0.20
     # ⑤ 高値からのDDで新規エントリー停止（クールダウン）
     drawdown_halt: float = 0.15
-    # ⑦ 損切り幅（既定）。中期=日次ノイズで切らない。10–15%、既定12%
+    # ⑦ 損切り幅（既定）。中期=日次ノイズで切らない。
+    # v2.2 TASK-SZ1: 機別 stop（KAWORU -5% / ASUKA -8% / SHINJI -10% / REI -15%）を許容するため
+    # レンジを 5-20% に拡張。中期の既定は 12% のまま。
     default_stop_pct: float = 0.12
-    stop_pct_min: float = 0.10
-    stop_pct_max: float = 0.15
+    stop_pct_min: float = 0.05  # 旧 0.10 → 0.05（KAWORU 短期タイト stop を許容）
+    stop_pct_max: float = 0.20  # 旧 0.15 → 0.20（高ボラ銘柄の広い stop を許容）
     # 1銘柄サイズ上限（総資産比）。stop≥10%ならR-multは常にこれ以下
     max_position_weight: float = 0.20
     # Core-Satellite（稼ぎ=所有×時間×複利）。コア=質分散の積立放任／サテライト=隔離した小さな賭け。
     core_fraction: float = 0.85  # コア：質分散塊を積立・勝ち放任・地雷除外
     satellite_fraction: float = 0.15  # サテライト：V字/小型/テーマを小さく・分散・損切り固定
     # ⑥ 増額ゲート（¥100k自体は実弾。これを満たすまで増額しない）
+    # v2.1 TASK-SZ5: misato.py の D-23 ゲート閾値と統一（よりタイトな misato 採用）
     gate_min_decisions: int = 30
     gate_max_drawdown: float = 0.15  # 期間中の最大DDがこれ以内
-    gate_min_avg_r: float = 0.0  # 平均R>0
+    gate_min_avg_r: float = 0.5  # 旧 0.0 → 0.5（misato 採用・安全側）
+    gate_min_hit_rate: float = 0.50  # 命中率 ≥ 50%（新規・misato から）
 
     def investable_fraction(self) -> float:
         """投資に回せる比率（現金下限を除く）。"""

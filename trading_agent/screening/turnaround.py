@@ -38,7 +38,11 @@ def _growth(cur: float | None, prev: float | None) -> float | None:
 
 
 def _ignition(fin: Financials) -> bool | None:
-    """反転の点火。3期あれば earnings acceleration（成長率の加速）、無ければマージンYoY改善。"""
+    """反転の点火。3期あれば earnings acceleration（成長率の加速）、無ければマージンYoY改善。
+
+    v2.5 TASK-Z9: 3 期分が無くても 2 期 + マージン改善で代替判定（既存挙動）。
+    将来は四半期版（quarterly_*）の取得を追加して短期検証にも対応可能（fallback hook）。
+    """
     t, p = fin.current, fin.prior
     if p is None:
         return None
@@ -64,9 +68,11 @@ def assess_turnaround(
     signals = signals or []
     t = fin.current
 
+    # v2.5 TASK-Z14: bottom 閾値を定数化
+    _BOTTOM_OP_MARGIN_THRESHOLD = 0.05  # 営業マージン 5% 未満で「底」と判定
     # ① 業績の底：営業マージンが極小（<5%）または赤字
     m = _op_margin(t)
-    bottom = (m < 0.05) if m is not None else None
+    bottom = (m < _BOTTOM_OP_MARGIN_THRESHOLD) if m is not None else None
 
     # ② 反転の点火
     ignition = _ignition(fin)

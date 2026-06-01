@@ -35,12 +35,18 @@ def _ret(prices: list[float], window: int) -> float | None:
     return prices[-1] / prices[-1 - window] - 1.0
 
 
+# v2.5 TASK-Z15: 期間を環境変数で上書き可能（地域別・銘柄群別で調整可能性確保）
+import os as _os_rs
+_DEFAULT_RS_SHORT = int(_os_rs.environ.get("RS_SHORT_DAYS", "21"))  # 1 ヶ月
+_DEFAULT_RS_LONG = int(_os_rs.environ.get("RS_LONG_DAYS", "63"))   # 3 ヶ月
+
+
 def compute_relative_strength(
     ticker_prices: list[float],
     market_prices: list[float],
     *,
-    short: int = 21,
-    long: int = 63,
+    short: int = _DEFAULT_RS_SHORT,
+    long: int = _DEFAULT_RS_LONG,
 ) -> RSResult:
     """対市場の相対力を長短2窓で測り、4象限に分類する。
 
@@ -77,7 +83,8 @@ def market_proxy(market: str) -> str:
 
 
 def relative_strength_live(
-    ticker: str, market: str, *, history: PriceHistory, short: int = 21, long: int = 63
+    ticker: str, market: str, *, history: PriceHistory,
+    short: int = _DEFAULT_RS_SHORT, long: int = _DEFAULT_RS_LONG,
 ) -> RSResult:
     """ライブ：history(ticker) と history(proxy) から相対力を出す。失敗は na。"""
     try:

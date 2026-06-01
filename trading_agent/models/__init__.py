@@ -13,6 +13,7 @@ from trading_agent.models.magi import (
     Verification,
 )
 from trading_agent.models.market_data import EarningsCalendar, MarketDataCache
+from trading_agent.models.misato_treasury import MisatoTreasury, PilotAllocation
 from trading_agent.models.portfolio import Portfolio, PortfolioSnapshot
 from trading_agent.models.settings import DEFAULT_SETTINGS, Setting, default_setting_rows
 from trading_agent.models.signals import (
@@ -45,6 +46,8 @@ __all__ = [
     "JudgeVerdict",
     "ManualInput",
     "MarketDataCache",
+    "MisatoTreasury",
+    "PilotAllocation",
     "Portfolio",
     "PortfolioSnapshot",
     "Scenario",

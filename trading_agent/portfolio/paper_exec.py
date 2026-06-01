@@ -25,7 +25,7 @@ from trading_agent.models.decisions import Decision
 from trading_agent.models.portfolio import Portfolio
 from trading_agent.portfolio.sizing import recommend_position
 from trading_agent.risk.params import DEFAULT_RISK, RiskParams
-from trading_agent.utils.time_utils import utcnow
+from trading_agent.utils.time_utils import today_jst, utcnow
 
 PriceLookup = Callable[[str], float | None]  # ticker → 翌寄りの約定価格(JPY)。取得不可は None
 IsJpLookup = Callable[[str], bool]  # ticker → 日本株か（端株可否・通貨に使用）
@@ -83,16 +83,18 @@ def paper_close_due(
 ) -> CloseResult:
     """active な Portfolio のうち以下を自動売却して closed に進める。
 
-    1. **stop_loss 到達**: 現在価格 ≤ buy_price × (1 + stop_loss_pct)
-       （stop_loss_pct は負値で保存される慣行を尊重）
+    1. **stop_loss 到達**: 現在価格 ≤ buy_price × (1 - stop_loss_pct)
+       （v2.1 TASK-SZ4: stop_loss_pct は正値で統一・例 0.15 = -15% で機能）
     2. **time_exit**: 今日 ≥ target_date
 
     `personality_filter` 指定時はその性格の保有のみ対象。
-    moomoo シミュレーションで売却手数料・スリッページも適用する。
+    broker_provider 別の simulate_fill で売却コスト（手数料・スプレッド・スリッページ）を適用する。
     """
-    from trading_agent.portfolio.moomoo_sim import simulate_fill
+    from trading_agent.portfolio.fill_simulator import simulate_fill_for_provider
+    from trading_agent.utils.lot_size import get_broker_provider
 
-    day = today or utcnow().date()
+    provider = get_broker_provider()
+    day = today or today_jst()
     result = CloseResult()
     with Session(engine, expire_on_commit=False) as session:
         stmt = select(Portfolio).where(col(Portfolio.status) == "active")
@@ -107,7 +109,8 @@ def paper_close_due(
             if cur is None or cur <= 0:
                 result.skipped.append((p.ticker, "現価取得不可"))
                 continue
-            stop_threshold = float(p.buy_price) * (1.0 + float(p.stop_loss_pct or 0))
+            # v2.1 TASK-SZ4: stop_loss_pct は正値で統一（旧 -0.15 → 新 0.15）
+            stop_threshold = float(p.buy_price) * (1.0 - float(p.stop_loss_pct or 0))
             reason: str | None = None
             if cur <= stop_threshold:
                 reason = "stop_loss"
@@ -116,8 +119,12 @@ def paper_close_due(
             if reason is None:
                 continue
 
-            sell = simulate_fill(
-                market_price=cur, qty=int(p.qty), is_jp=is_jp_lookup(p.ticker), side="sell"
+            sell = simulate_fill_for_provider(
+                broker_provider=provider,
+                market_price=cur,
+                qty=int(p.qty),
+                is_jp=is_jp_lookup(p.ticker),
+                side="sell",
             )
             # 取得時も同じスリッページ・手数料が引かれている前提で、PnL は売却収入 - 取得コスト
             buy_cost = float(p.buy_price) * int(p.qty)
@@ -176,6 +183,7 @@ def paper_fill_approved(
     horizon_days: int = _HORIZON_DAYS,
     today: dt.date | None = None,
     personality: object | None = None,
+    budget_cap_per_decision_jpy: float | None = None,  # v2.2 TASK-P5: MISATO 配分上限
 ) -> PaperResult:
     """status=approved の decision を翌寄り価格で紙約定し、Portfolio(active)化＋record_entry する。
 
@@ -185,7 +193,7 @@ def paper_fill_approved(
 
     現金は引数で受け、残額を返す（永続化は呼び出し側＝run_paper の責務）。
     """
-    day = today or utcnow().date()
+    day = today or today_jst()
     if personality is not None:
         # 性格固有の運用ルールで上書き
         stop = float(getattr(personality, "stop_loss_pct", params.default_stop_pct))
@@ -236,31 +244,74 @@ def paper_fill_approved(
                 .where(col(Decision.action) == "buy")
             ).all()
 
-    # KAWORU 限定：他 3 機の合議銘柄を取得し、decisions のソートを優先順位付け
-    # （cash が許す限り合議銘柄から先に fill する＝いいとこどり戦略）。
-    consensus: set[str] = set()
-    if personality is not None and personality_name == "KAWORU":
-        consensus = _consensus_tickers(engine, peers=("REI", "ASUKA", "SHINJI"))
-        if consensus:
-            decisions = sorted(decisions, key=lambda d: 0 if d.ticker in consensus else 1)
+    # v2.8: KAWORU の合議銘柄ロジック廃止（コントラリアン短期機に再設計のため）
+    # 旧: 他 3 機が保有する銘柄を KAWORU が後追いで買う → 機跨ぎ重複の原因
+    # 新: KAWORU の proposal は ds_scout.select_kaworu_contrarian が作成（dispatch 段階で生成）
+    # → paper_exec ではソート優先順位の特別処理は不要
 
     with Session(engine, expire_on_commit=False) as session:
 
         for d in decisions:
             if d.id is None:
                 continue
+            # v2.10: ハルシネーション対策 — fill 直前の Universe 最終照合（出口の防壁）
+            # 仮想銘柄・上場廃止銘柄・虚偽 ticker をここで物理的に弾く。
+            # screening/MAGI/ZEELE が万一虚偽 ticker を返しても、ここで止まる。
+            from trading_agent.models.universe import Universe as _Uni
+
+            _u_check = session.exec(
+                select(_Uni).where(
+                    col(_Uni.ticker) == d.ticker,
+                    col(_Uni.is_active),
+                )
+            ).first()
+            if _u_check is None:
+                result.skipped.append(
+                    (d.ticker, "Universe 不在（ハルシネーション防止）")
+                )
+                continue
             # 性格モード：受容 stance + 重複 fill チェック
             if personality is not None:
-                if accept_stances is not None and d.gendo_stance not in accept_stances:
+                # v2.8: status="approved" は ds_scout / dispatch 経由で機が承認済
+                # → accept_stances 外でも受け入れる（重複判定の防止のみ）
+                if (
+                    d.status != "approved"
+                    and accept_stances is not None
+                    and d.gendo_stance not in accept_stances
+                ):
                     continue
                 filled_already = list(d.personalities_filled or [])
                 if personality_name in filled_already:
+                    continue
+                # v2.8: 同一機が同一銘柄を二重保有しない（別 decision_id でも buy しない）
+                # broker_mode 別に判定（Paper と Live で別管理）
+                from trading_agent.utils.lot_size import get_broker_mode as _gbm
+
+                _cur_mode = _gbm()
+                existing_holding = session.exec(
+                    select(Portfolio).where(
+                        col(Portfolio.personality) == personality_name,
+                        col(Portfolio.ticker) == d.ticker,
+                        col(Portfolio.status) == "active",
+                        col(Portfolio.broker_mode) == _cur_mode,
+                    )
+                ).first()
+                # v2.10 Phase 1A-Step2 修正 (致命 2): ピラミッディング追加買付は
+                # 既存 Portfolio を merge する（新規作成すると同銘柄が分裂する）
+                is_pyramid = "ピラミッディング" in (d.thesis_at_decision or "")
+                if existing_holding is not None and not is_pyramid:
+                    result.skipped.append((d.ticker, f"{personality_name} 既保有"))
                     continue
             price = price_lookup(d.ticker)
             if price is None or price <= 0:
                 result.skipped.append((d.ticker, "価格取得不可"))
                 continue
             is_jp = is_jp_lookup(d.ticker)
+
+            # v2.8 → v2.9: Stage 3 (paper_exec) の max_lot_cost フィルタは廃止
+            # Stage 0（候補プール構築時）で treasury 全額 × max_lot_pct のガードレールが効くので、
+            # ここで機別 cash で再フィルタすると過剰除外（cash が小さい機で全銘柄 skip）になる。
+            # 代わりに、次の lot 丸めロジックで「1 単元買えるなら買う」判定をする。
             total = cash + positions_value_jpy
             rec = recommend_position(
                 price_jpy=price, total_assets_jpy=total, cash_jpy=cash,
@@ -272,15 +323,113 @@ def paper_fill_approved(
                 max_cost = total * max_pos_pct
                 max_shares = int(max_cost // price)
                 shares = min(shares, max_shares)
-            if shares <= 0:
-                result.skipped.append((d.ticker, f"サイズ0（{rec.note}）"))
-                continue
-            # moomoo 実弾相当のコスト（手数料・スリッページ・FX スプレッド）を適用
-            from trading_agent.portfolio.moomoo_sim import simulate_fill
+            # v2.2 TASK-P5: MISATO 配分上限を強制適用（recommend_position を上書き）
+            if budget_cap_per_decision_jpy is not None and budget_cap_per_decision_jpy > 0:
+                cap_shares = int(budget_cap_per_decision_jpy // price)
+                shares = min(shares, cap_shares)
+            # v2.8: 実弾モード時は単元株（100 株）の倍数に丸める
+            from trading_agent.utils.lot_size import effective_lot_size, is_live_mode
 
-            fill = simulate_fill(
-                market_price=price, qty=shares, is_jp=is_jp, side="buy"
+            lot = effective_lot_size(d.ticker)
+            if lot > 1:
+                lot_cost = price * lot
+                # 丸めて 0 になっても、cash で 1 単元買えるなら 1 単元許可
+                # （少額予算で max_position_pct や 1 単元未満 shares でも実弾運用可能に）
+                if shares > 0:
+                    rounded = (shares // lot) * lot
+                    if rounded == 0 and cash >= lot_cost:
+                        rounded = lot
+                    shares = rounded
+                else:
+                    # max_pos で 0 株でも 1 単元買えるなら 1 単元
+                    if cash >= lot_cost:
+                        shares = lot
+                if shares <= 0:
+                    result.skipped.append(
+                        (
+                            d.ticker,
+                            f"実弾モード: 単元株（{lot}株 ¥{lot_cost:,.0f}）に予算不足",
+                        )
+                    )
+                    continue
+
+            # v2.10 Phase 1A-Step2: ピラミッディング適用（personality 指定時のみ）
+            # planned_total_qty = ガードレール後の "予定総量"
+            # 実 fill = planned_total_qty × get_initial_alloc(機別)
+            # 旧挙動互換: personality is None なら従来通り全量一括 fill
+            planned_total_qty = shares  # ガードレール反映後の予定総量
+            if personality_name is not None:
+                from trading_agent.portfolio.pyramiding import get_initial_alloc
+
+                initial_alloc = get_initial_alloc(personality_name)
+                initial_shares = int(shares * initial_alloc)
+                # 単元株丸め（再度・initial_alloc 適用後）
+                if lot > 1:
+                    initial_shares = (initial_shares // lot) * lot
+                    # 0 株になったら最低 1 単元（買えるなら）
+                    if initial_shares == 0 and cash >= price * lot:
+                        initial_shares = lot
+                if initial_shares > 0:
+                    shares = initial_shares  # 実 fill 量を縮小
+            if shares <= 0:
+                if is_live_mode():
+                    result.skipped.append((d.ticker, f"実弾モード: サイズ0（{rec.note}）"))
+                else:
+                    result.skipped.append((d.ticker, f"サイズ0（{rec.note}）"))
+                continue
+            # v2.10: broker_provider 別の simulate_fill（楽天/kabu.com/moomoo）
+            # is_moomoo_live() は broker_provider="moomoo" + broker_mode="live" の時のみ True
+            from trading_agent.portfolio.fill_simulator import simulate_fill_for_provider
+            from trading_agent.utils.lot_size import (
+                get_broker_provider,
+                is_moomoo_live,
             )
+
+            provider = get_broker_provider()
+
+            if is_moomoo_live() and is_jp:
+                # 本番運用: moomoo OpenD 経由で実発注（裏で構築済・ローカル運用者の責任で有効化）
+                try:
+                    from trading_agent.brokers.moomoo import MoomooBroker
+                    from trading_agent.config import load_settings
+
+                    settings = load_settings()
+                    broker = MoomooBroker.from_settings(settings)
+                    order_result = broker.place_order(
+                        ticker=d.ticker,
+                        shares=shares,
+                        side="buy",
+                        market="JP",
+                        order_type="MARKET",
+                        trd_pwd=settings.moomoo_trading_pwd,
+                    )
+                    if not order_result.get("ok"):
+                        result.skipped.append(
+                            (d.ticker, f"moomoo発注失敗: {order_result.get('error')}")
+                        )
+                        continue
+                    # 約定価格が取れない場合は market_price で代替
+                    fill_price = order_result.get("fill_price") or price
+                    fill = simulate_fill_for_provider(
+                        broker_provider="moomoo",
+                        market_price=fill_price,
+                        qty=shares,
+                        is_jp=True,
+                        side="buy",
+                    )
+                except Exception as exc:
+                    result.skipped.append((d.ticker, f"moomoo broker例外: {exc}"))
+                    continue
+            else:
+                # 検証モード: broker_provider 別の simulate_fill で実コストを反映
+                # 楽天かぶミニ: 寄付取引（朝バッチ標準）= 手数料 0 + スプレッド 0 + スリッページのみ
+                fill = simulate_fill_for_provider(
+                    broker_provider=provider,
+                    market_price=price,
+                    qty=shares,
+                    is_jp=is_jp,
+                    side="buy",
+                )
             if fill.total_cost_jpy > cash:
                 result.skipped.append(
                     (
@@ -301,23 +450,56 @@ def paper_fill_approved(
                     f"標準ペーパー fill: stance={stance_label}・stop -{stop*100:.0f}%・保有 {horizon}日"
                 )
             )
-            session.add(
-                Portfolio(
-                    ticker=d.ticker,
-                    buy_date=day,
-                    buy_price=fill.fill_price,  # 実約定価格を Portfolio に記録
-                    qty=shares,
-                    currency="JPY" if is_jp else "USD",
-                    strategy_category="中期",
-                    target_period_days=horizon,
-                    target_pct=0.0,
-                    stop_loss_pct=-stop,
-                    target_date=day + dt.timedelta(days=horizon),
-                    thesis=(d.thesis_at_decision or "コア（守り主導の質分散塊）") + " | " + rationale,
-                    status="active",
-                    personality=personality_name,
+            # v2.8: 現在の broker_mode を取得してレコードに記録
+            from trading_agent.utils.lot_size import get_broker_mode
+
+            current_mode = get_broker_mode()
+            # v2.10 Phase 1A-Step2 修正 (致命 2): ピラミッディング追加買付なら
+            # 既存 active Portfolio を merge（qty 加算 + buy_price 加重平均）
+            if (
+                personality is not None
+                and "is_pyramid" in dir()
+                and is_pyramid
+                and existing_holding is not None
+            ):
+                # merge: qty 加算 + buy_price 加重平均
+                old_qty = int(existing_holding.qty or 0)
+                new_qty = old_qty + shares
+                old_avg = float(existing_holding.buy_price or 0)
+                if new_qty > 0:
+                    existing_holding.buy_price = (
+                        old_avg * old_qty + fill.fill_price * shares
+                    ) / new_qty
+                existing_holding.qty = new_qty
+                existing_holding.updated_at = utcnow()
+                # peak_pnl_pct は新しい平均から計算し直すためリセット
+                existing_holding.peak_pnl_pct = None
+                # planned_total_qty は既存値を維持（既に保存済み）
+                session.add(existing_holding)
+            else:
+                session.add(
+                    Portfolio(
+                        ticker=d.ticker,
+                        buy_date=day,
+                        buy_price=fill.fill_price,
+                        qty=shares,
+                        currency="JPY" if is_jp else "USD",
+                        strategy_category="中期",
+                        target_period_days=horizon,
+                        target_pct=0.0,
+                        stop_loss_pct=stop,
+                        target_date=day + dt.timedelta(days=horizon),
+                        thesis=(d.thesis_at_decision or "コア（守り主導の質分散塊）") + " | " + rationale,
+                        status="active",
+                        personality=personality_name,
+                        broker_mode=current_mode,  # v2.8: Paper / Live 分離
+                        # v2.10 Phase 1A-Step2: ピラミッディング予定総量
+                        # personality=None なら shares == planned_total_qty（旧挙動）
+                        # personality 指定時は planned_total_qty > shares で後続の追加 fill を待つ
+                        planned_total_qty=planned_total_qty,
+                        peak_pnl_pct=None,  # 初期は未設定（初回 trailing_check で初期化）
+                    )
                 )
-            )
             if personality is not None:
                 filled_new = list(d.personalities_filled or [])
                 if personality_name not in filled_new:
@@ -352,3 +534,111 @@ def paper_fill_approved(
 
     result.cash_after = cash
     return result
+
+
+# === v2.10 Phase 1A-Step2 修正 (致命 1): sell Decision の実行ロジック ===
+
+def paper_close_approved(
+    engine: Engine,
+    *,
+    price_lookup: PriceLookup,
+    today: dt.date | None = None,
+    broker_mode: str | None = None,
+) -> dict[str, Any]:
+    """status="approved" + action="sell_loss"/"sell_profit" の Decision を実行し、
+    対応する active Portfolio を closed にする（v2.10 Phase 1A-Step2 修正）。
+
+    trailing_check 等が登録した sell Decision を「実際に売却執行」する。
+    closed_price / closed_reason / actual_return を Decision に記録する
+    （evaluate_due_decisions が後で正しく評価できるように）。
+
+    Args:
+        engine: DB エンジン
+        price_lookup: ticker → 現価
+        today: 今日（None なら utcnow）
+        broker_mode: "paper"/"live"（None なら現在のモード）
+
+    Returns:
+        実行サマリ dict。
+    """
+    if today is None:
+        today = today_jst()
+    if broker_mode is None:
+        from trading_agent.utils.lot_size import get_broker_mode
+
+        broker_mode = get_broker_mode()
+
+    closed_count = 0
+    skipped_no_price: list[str] = []
+    skipped_no_holding: list[str] = []
+    closed_details: list[dict[str, Any]] = []
+
+    with Session(engine, expire_on_commit=False) as session:
+        sell_decisions = session.exec(
+            select(Decision)
+            .where(col(Decision.status) == "approved")
+            .where(col(Decision.action).in_(("sell_loss", "sell_profit")))
+        ).all()
+
+        for sd in sell_decisions:
+            # v2.10 Phase G-3: Universe 照合（ハルシネーション完全性・最終防壁）
+            from trading_agent.models.universe import Universe
+
+            uni = session.get(Universe, sd.ticker)
+            if uni is None or not uni.is_active:
+                # 仮想 ticker や上場廃止銘柄は処理しない（推測しない）
+                skipped_no_holding.append(sd.ticker)
+                continue
+            # 対応する active Portfolio
+            ports = session.exec(
+                select(Portfolio)
+                .where(col(Portfolio.ticker) == sd.ticker)
+                .where(col(Portfolio.status) == "active")
+                .where(col(Portfolio.broker_mode) == broker_mode)
+            ).all()
+            if not ports:
+                skipped_no_holding.append(sd.ticker)
+                continue
+            current_price = price_lookup(sd.ticker)
+            if current_price is None or current_price <= 0:
+                skipped_no_price.append(sd.ticker)
+                continue
+            # 全 active Portfolio を close（同銘柄に複数機が保有していれば全部）
+            for p in ports:
+                entry_p = float(p.buy_price or 0)
+                qty = int(p.qty or 0)
+                pnl_jpy = (current_price - entry_p) * qty
+                p.status = "closed"
+                p.closed_at = utcnow()
+                p.closed_price = current_price
+                p.closed_reason = sd.action  # "sell_loss" or "sell_profit"
+                p.updated_at = utcnow()
+                session.add(p)
+                closed_count += 1
+                closed_details.append(
+                    {
+                        "ticker": sd.ticker,
+                        "personality": p.personality,
+                        "qty": qty,
+                        "buy_price": entry_p,
+                        "closed_price": current_price,
+                        "pnl_jpy": round(pnl_jpy, 0),
+                        "action": sd.action,
+                    }
+                )
+                # Decision に actual_return を記録（evaluate との整合性）
+                if entry_p > 0:
+                    sd.actual_return = (current_price - entry_p) / entry_p
+                sd.evaluated_at = utcnow()
+            # Decision を「処理済」に
+            sd.status = "ordered"  # 既存 _EVALUABLE に含まれる
+            session.add(sd)
+        session.commit()
+
+    return {
+        "status": "active",
+        "closed": closed_count,
+        "skipped_no_price": skipped_no_price,
+        "skipped_no_holding": skipped_no_holding,
+        "details": closed_details,
+    }

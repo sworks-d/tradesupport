@@ -96,6 +96,43 @@ class PersonalitySummary:
 
 
 @dataclass
+class MisatoBriefing:
+    """葛城ミサト作戦部長による DS 4 機の運用報告。
+
+    MISATO ¥100,000 を 4 機（既定均等 ¥25,000×4）に配分して並行検証する設計。
+    「総額」を出すと意味が薄い（4 機の合算ではなく、性格別の相対比較が主目的）ため、
+    ランキングと機ごとの観察コメントだけを返す。
+    """
+
+    ranking: list[dict[str, Any]]  # [{rank, label, pnl_pct, comment}, ...] PnL 降順
+    spread_pct: float              # 首位と最下位の差（pt）
+    verdict: str                   # 全体観察
+    next_action: str               # 次の指示
+
+
+@dataclass
+class MisatoDispatchView:
+    """MISATO オーケストレーターの現状（レポートに掲載するスナップショット）。
+
+    - 元本（MISATO seed） / 4 機への配分（均等 or 実績重み付け）
+    - 割り当て案件数 / 機別の割当銘柄
+    - HALT 状態
+    - 昇格候補（D-23 ゲート達成機）
+    """
+
+    halted: bool
+    halt_reason: str
+    seed_jpy: int
+    allocation: dict[str, int]            # {"REI": 25000, ...}
+    allocation_mode: str                  # "均等" / "実績重み付け"
+    allocation_reason: str
+    assignments_by_pilot: dict[str, list[dict[str, Any]]]  # {pilot: [{ticker, stance, reason, budget}]}
+    promotions: list[dict[str, Any]]      # 昇格推奨機体
+    total_assignments: int
+    generated_at: str
+
+
+@dataclass
 class ReportPayload:
     date: dt.date
     generated_at: dt.datetime
@@ -108,6 +145,8 @@ class ReportPayload:
     universe_size: int
     topics_today: int
     decisions_today: list[dict[str, Any]]
+    misato: "MisatoBriefing | None" = None
+    misato_dispatch: "MisatoDispatchView | None" = None
 
 
 def build_report_payload(engine: Engine, date: dt.date) -> ReportPayload:
@@ -193,20 +232,38 @@ def build_report_payload(engine: Engine, date: dt.date) -> ReportPayload:
                 if rationale and line not in thoughts:
                     thoughts.append(line)
         holdings_payload = []
+        today_d = date  # 売却予定までの日数計算用
         for r in port_rows:
             cur, prev = price_map.get(r.ticker, (float(r.buy_price or 0), float(r.buy_price or 0)))
             qty = float(r.qty or 0)
-            cost = float(r.buy_price or 0) * qty
+            buy_price = float(r.buy_price or 0)
+            cost = buy_price * qty
             mkt = cur * qty
             day_pnl = (cur - prev) * qty
             unrealized = mkt - cost
             unrealized_pct = (unrealized / cost * 100) if cost else 0.0
+
+            # エントリー理由（thesis に "| rationale" で埋め込まれている）
+            text = r.thesis or ""
+            entry_reason = ""
+            if "|" in text:
+                _, _, rationale = text.partition("|")
+                entry_reason = rationale.strip()
+
+            # 売却条件：stop_loss 到達価格 + target_date まで残り日数
+            # v2.1 TASK-SZ4: stop_loss_pct は正値（0.15 = -15%）。stop_price は下げ価格
+            stop_pct = float(r.stop_loss_pct or 0)
+            stop_price = buy_price * (1.0 - stop_pct)
+            # stop までの距離（現価ベース）：マイナス = stop に近い
+            stop_distance_pct = ((cur - stop_price) / cur * 100) if cur else 0.0
+            days_to_exit = (r.target_date - today_d).days if r.target_date else None
+
             holdings_payload.append(
                 {
                     "ticker": r.ticker,
                     "name": name_by_ticker.get(r.ticker, r.ticker),
                     "qty": int(qty),
-                    "buy_price": r.buy_price,
+                    "buy_price": buy_price,
                     "current_price": cur,
                     "buy_date": r.buy_date.isoformat() if r.buy_date else "",
                     "cost": cost,
@@ -215,6 +272,12 @@ def build_report_payload(engine: Engine, date: dt.date) -> ReportPayload:
                     "unrealized_pct": unrealized_pct,
                     "day_change": day_pnl,
                     "horizon_days": r.target_period_days,
+                    # 追加：判断材料
+                    "entry_reason": entry_reason,
+                    "stop_price": stop_price,
+                    "stop_distance_pct": stop_distance_pct,
+                    "target_date": r.target_date.isoformat() if r.target_date else "",
+                    "days_to_exit": days_to_exit,
                 }
             )
         personalities.append(
@@ -255,6 +318,9 @@ def build_report_payload(engine: Engine, date: dt.date) -> ReportPayload:
         for d in today_decisions
     ]
 
+    misato = _build_misato_briefing(personalities)
+    misato_dispatch = _build_misato_dispatch_view(engine)
+
     return ReportPayload(
         date=date,
         generated_at=dt.datetime.now(),
@@ -272,6 +338,139 @@ def build_report_payload(engine: Engine, date: dt.date) -> ReportPayload:
         universe_size=int(universe_size or 0),
         topics_today=int(topics_today or 0),
         decisions_today=decisions_payload,
+        misato=misato,
+        misato_dispatch=misato_dispatch,
+    )
+
+
+def _build_misato_dispatch_view(engine: Engine) -> MisatoDispatchView | None:
+    """MISATO の現状 dispatch（dry-run）をレポート用に整形して返す。"""
+    try:
+        from trading_agent.portfolio.misato import (
+            check_halt,
+            dispatch as misato_dispatch,
+            PROMOTION_THRESHOLDS,  # noqa: F401
+        )
+    except Exception:
+        return None
+
+    seed = 100_000
+    halted, halt_reason = check_halt()
+    try:
+        plan = misato_dispatch(engine, total_budget_jpy=seed, approve=False)
+    except Exception:
+        return None
+
+    assignments_by_pilot: dict[str, list[dict[str, Any]]] = {}
+    for a in plan.assignments:
+        assignments_by_pilot.setdefault(a.assigned_to, []).append(
+            {
+                "ticker": a.ticker,
+                "stance": a.gendo_stance,
+                "reason": a.reason,
+                "budget_jpy": int(a.proposed_budget_jpy),
+            }
+        )
+    alloc = plan.allocation
+    return MisatoDispatchView(
+        halted=plan.halted or halted,
+        halt_reason=plan.halt_reason or halt_reason,
+        seed_jpy=int(plan.total_budget_jpy or seed),
+        allocation={k: int(v) for k, v in (alloc.per_pilot_jpy.items() if alloc else {})},
+        allocation_mode=("実績重み付け" if (alloc and alloc.weighted) else "均等"),
+        allocation_reason=(alloc.reason if alloc else ""),
+        assignments_by_pilot=assignments_by_pilot,
+        promotions=[
+            {
+                "personality": p.personality,
+                "n": p.n,
+                "hit_rate": p.hit_rate,
+                "avg_r": p.avg_r,
+                "note": p.note,
+            }
+            for p in plan.promotions
+        ],
+        total_assignments=len(plan.assignments),
+        generated_at=plan.generated_at,
+    )
+
+
+def _build_misato_briefing(
+    personalities: list[PersonalitySummary],
+) -> MisatoBriefing | None:
+    """葛城ミサト風の作戦報告を生成（性格別ランキング + 観察）。"""
+    if not personalities:
+        return None
+    sorted_p = sorted(personalities, key=lambda p: p.pnl_pct, reverse=True)
+    best, worst = sorted_p[0], sorted_p[-1]
+    spread = best.pnl_pct - worst.pnl_pct
+    all_negative = all(p.pnl_jpy <= 0 for p in personalities)
+
+    # 各機ごとの観察コメント（性格と現状を照らす）
+    def _comment(p: PersonalitySummary) -> str:
+        if p.holdings_count == 0:
+            return "未エントリー（買える銘柄なし or 認識中）"
+        if p.pnl_pct >= 5:
+            return "↑強気モード発動：勝てる場面で集中"
+        if p.pnl_pct <= -5:
+            return "↓守りモード発動：負け方を制限する局面"
+        if p.pnl_pct >= 0:
+            return "順調・想定通り"
+        return "初日コスト負荷を吸収中（手数料・スリッページ反映）"
+
+    ranking = [
+        {
+            "rank": i + 1,
+            "label": p.label,
+            "icon": p.icon,
+            "name": p.name,
+            "pnl_pct": p.pnl_pct,
+            "pnl_jpy": p.pnl_jpy,
+            "holdings_count": p.holdings_count,
+            "day_change_jpy": p.day_change_jpy,
+            "effective_max_pct": p.effective_max_pct,
+            "comment": _comment(p),
+        }
+        for i, p in enumerate(sorted_p)
+    ]
+
+    # 全体観察（合算 PnL ではなく、性格別の動きを語る）
+    if all_negative and abs(spread) < 1.0:
+        verdict = (
+            f"4 機全員が初日マイナス、範囲 {spread:.2f}pt の僅差。"
+            f"これは買付直後の手数料・スリッページ反映で全機に均等に乗ってる初期コスト。"
+            f"差が広がるのは数日先、性格別の真価が出るのはこれからよ。"
+        )
+    elif spread > 3.0:
+        verdict = (
+            f"性格差が顕在化、首位 {best.label}（{best.pnl_pct:+.2f}%）と "
+            f"最下位 {worst.label}（{worst.pnl_pct:+.2f}%）の差が {spread:.2f}pt。"
+            f"検証データとして十分な分散が出てる。"
+        )
+    elif best.pnl_pct > 0 and worst.pnl_pct < 0:
+        verdict = (
+            f"プラス機とマイナス機が混在、{best.label}（{best.pnl_pct:+.2f}%）が"
+            f"勝ち抜けつつ、{worst.label}（{worst.pnl_pct:+.2f}%）は調整中。"
+        )
+    else:
+        verdict = (
+            f"4 機並走、首位 {best.label}（{best.pnl_pct:+.2f}%）・"
+            f"最下位 {worst.label}（{worst.pnl_pct:+.2f}%）。"
+            f"範囲 {spread:.2f}pt、まだ性格差は読み切れない。"
+        )
+
+    next_action = (
+        "明朝 07:00 朝バッチ → 07:15 ダミーシステム自動操縦 → 07:30 評価 → 18:00 本レポート再生成。"
+        "stop / 期限到達分は自動売却、新規 decisions は accept_stances に応じて各機が独自に拾う。"
+        "30 件評価到達まではノータッチ、増額ゲート判定はそれから。"
+        "緊急停止は touch ~/.trading-agent/HALT。"
+    )
+
+    return MisatoBriefing(
+        ranking=ranking,
+        spread_pct=spread,
+        verdict=verdict,
+        next_action=next_action,
     )
 
 

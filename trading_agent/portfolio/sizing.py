@@ -53,12 +53,25 @@ def recommend_position(
         return SizeRec(0.0, 0.0, 0.0, f"算定不可（{reason}）", stop_pct=stop, binding=binding)
 
     if is_jp:
-        shares = float(int(budget // price_jpy))  # moomoo 単元未満＝1株単位
+        # v2.2 TASK-SZ2: 切り捨て丸めで失われる金額を最小化するため、端切れ ≥ 50% なら +1 株を許容
+        # （ただし budget * 1.1 を超えないことを担保＝予算超過は最大 10%）
+        raw_shares = budget / price_jpy
+        floored = int(raw_shares)
+        remainder = raw_shares - floored
+        # 端数 ≥ 0.5 かつ floored+1 株のコストが予算の 1.1 倍以内なら切り上げ
+        if remainder >= 0.5 and (floored + 1) * price_jpy <= budget * 1.1:
+            shares = float(floored + 1)
+        else:
+            shares = float(floored)
         amount = shares * price_jpy
         if shares <= 0:
             note = f"1株(¥{price_jpy:,.0f})が予算(¥{budget:,.0f}/制約{binding})超で購入不可"
         else:
-            note = f"日本株：1株単位×{int(shares)}（moomoo単元未満）・制約{binding}"
+            efficiency = (amount / budget * 100) if budget > 0 else 0
+            note = (
+                f"日本株：1株単位×{int(shares)}（moomoo単元未満）・制約{binding}"
+                f"・予算消化率{efficiency:.0f}%"
+            )
     else:
         shares = round(budget / price_jpy, 4)  # 米株は端株可
         amount = shares * price_jpy
@@ -78,12 +91,17 @@ def recommend_position(
 
 
 def _binding(rmult: float, cap: float, cash: float) -> str:
-    """最小の制約名を返す（透明性：なぜこのサイズか）。"""
+    """最小の制約名を返す（透明性：なぜこのサイズか）。
+
+    v2.4 TASK-SZ3: float の `==` 比較を math.isclose に置換（浮動小数点誤差対策）。
+    """
+    import math
+
     smallest = min(rmult, cap, cash)
     if smallest <= 0:
         return "cash"
-    if smallest == rmult:
+    if math.isclose(smallest, rmult, rel_tol=1e-9):
         return "r-mult"
-    if smallest == cap:
+    if math.isclose(smallest, cap, rel_tol=1e-9):
         return "cap"
     return "cash"

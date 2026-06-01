@@ -47,15 +47,27 @@ def evaluate_position(
     stop_pct: float,
     benchmark_return: float | None = None,
 ) -> EvalResult:
-    """エントリー価格と評価日の実価格から成績を出す。stop到達=miss・target到達=hit。"""
+    """エントリー価格と評価日の実価格から成績を出す。
+
+    v2.5 TASK-E4: neutral 判定を更に細分化（ストップ付近 / ターゲット付近 / 中間）。
+    - miss: actual <= -stop_pct（規律到達）
+    - hit: actual >= target_return（目標到達）
+    - near_miss: -stop_pct < actual < -stop_pct * 0.7（ストップから 30% 以内）
+    - near_hit: target_return * 0.7 <= actual < target_return（ターゲットの 70% 以上達成）
+    - neutral: 上記以外（明確な hit/miss でない中間）
+    """
     if entry_price <= 0:
         raise ValueError("entry_price must be > 0")
     actual = (exit_price - entry_price) / entry_price
     r = actual / stop_pct if stop_pct > 0 else 0.0
     if actual <= -stop_pct:
-        outcome = "miss"  # 損切りライン到達
+        outcome = "miss"
     elif actual >= target_return:
-        outcome = "hit"  # 目標到達
+        outcome = "hit"
+    elif actual < -stop_pct * 0.7:
+        outcome = "near_miss"  # ストップ付近で踏ん張った
+    elif actual >= target_return * 0.7:
+        outcome = "near_hit"  # ターゲットに肉薄
     else:
         outcome = "neutral"
     return EvalResult(

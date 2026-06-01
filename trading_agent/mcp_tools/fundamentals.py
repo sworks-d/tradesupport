@@ -139,21 +139,35 @@ class _MemEntry:
 
 
 def is_jp_ticker(ticker: str) -> bool:
-    """日本株ティッカーか判定する（``7203`` / ``7203.T`` のような数字コード）。"""
-    code = ticker.split(".")[0]
-    return ticker.upper().endswith(".T") or code.isdigit()
+    """日本株ティッカーか判定する。
+
+    対応形式:
+      - 旧型: 4 桁数字（``7203``, ``9432``）
+      - 新型: 3-4 桁数字 + 末尾 1 文字アルファベット（``141A``, ``285A``）※2024 年以降の新規上場
+      - ``.T`` サフィックス付（``7203.T``）
+    """
+    if ticker.upper().endswith(".T"):
+        return True
+    code = ticker.split(".")[0].upper()
+    if code.isdigit():
+        return True
+    # 新型 ticker: 末尾 1 文字がアルファベット、それ以外が数字
+    if 4 <= len(code) <= 5 and code[-1].isalpha() and code[:-1].isdigit():
+        return True
+    return False
 
 
 def to_yfinance_symbol(ticker: str) -> str:
     """yfinance に渡せる形式に正規化する（JP は ``.T`` を付与、US はそのまま）。
 
-    - ``"7203"``    → ``"7203.T"``
-    - ``"7203.T"``  → ``"7203.T"``（冪等）
+    - ``"7203"``    → ``"7203.T"``    (旧型)
+    - ``"141A"``    → ``"141A.T"``    (新型 ticker)
+    - ``"7203.T"``  → ``"7203.T"``    (冪等)
     - ``"NVDA"``    → ``"NVDA"``
     """
     if ticker.upper().endswith(".T"):
         return ticker
-    if ticker.split(".")[0].isdigit():
+    if is_jp_ticker(ticker):
         return f"{ticker}.T"
     return ticker
 

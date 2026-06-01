@@ -45,6 +45,17 @@ class Portfolio(SQLModel, table=True):
     # ペーパー検証用：性格別 portfolio 振り分け（defender / aggressor / balanced）。
     # None は単一 portfolio 運用（旧挙動）として扱う。
     personality: str | None = Field(default=None, index=True)
+    # v2.8: broker_mode 別管理（Paper / Live 並行運用）
+    broker_mode: str = Field(default="paper", index=True)
+
+    # v2.10 Phase 1A-Step2: ピラミッディング（段階エントリー）
+    # planned_total_qty: 機別 initial_alloc 適用後の「予定総量」（None = 旧挙動・一括 fill）
+    # current_alloc = qty / planned_total_qty で「現在の累積比率」を計算する
+    planned_total_qty: int | None = None
+    # v2.10 Phase 1A-Step2: 真の trailing stop 用の含み益ピーク（小数表記）
+    # peak_pnl_pct = max(過去日次の (current - entry) / entry)
+    # None = 未初期化（初回 trailing_check で現在値で初期化）
+    peak_pnl_pct: float | None = None
 
     created_at: dt.datetime = Field(default_factory=utcnow)
     updated_at: dt.datetime = Field(default_factory=utcnow)

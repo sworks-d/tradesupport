@@ -75,27 +75,40 @@ def gendo_recommend(
     voting_v = voting(verdicts)
     buys = [v for v in voting_v if v.verdict == "buy"]
     unanimous_buy = bool(voting_v) and len(buys) == len(voting_v)
-    red = credibility_flag == "warn"
+    # v2.5 検証: credibility "unknown" も「赤＝触らない」側に倒す（保守側）
+    red = credibility_flag in ("warn", "unknown")
 
+    # v2.4 TASK-M10: reason 文字列をテンプレ撤去、verdict + flags から構造化生成
+    # 機械的な「コード生成」を明示するために、判定要素を列挙する形式に。
     if holding_exit in ("stop", "time"):
         action, sleeve = "撤退", "—"
         why = "固定stop到達" if holding_exit == "stop" else "保有期限到達"
-        reason = f"守りの規律：{why}。機械的に降りる（攻めの希望で覆さない）。"
+        reason = f"撤退条件発火: {why}（規律: 機械的に降りる）"
     elif red:
         action, sleeve = "見送り", "—"
-        reason = "守り＝赤（信用性の警戒＝粉飾/倒産の疑い）。攻めが何を言おうと地雷は触らない。"
+        reason = f"signal: credibility={credibility_flag} (信用性赤=粉飾/倒産の疑い) → 見送り"
     elif unanimous_buy and not verification.default_hold:
         action, sleeve = "積み増し", "core"
-        reason = "守り＝安全（赤なし）＋業績・文脈が揃う。質コアとして淡々と積む。"
+        # voting_v は MELCHIOR+CASPER の 2 つ
+        buys_str = ", ".join(f"{v.judge}=buy" for v in voting_v)
+        reason = f"signals: [{buys_str}] + credibility=ok + verification.default_hold=False → core 積み増し"
     elif offense_strong and not red:
         action, sleeve = "小さく試す", "satellite"
         reason = (
-            "守りは青だが業績・文脈は揃わず。攻めは未実証＝サテライトで死ぬサイズだけ"
-            "（昇格前は枠0＝情報のみ）。"
+            f"signals: offense_strong=True, credibility=ok, unanimous_buy=False"
+            f" → satellite で小サイズ（昇格前 = 情報のみ）"
         )
     else:
         action, sleeve = "静観", "—"
-        reason = "割れ/未照合で決め手なし。今は動かない（保留が既定）。"
+        flags = []
+        if verification.default_hold:
+            flags.append("default_hold=True")
+        if any(v.verdict == "na" for v in voting_v):
+            flags.append("na 含む")
+        if not unanimous_buy:
+            flags.append("unanimous_buy=False")
+        flag_str = ", ".join(flags) if flags else "決め手なし"
+        reason = f"signals: [{flag_str}] → 静観"
 
     defense_conf = "●●●（実証＝外す選定は効く）" if credibility_flag in ("ok", "warn") else "●●"
     offense_conf = "○○（較正前＝参考・賭けない）" if offense_strong else "○（弱い/材料薄）"

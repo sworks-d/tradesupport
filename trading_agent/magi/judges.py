@@ -51,16 +51,87 @@ def _refs_to_json(refs: list[SourceRef] | None) -> list[dict[str, Any]]:
     return out
 
 
-def melchior(ticker: str, fundamentals: Any) -> JudgeVerdict:
+# v2.4 TASK-M7: 業種別閾値テーブル（参考値・実証データで校正予定）
+# 各業種で「典型的に高い指標」が違うため、一律閾値は false positive/negative を量産する。
+# - 半導体: 高 OM (20%+) が普通 → 10% では基準甘い
+# - 不動産: 低 OM だが高 D/E が当たり前 → D/E 2.0 で warn は厳しすぎる
+# - 銀行: D/E は機能しない（業種除外で対応・Z7）
+# - 小売: OM 5% で十分（低マージン業界）
+# - サービス業: 高 ROE 期待値（インフラ少）
+_SECTOR_THRESHOLDS: dict[str, dict[str, float]] = {
+    "Technology": {  # 半導体・IT
+        "revenue_growth_strong": 0.15,
+        "earnings_growth_strong": 0.15,
+        "operating_margin_strong": 0.20,
+        "profit_margin_strong": 0.15,
+        "roe_strong": 0.20,
+        "de_warn": 1.5,
+    },
+    "Real Estate": {  # 不動産
+        "revenue_growth_strong": 0.05,
+        "earnings_growth_strong": 0.05,
+        "operating_margin_strong": 0.30,
+        "profit_margin_strong": 0.10,
+        "roe_strong": 0.08,
+        "de_warn": 3.0,  # 業界的に高 D/E が標準
+    },
+    "Consumer Defensive": {  # 食品・日用品
+        "revenue_growth_strong": 0.05,
+        "earnings_growth_strong": 0.05,
+        "operating_margin_strong": 0.08,
+        "profit_margin_strong": 0.05,
+        "roe_strong": 0.10,
+        "de_warn": 2.0,
+    },
+    "Consumer Cyclical": {  # 小売・自動車
+        "revenue_growth_strong": 0.08,
+        "earnings_growth_strong": 0.08,
+        "operating_margin_strong": 0.05,
+        "profit_margin_strong": 0.05,
+        "roe_strong": 0.12,
+        "de_warn": 2.0,
+    },
+    "Healthcare": {  # 医療
+        "revenue_growth_strong": 0.10,
+        "earnings_growth_strong": 0.10,
+        "operating_margin_strong": 0.15,
+        "profit_margin_strong": 0.10,
+        "roe_strong": 0.15,
+        "de_warn": 1.8,
+    },
+    # フォールバック既定
+    "_default": {
+        "revenue_growth_strong": 0.10,
+        "earnings_growth_strong": 0.10,
+        "operating_margin_strong": 0.10,
+        "profit_margin_strong": 0.10,
+        "roe_strong": 0.15,
+        "de_warn": 2.0,
+    },
+}
+
+
+def _sector_thresholds(sector: str | None) -> dict[str, float]:
+    """sector に応じた閾値テーブルを取得。未知の sector は default。"""
+    if sector and sector in _SECTOR_THRESHOLDS:
+        return _SECTOR_THRESHOLDS[sector]
+    return _SECTOR_THRESHOLDS["_default"]
+
+
+def melchior(ticker: str, fundamentals: Any, *, sector: str | None = None) -> JudgeVerdict:
     """業績審判：fundamentals の実数値だけで、成長・収益性・健全性・CFを多面評価する（P1-5）。
 
     数値はすべてコード取得値（R1）。欠損した指標は評価から外す（R4：推測で埋めない）。
     総合スコアは出さず、良い兆候(pos)と警戒材料(red)を集約して buy/hold/warn/na を決める。
     財務は保守的に：赤字・減収減益・過剰レバレッジ・流動性不足など赤が1つでもあれば warn 寄り。
+
+    v2.4 TASK-M7: sector を渡すと業種別閾値が適用される（半導体は OM 20% / 不動産は D/E 3.0 等）。
+    sector=None なら _default（旧来の一律閾値）。
     """
     data = getattr(fundamentals, "data", {}) or {}
     refs = _refs_to_json(getattr(fundamentals, "source_refs", []))
     asof = getattr(fundamentals, "data_asof", None)
+    th = _sector_thresholds(sector)
 
     def pct(x: float) -> str:
         return f"{x * 100:.0f}%"
@@ -74,7 +145,7 @@ def melchior(ticker: str, fundamentals: Any) -> JudgeVerdict:
     if rg is not None:
         seen += 1
         parts.append(f"増収率{pct(rg)}")
-        if rg >= 0.10:
+        if rg >= th["revenue_growth_strong"]:
             pos.append("増収")
         elif rg < 0:
             red.append("減収")
@@ -83,7 +154,7 @@ def melchior(ticker: str, fundamentals: Any) -> JudgeVerdict:
     if eg is not None:
         seen += 1
         parts.append(f"純益成長{pct(eg)}")
-        if eg >= 0.10:
+        if eg >= th["earnings_growth_strong"]:
             pos.append("増益")
         elif eg < 0:
             red.append("減益")
@@ -92,7 +163,7 @@ def melchior(ticker: str, fundamentals: Any) -> JudgeVerdict:
     if om is not None:
         seen += 1
         parts.append(f"営業利益率{pct(om)}")
-        if om >= 0.10:
+        if om >= th["operating_margin_strong"]:
             pos.append("営業利益率良好")
         elif om < 0:
             red.append("営業赤字")
@@ -101,7 +172,7 @@ def melchior(ticker: str, fundamentals: Any) -> JudgeVerdict:
     if pm is not None:
         seen += 1
         parts.append(f"純利益率{pct(pm)}")
-        if pm >= 0.10:
+        if pm >= th["profit_margin_strong"]:
             pos.append("高純利益率")
         elif pm < 0:
             red.append("最終赤字")
@@ -110,7 +181,7 @@ def melchior(ticker: str, fundamentals: Any) -> JudgeVerdict:
     if roe is not None:
         seen += 1
         parts.append(f"ROE{pct(roe)}")
-        if roe >= 0.15:
+        if roe >= th["roe_strong"]:
             pos.append("高ROE")
         elif roe < 0:
             red.append("ROEマイナス")
@@ -118,10 +189,19 @@ def melchior(ticker: str, fundamentals: Any) -> JudgeVerdict:
     de = data.get("debt_to_equity")
     if de is not None:
         seen += 1
-        ratio = de / 100 if de > 5 else de  # yfinance は % 表記が多い → 比率へ
-        parts.append(f"D/E{ratio:.1f}")
-        if ratio > 2.0:
-            red.append("高レバレッジ")
+        # v2.2 TASK-M2: yfinance の D/E は 0-1 比率 or % 表記が混在する。
+        # 単位判定の境界（>5）を明示し、境界値（4.x-5.x）の銘柄は不確定として na 扱い。
+        # 比率 5 = 500% を一般企業の上限と仮定。これを超える場合は % 表記と判定。
+        if 3.0 < de < 10.0:
+            # 不確定域：% なら 300-1000%（多くは高レバレッジ）、比率なら 3-10（極端な高レバ）
+            # どちらでも「高レバレッジ」扱いになるが UI には「単位不確定」を明示
+            parts.append(f"D/E{de:.1f}（単位不確定）")
+            red.append("高レバレッジ（単位不確定）")
+        else:
+            ratio = de / 100 if de >= 10 else de  # 10 以上は % 表記と確定
+            parts.append(f"D/E{ratio:.1f}")
+            if ratio > th["de_warn"]:  # v2.4 TASK-M7: 業種別閾値
+                red.append("高レバレッジ")
 
     cr = data.get("current_ratio")
     if cr is not None:
@@ -151,11 +231,30 @@ def melchior(ticker: str, fundamentals: Any) -> JudgeVerdict:
             data_asof=asof,
         )
 
-    growth_ok = (rg is not None and rg >= 0.10) or (eg is not None and eg >= 0.10)
+    # v2.1 TASK-M1: seen<3 はデータ不足として「強気側」判定を出さない
+    # 例外: 決定的赤フラグ (red≥1) があれば warn を出す（規律＝守り側は維持）
+    if seen < 3 and not red:
+        return JudgeVerdict(
+            ticker=ticker,
+            judge="MELCHIOR",
+            verdict="hold",
+            confidence="低",
+            reason=(
+                f"指標 {seen}/9 のみ取得＝データ不足で判定保留。"
+                + ("・".join(parts) + "。" if parts else "")
+            ),
+            source_refs=refs,
+            data_asof=asof,
+        )
+
+    growth_ok = (
+        (rg is not None and rg >= th["revenue_growth_strong"])
+        or (eg is not None and eg >= th["earnings_growth_strong"])
+    )
     profit_ok = (
-        (om is not None and om >= 0.10)
-        or (pm is not None and pm >= 0.10)
-        or (roe is not None and roe >= 0.15)
+        (om is not None and om >= th["operating_margin_strong"])
+        or (pm is not None and pm >= th["profit_margin_strong"])
+        or (roe is not None and roe >= th["roe_strong"])
     )
 
     if red:
@@ -240,14 +339,30 @@ def balthasar(ticker: str, technicals: Any) -> JudgeVerdict:
 
     bullish = ("golden_cross" in signals) or ("macd_bullish" in signals)
     bearish = ("death_cross" in signals) or ("overbought_rsi" in signals)
-    if bearish and "golden_cross" not in signals:
-        verdict, conf = "warn", "中"
-    elif bullish and "overbought_rsi" not in signals:
-        verdict, conf = "buy", "中"
-    else:
-        verdict, conf = "hold", "中"
 
+    # v2.2 TASK-M8: confidence をシグナル強度（signal 数 + RSI 強度）から動的算定
     rsi = data.get("rsi")
+    rsi_extreme = isinstance(rsi, int | float) and (rsi >= 75 or rsi <= 25)
+    bullish_count = sum(s in signals for s in ("golden_cross", "macd_bullish", "bollinger_breakout_up"))
+    bearish_count = sum(s in signals for s in ("death_cross", "overbought_rsi", "macd_bearish", "bollinger_breakout_down"))
+
+    def _dynamic_conf(signal_count: int, rsi_strong: bool) -> str:
+        score = signal_count + (1 if rsi_strong else 0)
+        if score >= 3:
+            return "高"
+        if score >= 2:
+            return "中"
+        return "低"
+
+    if bearish and "golden_cross" not in signals:
+        verdict = "warn"
+        conf = _dynamic_conf(bearish_count, rsi_extreme)
+    elif bullish and "overbought_rsi" not in signals:
+        verdict = "buy"
+        conf = _dynamic_conf(bullish_count, rsi_extreme)
+    else:
+        verdict, conf = "hold", "低"  # 旧 "中" → "低"（明確シグナル不在を反映）
+
     rsi_s = f"RSI{rsi:.0f}・" if isinstance(rsi, int | float) else ""
     sig_s = "・".join(signals) if signals else "明確なシグナルなし"
     return JudgeVerdict(
@@ -263,11 +378,46 @@ def balthasar(ticker: str, technicals: Any) -> JudgeVerdict:
 
 
 # 文脈の方向を示唆するキーワード（決定論ヒューリスティック。本格判定はLLMで補完）
+# v2.1 TASK-M3: 辞書拡張 + 否定文脈検出
 _NEG = (
+    # 既存
     "下方修正", "減益", "赤字", "訴訟", "不正", "遅延", "リコール",
     "delay", "lawsuit", "recall",
+    # 業績悪化系
+    "業績悪化", "業務停止", "事業撤退", "希薄化", "希望退職", "工場閉鎖",
+    "減損", "特別損失", "債務超過", "資本減少", "格下げ", "減配", "無配",
+    # 信用毀損系
+    "監理銘柄", "上場廃止", "粉飾", "課徴金", "不適切な会計", "意見不表明",
 )
-_POS = ("上方修正", "最高益", "増配", "受注", "record", "beat", "surge")
+_POS = (
+    # 既存
+    "上方修正", "最高益", "増配", "受注", "record", "beat", "surge",
+    # 業績好調系
+    "黒字転換", "営業益最高", "過去最高", "業績好調", "拡大", "シェア拡大",
+    "特需", "新工場", "新製品", "新サービス", "売上倍増", "受注好調",
+    # 戦略・資本系
+    "自社株買い", "配当増", "格上げ", "戦略提携", "資本業務提携",
+    "TOB", "M&A", "新規参入", "黒字回復",
+)
+
+# 前後の否定/打ち消し語（こちらが近くにあるとカウントしない）
+_NEGATION_WINDOW = 10  # 前後 10 文字以内
+_NEGATION_WORDS = ("脱却", "回避", "ない", "無し", "なし", "取り消し", "撤回", "解除")
+
+
+def _count_with_negation(text: str, words: tuple[str, ...]) -> int:
+    """キーワード出現を、近傍の否定語で打ち消した上でカウント（v2.1 TASK-M3）。"""
+    import re
+
+    count = 0
+    for w in words:
+        for m in re.finditer(re.escape(w.lower()), text):
+            window_start = max(0, m.start() - _NEGATION_WINDOW)
+            window_end = min(len(text), m.end() + _NEGATION_WINDOW)
+            window = text[window_start:window_end]
+            if not any(n in window for n in _NEGATION_WORDS):
+                count += 1
+    return count
 
 
 def casper(ticker: str, news: Any = None, disclosure: Any = None) -> JudgeVerdict:
@@ -301,8 +451,9 @@ def casper(ticker: str, news: Any = None, disclosure: Any = None) -> JudgeVerdic
     text = " ".join(
         f"{it.get('title', '')} {it.get('summary', '')}" for it in items
     ).lower()
-    neg = sum(1 for k in _NEG if k.lower() in text)
-    pos = sum(1 for k in _POS if k.lower() in text)
+    # v2.1 TASK-M3: 否定文脈を考慮したカウント
+    neg = _count_with_negation(text, _NEG)
+    pos = _count_with_negation(text, _POS)
     if neg > pos:
         verdict = "warn"
     elif pos > neg:
@@ -321,6 +472,7 @@ def casper(ticker: str, news: Any = None, disclosure: Any = None) -> JudgeVerdic
         ),
         source_refs=refs,
         data_asof=asof,
+        verdict_source="keyword",  # v2.2 TASK-M9: キーワードベース判定
     )
 
 
@@ -331,14 +483,17 @@ def run_judges(
     technicals: Any,
     news: Any = None,
     disclosure: Any = None,
+    sector: str | None = None,
 ) -> list[JudgeVerdict]:
     """3審判を独立に走らせる。
 
     各審判は自分のソースのみを受け取り、他審判の出力は一切渡らない（三権独立）。
     返り値は MELCHIOR / BALTHASAR / CASPER の3判定（順序固定）。
+
+    v2.4 TASK-M7: sector を渡すと MELCHIOR が業種別閾値で判定する。
     """
     return [
-        melchior(ticker, fundamentals),
+        melchior(ticker, fundamentals, sector=sector),
         balthasar(ticker, technicals),
         casper(ticker, news=news, disclosure=disclosure),
     ]

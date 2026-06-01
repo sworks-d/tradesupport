@@ -388,9 +388,11 @@ class MarketAnalystAgent(Agent[MarketAnalystInput]):
             snap = session.exec(
                 select(PortfolioSnapshot).order_by(col(PortfolioSnapshot.date).desc())
             ).first()
+            # v2.5 検証: portfolio_snapshots が無い時の cash/total は ¥100k（D-23 元本）
+            # usd_jpy のみ取得失敗時 None（旧 150.0 fallback は実レート 158-159 と乖離）
             cash = snap.cash_jpy if snap else 100000.0
             total = snap.total_assets_jpy if snap else 100000.0
-            usd_jpy = snap.usd_jpy_rate if snap else 150.0
+            usd_jpy = snap.usd_jpy_rate if snap else None
             max_cash = _float_setting(session, "max_position_pct_of_cash", 0.20)
             max_total = _float_setting(session, "max_position_pct_of_total", 0.10)
         return {

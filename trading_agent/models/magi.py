@@ -87,6 +87,9 @@ class JudgeVerdict(SQLModel, table=True):
     verdict: str  # buy / sell / hold / warn / na
     confidence: str  # 高 / 中 / 低 / na（定性ラベル D-11。総合スコアは出さない）
     reason: str  # コード生成の根拠文（数値・時点ベース）
+    # v2.2 TASK-M9: 判定方法のメタデータ（"keyword" / "llm" / "code"）
+    # CASPER は LLM 失敗時に keyword フォールバック → UI で区別できるようにする
+    verdict_source: str = Field(default="code")
 
     source_refs: list[dict[str, Any]] = Field(default_factory=list, sa_column=Column(JSON))
     data_asof: dt.datetime | None = None

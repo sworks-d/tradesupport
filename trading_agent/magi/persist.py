@@ -40,7 +40,7 @@ from trading_agent.screening import (
     melchior_credibility_counter,
 )
 from trading_agent.utils.logger import get_logger
-from trading_agent.utils.time_utils import utcnow
+from trading_agent.utils.time_utils import today_jst, utcnow
 
 _log = get_logger("magi_persist")
 
@@ -54,8 +54,11 @@ FinancialsFetcher = Callable[[str], Financials | None]
 def materialize_decisions(
     engine: Engine, candidates: list[str], *, action: str = "buy"
 ) -> list[int]:
-    """候補ティッカー → 当日の `Decision(status="verifying")`。同日同銘柄は再利用（冪等）。"""
-    today = utcnow().date()
+    """候補ティッカー → 当日の `Decision(status="verifying")`。同日同銘柄は再利用（冪等）。
+
+    v2.10: cancelled な過去 Decision は再利用しない（cleanup_for_fresh_run 後の真の fresh run 実現）。
+    """
+    today = today_jst()
     ids: list[int] = []
     with Session(engine, expire_on_commit=False) as session:
         for ticker in candidates:
@@ -64,6 +67,7 @@ def materialize_decisions(
                 .where(col(Decision.date) == today)
                 .where(col(Decision.ticker) == ticker)
                 .where(col(Decision.action) == action)
+                .where(col(Decision.status) != "cancelled")
             ).first()
             if existing is not None:
                 if existing.id is not None:
@@ -82,7 +86,7 @@ def pending_decision_ids(
     engine: Engine, *, statuses: tuple[str, ...] = ("verifying",)
 ) -> list[int]:
     """当日の未検証 decision の id（DAG ハンドオフ用＝DB経由）。"""
-    today = utcnow().date()
+    today = today_jst()
     with Session(engine) as session:
         rows = session.exec(
             select(Decision)

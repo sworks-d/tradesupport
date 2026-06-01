@@ -57,28 +57,55 @@ class FillCost:
         return (self.total_cost_jpy - base) / base if base else 0.0
 
 
+def _liquidity_slippage(volume_30d_avg: float | None, base: float) -> float:
+    """v2.4 TASK-F1: 流動性に応じて slippage を変動させる。
+
+    出来高が薄い銘柄ほど slippage が大きい（実弾相当）。
+    - volume_30d_avg ≥ 1M shares/day → base そのまま
+    - volume_30d_avg <  1M           → 1.5x
+    - volume_30d_avg <  100k         → 2.5x
+    - 取得不能 (None)                → base × 1.5（保守側）
+    """
+    if volume_30d_avg is None:
+        return base * 1.5
+    if volume_30d_avg < 100_000:
+        return base * 2.5
+    if volume_30d_avg < 1_000_000:
+        return base * 1.5
+    return base
+
+
 def simulate_fill(
     *,
     market_price: float,
     qty: int,
     is_jp: bool,
-    usdjpy: float = 159.0,
+    usdjpy: float | None = None,
     side: str = "buy",  # "buy" / "sell"
     fees: MoomooFeeSchedule = DEFAULT_FEES,
+    volume_30d_avg: float | None = None,
 ) -> FillCost:
     """1 件の紙約定に moomoo 相当の手数料・スリッページ・為替を適用する。
 
     - `market_price`: 翌寄り価格（is_jp なら JPY、US なら USD のいずれか前提）
     - `qty`: 約定株数（v1 整数株）
     - `is_jp`: True なら単元未満手数料 0、US ETF は 0.495%
-    - `usdjpy`: 為替レート（US 銘柄を JPY 換算）
+    - `usdjpy`: 為替レート（US 銘柄を JPY 換算）。v2.4 TASK-F2: US 銘柄では必須
     - `side`: buy だと cash 引き、sell だと cash 増（fee は両方発生）
 
     Returns: FillCost
+
+    v2.4 TASK-F2: usdjpy 既定値 159.0 を撤去。US 銘柄で usdjpy=None なら ValueError。
+    （米国為替を引数で受け取る or 取得失敗を明示的に検出するため）
     """
-    # 1. スリッページ（買い: 高く約定 / 売り: 安く約定）
+    if not is_jp and usdjpy is None:
+        raise ValueError(
+            "simulate_fill: US 銘柄では usdjpy 引数が必須（実レートを渡してください）"
+        )
+    # 1. スリッページ（買い: 高く約定 / 売り: 安く約定）。v2.4 TASK-F1: 流動性連動
+    effective_slip = _liquidity_slippage(volume_30d_avg, fees.slippage_pct)
     direction = 1 if side == "buy" else -1
-    fill_price = market_price * (1.0 + direction * fees.slippage_pct)
+    fill_price = market_price * (1.0 + direction * effective_slip)
 
     # 2. 名目金額（JPY 建て）
     if is_jp:

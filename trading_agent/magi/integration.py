@@ -49,9 +49,11 @@ def classify_split(verdicts: list[JudgeVerdict]) -> SplitResult:
     def not_buy(v: JudgeVerdict | None) -> bool:
         return v is not None and v.verdict != "buy"
 
-    # B-5：全会一致でも複数審判が自領域内に逆向きの事実を摘出＝内在不安（BALTHASARの事実も数える）
-    judges_with_counter = sum(1 for v in verdicts if v.counter_within_domain)
-    internal_unease = total > 0 and n == total and judges_with_counter >= 2
+    # B-5：全会一致でも投票審判（MELCHIOR/CASPER）が逆向きの事実を持っていれば内在不安。
+    # v2.2 TASK-M6: BALTHASAR（投票外）の counter は内在不安判定に含めない（票数えと整合）。
+    # BALTHASAR の counter は別途 commander.counter_argument で「補助事実」として表示。
+    judges_with_counter = sum(1 for v in voting_v if v.counter_within_domain)
+    internal_unease = total > 0 and n == total and judges_with_counter >= 1
 
     # 価格は投票外だが「事実」として併記（票には数えない）
     price_note = ""

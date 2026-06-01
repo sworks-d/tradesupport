@@ -150,4 +150,5 @@ async def casper_llm(
         reason=reason,
         source_refs=refs,
         data_asof=asof,
+        verdict_source="llm",  # v2.2 TASK-M9: Sonnet 解釈で判定
     )

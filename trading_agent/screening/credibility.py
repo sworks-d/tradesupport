@@ -89,8 +89,30 @@ def _gross_margin(p: PeriodFinancials) -> float | None:
     return None
 
 
+# v2.4 TASK-Z8: 日本株向け閾値マイルド化
+# 米国 Beneish/Altman は米国会計基準で校正された数値。日本会計基準（GAAP）との
+# 違いで false positive が出るため、JP ticker（4 桁数字）には ±0.2 マイルドな閾値を適用。
+_BENEISH_RISK_US = -1.78
+_BENEISH_GREY_US = -2.22
+_BENEISH_RISK_JP = -1.50  # 日本株は緩め（米国 -1.78 → JP -1.50）
+_BENEISH_GREY_JP = -1.95
+_ALTMAN_SAFE_US = 2.99
+_ALTMAN_GREY_US = 1.81
+_ALTMAN_SAFE_JP = 2.50  # 日本株は緩め
+_ALTMAN_GREY_JP = 1.50
+
+
+def _is_jp_ticker(ticker: str) -> bool:
+    """4 桁数字なら JP ticker と判定。"""
+    base = ticker.split(".")[0]
+    return base.isdigit() and len(base) == 4
+
+
 def beneish_m_score(fin: Financials) -> ScoreResult:
-    """8比率の Beneish M-Score（前期比中心）。M>-1.78 で操作の疑い。"""
+    """8比率の Beneish M-Score（前期比中心）。M>-1.78 で操作の疑い。
+
+    v2.4 TASK-Z8: JP ticker は閾値を緩める（米国基準で false positive を防ぐ）。
+    """
     if not fin.has_two_periods():
         return ScoreResult("Beneish M", None, "na", "2期分の財務が無く算定不能")
     t, p = fin.current, fin.prior
@@ -132,12 +154,17 @@ def beneish_m_score(fin: Financials) -> ScoreResult:
         + 4.679 * tata  # type: ignore[operator]
         - 0.327 * (lvgi or 1.0)
     )
-    if m > -1.78:
-        zone, note = "risk", "利益操作の疑い（M>-1.78）。売掛金/発生高など要警戒"
-    elif m > -2.22:
-        zone, note = "grey", "グレー（-2.22<M<-1.78）"
+    # v2.4 TASK-Z8: JP ticker は閾値を緩める
+    is_jp = _is_jp_ticker(fin.ticker)
+    risk_th = _BENEISH_RISK_JP if is_jp else _BENEISH_RISK_US
+    grey_th = _BENEISH_GREY_JP if is_jp else _BENEISH_GREY_US
+    jp_note = "（JP 基準）" if is_jp else ""
+    if m > risk_th:
+        zone, note = "risk", f"利益操作の疑い（M>{risk_th}）{jp_note}。売掛金/発生高など要警戒"
+    elif m > grey_th:
+        zone, note = "grey", f"グレー（{grey_th}<M<{risk_th}）{jp_note}"
     else:
-        zone, note = "safe", "操作の兆候は弱い（M<-2.22）"
+        zone, note = "safe", f"操作の兆候は弱い（M<{grey_th}）{jp_note}"
     return ScoreResult("Beneish M", round(m, 3), zone, note)
 
 
@@ -196,12 +223,17 @@ def altman_z_score(fin: Financials) -> ScoreResult:
     if missing:
         return ScoreResult("Altman Z", None, "na", f"変数欠損：{'/'.join(missing)}")
     z = 1.2 * a + 1.4 * b + 3.3 * c + 0.6 * d + 1.0 * e  # type: ignore[operator]
-    if z > 2.99:
-        zone, note = "safe", "倒産リスク低（Z>2.99）"
-    elif z >= 1.81:
-        zone, note = "grey", "グレー（1.81≤Z≤2.99）"
+    # v2.4 TASK-Z8: JP ticker は閾値を緩める
+    is_jp = _is_jp_ticker(fin.ticker)
+    safe_th = _ALTMAN_SAFE_JP if is_jp else _ALTMAN_SAFE_US
+    grey_th = _ALTMAN_GREY_JP if is_jp else _ALTMAN_GREY_US
+    jp_note = "（JP 基準）" if is_jp else ""
+    if z > safe_th:
+        zone, note = "safe", f"倒産リスク低（Z>{safe_th}）{jp_note}"
+    elif z >= grey_th:
+        zone, note = "grey", f"グレー（{grey_th}≤Z≤{safe_th}）{jp_note}"
     else:
-        zone, note = "risk", "倒産リスク警戒（Z<1.81）"
+        zone, note = "risk", f"倒産リスク警戒（Z<{grey_th}）{jp_note}"
     return ScoreResult("Altman Z", round(z, 2), zone, note)
 
 
@@ -214,10 +246,16 @@ def assess_credibility(
     F-Score は質評価（MELCHIORへ）。低Fも value trap 警戒として warn に寄与。
     disclosures（TDnet/EDINET）の D-14 レッドフラグ（GC注記/訂正/上場廃止等）も warn に寄与（S4b）。
     """
+    # v2.2 TASK-Z7: sector が空/不明の場合も「除外扱い」にして M/Z を na に。
+    # 理由: 金融・REIT で M/Z は機能しない → sector 不明だと false positive のリスク。
+    sector_known = sector is not None and sector not in ("", "Unknown", "unknown", "—")
     excluded = sector is not None and sector in _EXCLUDED_SECTORS
     if excluded:
         m = ScoreResult("Beneish M", None, "na", f"業種除外（{sector}）")
         z = ScoreResult("Altman Z", None, "na", f"業種除外（{sector}）")
+    elif not sector_known:
+        m = ScoreResult("Beneish M", None, "na", "業種不明（M-Score 適用外）")
+        z = ScoreResult("Altman Z", None, "na", "業種不明（Z-Score 適用外）")
     else:
         m = beneish_m_score(fin)
         z = altman_z_score(fin)

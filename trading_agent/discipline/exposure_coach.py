@@ -61,18 +61,40 @@ class ExposureDecision:
     inputs_missing: list[str] = field(default_factory=list)
 
 
-# === 重み付き和の係数（暫定・実測後に調整）===
+# v2.4 TASK-EX1: 重み付き和の係数。環境変数で上書き可能（実測後の校正用）。
 # 合計=1.0。top_risk は反転して使う（高い=曝露下げ要因）。
+# 根拠（暫定）:
+#   - breadth (0.30): 市場の幅は最重要 signal
+#   - uptrend (0.25): トレンド方向の確度
+#   - top_risk (0.20): 天井リスクは保守側
+#   - regime (0.15): マクロ regime 落ち着き
+#   - institutional (0.10): 機関フロー（弱め）
+import os as _os_ex
+def _w(name: str, default: float) -> float:
+    return float(_os_ex.environ.get(f"EXPOSURE_W_{name.upper()}", str(default)))
+
+
 _WEIGHTS = {
-    "breadth_score": 0.30,
-    "uptrend_score": 0.25,
-    "top_risk_score": 0.20,  # 反転
-    "regime_score": 0.15,
-    "institutional_score": 0.10,
+    "breadth_score": _w("breadth_score", 0.30),
+    "uptrend_score": _w("uptrend_score", 0.25),
+    "top_risk_score": _w("top_risk_score", 0.20),  # 反転
+    "regime_score": _w("regime_score", 0.15),
+    "institutional_score": _w("institutional_score", 0.10),
 }
 
 # D-23：DD-15% で強制 CASH_PRIORITY
 _DD_HARD_GATE = -0.15
+
+# v2.4 TASK-EX2: ceiling 閾値（recommendation 切替の境界）。名前付き定数化。
+# 根拠: 65/35 は職人芸の暫定値。実証データで校正予定（実 PnL と posture の相関）。
+# 65 = 「ceiling の上位 1/3」/ 35 = 「下位 1/3」（中間 1/3 が REDUCE_ONLY）
+_CEILING_NEW_ENTRY_THRESHOLD = 65  # これ以上で新規エントリー許可
+_CEILING_REDUCE_ONLY_THRESHOLD = 35  # これ以下は CASH_PRIORITY（35 以上 65 未満は REDUCE_ONLY）
+# Participation 判定の境界
+_PARTICIPATION_BROAD_THRESHOLD = 60
+# Bias 判定の境界
+_BIAS_GROWTH_THRESHOLD = 60
+_BIAS_VALUE_THRESHOLD = 40
 
 
 def _classify_confidence(provided: int, total: int) -> Confidence:
@@ -91,7 +113,7 @@ def _classify_participation(breadth: float | None, uptrend: float | None) -> Par
     # 両方ある場合の平均、片方だけならその値
     values = [v for v in (breadth, uptrend) if v is not None]
     avg = sum(values) / len(values)
-    if avg >= 60:
+    if avg >= _PARTICIPATION_BROAD_THRESHOLD:
         return "BROAD"
     return "NARROW"
 
@@ -102,9 +124,9 @@ def _classify_bias(regime: float | None, institutional: float | None) -> Bias:
         return "NEUTRAL"
     values = [v for v in (regime, institutional) if v is not None]
     avg = sum(values) / len(values)
-    if avg >= 60:
+    if avg >= _BIAS_GROWTH_THRESHOLD:
         return "GROWTH"
-    if avg <= 40:
+    if avg <= _BIAS_VALUE_THRESHOLD:
         return "VALUE"
     return "NEUTRAL"
 
@@ -135,6 +157,8 @@ def _compute_ceiling(inputs: ExposureInputs) -> tuple[int, list[str], list[str]]
         weight_used += weight
 
     if weight_used == 0:
+        # v2.5 TASK-EX4: 全入力 None で ceiling=0 を返すが、これは「入力不足」を意味する。
+        # 0% を「市場が極端に弱い」と誤認しないよう missing 列に明示
         return 0, provided, missing
     # 重み正規化（欠落分は補完しない＝保守的）
     ceiling = int(total)
@@ -162,12 +186,12 @@ def decide_exposure(inputs: ExposureInputs) -> ExposureDecision:
         # 入力欠落時は保守的（読みが効かないと攻めない）
         recommendation = "REDUCE_ONLY"
         rationale = "入力不足（環境指標が揃わず）・既存ポジション以上は控える"
-    elif ceiling >= 65 and participation != "NARROW":
+    elif ceiling >= _CEILING_NEW_ENTRY_THRESHOLD and participation != "NARROW":
         recommendation = "NEW_ENTRY_ALLOWED"
         rationale = (
             f"ceiling={ceiling}%・participation={participation}・新規エントリー可"
         )
-    elif ceiling >= 35:
+    elif ceiling >= _CEILING_REDUCE_ONLY_THRESHOLD:
         recommendation = "REDUCE_ONLY"
         rationale = (
             f"ceiling={ceiling}%・新規は控え、既存からは利確優先"

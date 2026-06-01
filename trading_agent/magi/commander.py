@@ -40,15 +40,22 @@ def command(
     na_judges = [v.judge for v in voting_v if v.verdict == "na"]
     unanimous_buy = len(voting_v) > 0 and len(buys) == len(voting_v)
 
-    # 推奨（MAGIの割れ方・防御層のみから）
+    # v2.5 TASK-M13: テンプレ撤去 → signals + 結論で構造化
     if unanimous_buy:
-        rec = "私の推奨は買い（小さめに）。業績・文脈が揃い確信度は相対的に高い（株価=投票外）。"
+        rec = (
+            "[signal: unanimous_buy+credibility_ok] 推奨=買い（小さめ）"
+            "・確信度=相対的に高い（株価は投票外）"
+        )
     elif na_judges:
-        rec = f"私の推奨は保留。{'・'.join(na_judges)}が判定不能で、確信を持てない。"
+        rec = (
+            f"[signal: na_judges={'/'.join(na_judges)}] 推奨=保留"
+            "・判定不能のため確信を持てない"
+        )
     elif verification.default_hold:
-        rec = "私の推奨は保留（または極小）。3審判が割れており、強くは推せない。"
+        rsn = "/".join(verification.default_hold_reasons) if verification.default_hold_reasons else "default_hold"
+        rec = f"[signal: {rsn}] 推奨=保留（または極小）・強くは推せない"
     else:
-        rec = "私の推奨は中立。決め手に欠ける。"
+        rec = "[signal: no_clear_consensus] 推奨=中立・決め手に欠ける"
 
     # 反対論拠（必ず併記）
     if buys and dissent:

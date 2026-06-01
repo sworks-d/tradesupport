@@ -40,7 +40,11 @@ from trading_agent.utils.logger import get_logger
 # 品質エンリッチ用の注入フェッチャ（テストはスタブ・ライブは yfinance）
 FinancialsFetcher = Callable[[str], Financials | None]
 PriceHistory = Callable[[str], list[float]]
-_CREDIBILITY_PENALTY = 0.7  # 信用性warn の composite 減点率
+# v2.4 TASK-S4: 信用性 warn の composite 減点率
+# 根拠: 暫定値（0.7=30%減点）。MAGI/ZEELE 連携の優先順位を保ったまま warn 銘柄を後ろに回す目的。
+# 実証データで校正予定（評価データ ≥30 件後）。設定として外出し（環境変数で上書き可）。
+import os as _os
+_CREDIBILITY_PENALTY = float(_os.environ.get("CREDIBILITY_PENALTY", "0.7"))
 
 
 def enrich_candidates(
@@ -76,8 +80,14 @@ def enrich_candidates(
         except Exception:
             r["rs_quadrant"] = "na"
 
+    # v2.10: 成長銘柄を追うロジックに整合させる
+    # composite_score 降順 + 同点時 market_cap 昇順（小型優先）
+    # 旧設計: 同点時 market_cap 降順 → 大型銘柄が優先される逆方向のバイアスだった
     results.sort(
-        key=lambda r: (r.get("composite_score", 0.0), r.get("market_cap") or 0.0), reverse=True
+        key=lambda r: (
+            -r.get("composite_score", 0.0),  # composite 降順
+            r.get("market_cap") or 0.0,       # 同点なら時価総額昇順（小型優先）
+        )
     )
     return results
 
@@ -85,11 +95,12 @@ def enrich_candidates(
 class ScreeningAgentInput(AgentInput):
     universe_size: int = 500
     strategies: list[str] = Field(default_factory=lambda: ["v_shape", "theme"])
-    # ペーパーテスト中の暫定値：本来 50.0 だが、yfinance の JP 四半期 EPS データが
-    # 薄く composite が現実的に 50 に届かないため、観察可能な水準まで一時的に下げる。
-    # 入力データ層が整備されたら（JQuants 切替等）50.0 に戻す（→ docs/MORNING_REVIEW.md
-    # の閾値見直し論点）。
-    min_score: float = 20.0
+    # v2.10 致命候補 D 修正:
+    # 上流データの実態（universe 1000 件で composite 最高 40 点台）に対し 50.0 は過剰閾値。
+    # screening_passed=0 件で品質ガードが事実上 OFF → フォールバック経路がメインになる病理。
+    # 上流データに整合する 30.0 に下げる（メモリ [[feedback_pipeline_observability]] の教訓）。
+    # スコア計算の根本改善は別タスク（screening 内部の signal 拡充）。
+    min_score: float = 30.0
     max_results: int = 30
 
 
@@ -155,6 +166,20 @@ class ScreeningAgent(Agent[ScreeningAgentInput]):
         )
         results: list[dict[str, Any]] = getattr(sout, "results", []) or []
         total: int = getattr(sout, "total_screened", 0)
+
+        # v2.10: ハルシネーション対策 — 出力 ticker を Universe と最終照合
+        # 万が一 screening tool が外部経路で予期しない ticker を返しても、
+        # Universe.is_active=True に無いものは弾く（虚偽銘柄の防壁）。
+        _universe_tickers = {u.ticker for u in universe}
+        _before = len(results)
+        results = [r for r in results if r.get("ticker") in _universe_tickers]
+        if len(results) < _before:
+            from trading_agent.utils.logger import get_logger as _gl
+            _gl("screening_agent").warning(
+                "screening_dropped_non_universe",
+                dropped=_before - len(results),
+                kept=len(results),
+            )
 
         # 弾を実スクリーニングに乗せる（フェッチャがある時のみ・上位候補のみ＝負荷限定）
         if self._financials_fetcher is not None and self._price_history is not None:

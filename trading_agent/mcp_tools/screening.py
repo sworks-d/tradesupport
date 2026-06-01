@@ -76,6 +76,32 @@ class ScreeningOutput(MCPToolOutput):
     passed_count: int = 0
 
 
+# v2.4 TASK-S3/S5/S6: screening の magic number を定数化（外部から見直し可能に）
+# 根拠コメント: 各値は AGENT_SPECS §1.5/§1.6 で暫定設定。実証データ蓄積後に校正予定。
+_V_PT_EARNINGS_TURNAROUND = 25  # 赤字 → 黒字（最強反転）
+_V_PT_EARNINGS_ACCELERATION = 20  # 減益 → 大幅増益（点火）
+_V_PT_REVENUE_GROWTH = 10  # 単なる増収（点火弱い）
+_V_PT_PRICE_BOTTOM_WITH_IGNITION = 30  # 底打ち + 点火
+_V_PT_PRICE_BOTTOM_WITHOUT_IGNITION = 10  # 底だが点火なし（value trap 警戒）
+_V_PT_RSI_REVERSAL = 10  # RSI 反転圏
+_V_PT_MACD_CROSS = 10  # MACD クロス
+_V_PT_VOLUME_SURGE = 10  # 出来高サージ
+_V_DRAWDOWN_MIN = 0.10  # 「底」判定の最小ドローダウン
+_V_PRICE_BOTTOM_RATIO = 0.85  # max_price * 0.85 を下回ったら「底圏」
+_V_RSI_RANGE = (30, 50)  # 反転圏の RSI レンジ
+_V_VOLUME_SURGE_RATIO = 1.5  # 5d 平均が 30d 平均の 1.5x で出来高サージ
+_V_REVENUE_GROWTH_MIN = 0.10  # 「増収」と認める下限
+_V_EARNINGS_ACCEL_MIN = 0.20  # 「大幅増益」と認める下限
+
+# theme_score 系
+_T_PT_PER_KEYWORD = 5  # キーワード一致 1 件あたり
+_T_PT_KEYWORD_CAP = 40  # キーワード加点の上限
+_T_PT_SECTOR_OUTPERF_PER_PCT = 100  # セクター対市場 1% = 100pt（30pt cap）
+_T_PT_SECTOR_CAP = 30
+_T_PT_INSTITUTIONAL_CAP = 20  # 機関投資家フロー上限
+_T_PT_LLM_ALIGNMENT_CAP = 10  # LLM テーマ一致上限
+
+
 def calculate_v_shape_score(d: ScreeningTickerData) -> tuple[float, dict[str, Any]]:
     """V字回復スコア（AGENT_SPECS §1.5）。0-100 と詳細を返す。"""
     score = 0.0
@@ -88,81 +114,80 @@ def calculate_v_shape_score(d: ScreeningTickerData) -> tuple[float, dict[str, An
         and d.eps_prev_prev_q is not None
         and d.eps_latest_q > 0 > d.eps_prev_prev_q
     ):
-        score += 25
+        score += _V_PT_EARNINGS_TURNAROUND
         ignition = True
         details["earnings_turnaround"] = "赤字→黒字"
     elif (
         d.eps_growth_latest_q is not None
         and d.eps_growth_prev_prev_q is not None
-        and d.eps_growth_latest_q > 0.2
+        and d.eps_growth_latest_q > _V_EARNINGS_ACCEL_MIN
         and d.eps_growth_prev_prev_q < 0
     ):
-        score += 20
+        score += _V_PT_EARNINGS_ACCELERATION
         ignition = True
         details["earnings_turnaround"] = "減益→大幅増益（点火）"
-    elif d.revenue_growth_latest_q is not None and d.revenue_growth_latest_q > 0.1:
-        score += 10
+    elif d.revenue_growth_latest_q is not None and d.revenue_growth_latest_q > _V_REVENUE_GROWTH_MIN:
+        score += _V_PT_REVENUE_GROWTH
         details["earnings_turnaround"] = "増収（点火は弱い）"
 
     # 2. 株価底打ち。**Value×Momentum両立(Asness)**：点火がある時のみ満額。
-    #    点火なしで底だけ＝value trap として満額にしない（研究 領域3-A：底だけは買わない）。
     if d.current_price is not None and d.min_price_90d and d.max_price_90d:
         drawdown = (d.current_price - d.min_price_90d) / d.min_price_90d
-        if drawdown > 0.1 and d.current_price < d.max_price_90d * 0.85:
+        if drawdown > _V_DRAWDOWN_MIN and d.current_price < d.max_price_90d * _V_PRICE_BOTTOM_RATIO:
             if ignition:
-                score += 30
+                score += _V_PT_PRICE_BOTTOM_WITH_IGNITION
                 details["price_bottom"] = True
             else:
-                score += 10  # 底だが点火なし＝割引
+                score += _V_PT_PRICE_BOTTOM_WITHOUT_IGNITION
                 details["price_bottom"] = "底だが点火なし"
                 details["value_trap"] = True
 
     # 3. テクニカル (20pt)
-    if d.rsi is not None and 30 < d.rsi < 50:
-        score += 10
+    if d.rsi is not None and _V_RSI_RANGE[0] < d.rsi < _V_RSI_RANGE[1]:
+        score += _V_PT_RSI_REVERSAL
         details["rsi_reversal"] = d.rsi
     if d.macd_cross_recent:
-        score += 10
+        score += _V_PT_MACD_CROSS
         details["macd_cross"] = True
 
     # 4. 出来高 (10pt)
     if (
         d.volume_5d_avg is not None
         and d.volume_30d_avg
-        and d.volume_5d_avg > d.volume_30d_avg * 1.5
+        and d.volume_5d_avg > d.volume_30d_avg * _V_VOLUME_SURGE_RATIO
     ):
-        score += 10
+        score += _V_PT_VOLUME_SURGE
         details["volume_surge"] = True
 
     return _clamp(score), details
 
 
 def calculate_theme_score(d: ScreeningTickerData) -> tuple[float, dict[str, Any]]:
-    """テーマスコア（AGENT_SPECS §1.6）。0-100 と詳細を返す。"""
+    """テーマスコア（AGENT_SPECS §1.6・v2.4 TASK-S6 で定数化）。0-100 と詳細を返す。"""
     score = 0.0
     details: dict[str, Any] = {}
 
-    # 1. テーマキーワード一致 (40pt)
+    # 1. テーマキーワード一致
     if d.keyword_match_count is not None:
-        pts = float(min(d.keyword_match_count * 5, 40))
+        pts = float(min(d.keyword_match_count * _T_PT_PER_KEYWORD, _T_PT_KEYWORD_CAP))
         score += pts
         details["keyword_matches"] = d.keyword_match_count
 
-    # 2. セクター強度 (30pt) — アンダーパフォームでマイナスにはしない
+    # 2. セクター強度 — アンダーパフォームでマイナスにはしない
     if d.sector_return_30d is not None and d.market_return_30d is not None:
         outperformance = d.sector_return_30d - d.market_return_30d
-        pts = max(0.0, min(outperformance * 100, 30))
+        pts = max(0.0, min(outperformance * _T_PT_SECTOR_OUTPERF_PER_PCT, _T_PT_SECTOR_CAP))
         score += pts
         details["sector_outperformance"] = outperformance
 
-    # 3. 機関投資家の動き (20pt)
+    # 3. 機関投資家の動き
     if d.institutional_activity_score is not None:
-        score += max(0.0, min(d.institutional_activity_score, 20))
+        score += max(0.0, min(d.institutional_activity_score, _T_PT_INSTITUTIONAL_CAP))
         details["institutional"] = d.institutional_activity_score
 
-    # 4. LLM 評価 (10pt)
+    # 4. LLM 評価
     if d.llm_theme_alignment_score is not None:
-        score += max(0.0, min(d.llm_theme_alignment_score, 10))
+        score += max(0.0, min(d.llm_theme_alignment_score, _T_PT_LLM_ALIGNMENT_CAP))
         details["llm_alignment"] = d.llm_theme_alignment_score
 
     return _clamp(score), details
@@ -197,8 +222,9 @@ class ScreeningTool(MCPTool[ScreeningInput]):
                 calculate_theme_score(d) if "theme" in tool_input.strategies else (0.0, {})
             )
             composite = max(v_score, t_score)
-            # 浮動小数点の境界値（例: composite=19.9999... が min_score=20.0 を下回って判定漏れする）
+            # 浮動小数点の境界値（例: composite=49.9999... が min_score=50.0 を下回って判定漏れする）
             # を防ぐため、微小な許容誤差を入れる。境界値（A=B）は通すという意図を明示。
+            # v2.5 TASK-Z10: min_score=50.0 はソフトな最低限（本来は分布の上位 N% で動的決定推奨）
             eps = 1e-9
             threshold = tool_input.min_score - eps
             matched = []

@@ -115,13 +115,48 @@ def fetch_financials(
     fetcher: StatementFetcher | None = None,
     market_cap: float | None = None,
 ) -> Financials | None:
-    """直近2期の財務を取得・正規化。データが無ければ None。"""
+    """直近2期の財務を取得・正規化。データが無ければ None。
+
+    v2.10: **JP 株は J-Quants を優先**し、取れない場合は yfinance に fallback する。
+    `fetcher` が明示的に注入された場合（テスト用途）は J-Quants をスキップして
+    そのまま fetcher を使う（既存テスト互換）。
+
+    v2.4 TASK-Z6: yfinance ラベル取得失敗の検出を強化。
+    """
+    from trading_agent.utils.logger import get_logger
+    from trading_agent.utils.ticker_normalize import is_jp_ticker
+
+    log = get_logger("screening.financials")
+
+    # v2.10: JP 株かつ fetcher 注入なし → J-Quants を試す
+    if fetcher is None and is_jp_ticker(ticker):
+        jq_result = _fetch_jquants_financials(ticker, market_cap=market_cap)
+        if jq_result is not None and jq_result.current.revenue is not None:
+            return jq_result
+        log.info("financials_jquants_unavailable_fallback_yfinance", ticker=ticker)
+
     fetch = fetcher or _fetch_yfinance_statements
     raw = fetch(ticker)
     periods = list(raw.get("periods", []) or [])
     rows = dict(raw.get("rows", {}) or {})  # type: ignore[arg-type]
     if not periods or not rows:
+        log.warning("financials_unavailable", ticker=ticker, source="yfinance")
+        # 将来: ここで EDINET fallback を試す
+        # if _has_edinet_credentials():
+        #     return _fetch_edinet_financials(ticker, market_cap)
         return None
+
+    # ラベル取得健全性のチェック（v2.4 TASK-Z6）
+    found_labels = sum(1 for labels in _LABELS.values() if any(label in rows for label in labels))
+    if found_labels < len(_LABELS) * 0.5:  # 半分未満ならラベル変更の疑い
+        log.warning(
+            "financials_labels_partial",
+            ticker=ticker,
+            found=found_labels,
+            total=len(_LABELS),
+            sample_rows=list(rows.keys())[:5],
+        )
+
     current = _period(rows, periods, 0)
     prior = _period(rows, periods, 1) if len(periods) >= 2 else None
     prior2 = _period(rows, periods, 2) if len(periods) >= 3 else None
@@ -131,11 +166,116 @@ def fetch_financials(
     )
 
 
+def _fetch_jquants_financials(
+    ticker: str, *, market_cap: float | None = None
+) -> Financials | None:
+    """J-Quants の statements API から Financials を構築（JP 株専用・v2.10）。
+
+    取れないフィールド（cogs/gross_profit/sga/depreciation/inventory 等）は **None のまま**。
+    後段（M-Score 等）はこれを "warn" / "na" 判定するので、推測で埋めることはしない。
+
+    Returns:
+        Financials（current のみで OK、prior が無ければ None）。
+        J-Quants 接続不可・データ空・例外 → 全て None を返す（ハルシネーション防止）。
+    """
+    try:
+        from trading_agent.mcp_tools.jquants import get_default_client
+        from trading_agent.utils.ticker_normalize import universe_to_jquants
+    except Exception:
+        return None
+
+    client = get_default_client()
+    if client is None:
+        return None
+
+    jq_code = universe_to_jquants(ticker)
+    statements = client.statements(ticker=jq_code)
+    if not statements:
+        return None
+
+    # 直近 3 期（新しい順）
+    periods: list[PeriodFinancials] = []
+    for stmt in statements[:3]:
+        pf = _jquants_stmt_to_period(stmt)
+        if pf is not None:
+            periods.append(pf)
+    if not periods:
+        return None
+
+    return Financials(
+        ticker=ticker,
+        current=periods[0],
+        prior=periods[1] if len(periods) >= 2 else None,
+        prior2=periods[2] if len(periods) >= 3 else None,
+        market_cap=market_cap,
+        source="jquants",
+    )
+
+
+def _jquants_stmt_to_period(stmt: dict) -> PeriodFinancials | None:
+    """J-Quants statements の 1 期分 → PeriodFinancials。
+
+    マッピング（J-Quants → PeriodFinancials）:
+      Sales → revenue        / OP → ebit        / NP → net_income
+      TA → total_assets      / CFO → operating_cashflow
+      EPS と NP から shares を逆算（両方ある時のみ・推測しない）
+
+    取れない/空のフィールドは None のまま（ハルシネーション禁止）。
+    """
+    def _safe_float(key: str) -> float | None:
+        v = stmt.get(key)
+        if v is None or v == "":
+            return None
+        try:
+            f = float(v)
+            if f != f:  # NaN
+                return None
+            return f
+        except (TypeError, ValueError):
+            return None
+
+    # period 文字列: CurPerEn（当期末） を優先、無ければ DiscDate
+    period_raw = stmt.get("CurPerEn") or stmt.get("DiscDate") or ""
+    if hasattr(period_raw, "isoformat"):
+        period_str = period_raw.isoformat()[:10]
+    else:
+        period_str = str(period_raw)[:10]
+
+    net_income = _safe_float("NP")
+    eps = _safe_float("EPS")
+    # shares: NP / EPS で逆算（両方あって EPS ≠ 0 の時のみ・推測しない）
+    shares: float | None = None
+    if net_income is not None and eps is not None and eps != 0:
+        shares = net_income / eps
+
+    return PeriodFinancials(
+        period=period_str,
+        revenue=_safe_float("Sales"),
+        net_income=net_income,
+        ebit=_safe_float("OP"),
+        total_assets=_safe_float("TA"),
+        operating_cashflow=_safe_float("CFO"),
+        shares=shares,
+        # cogs / gross_profit / sga / depreciation / current_assets / current_liabilities /
+        # ppe / receivables / inventory / total_liabilities / long_term_debt /
+        # retained_earnings / working_capital は J-Quants から取れない → None のまま
+    )
+
+
 def _fetch_yfinance_statements(ticker: str) -> RawStatements:
-    """yfinance の3表を {periods, rows} にマージ（直近3期）。"""
+    """yfinance の3表を {periods, rows} にマージ（直近3期）。
+
+    v2.5 TASK-Z12: 3 期固定を環境変数で上書き可能に（年次→四半期切替の柔軟性）。
+    """
+    import os
+    max_periods = int(os.environ.get("FINANCIALS_MAX_PERIODS", "3"))
+
     import yfinance as yf
 
-    sym = f"{ticker}.T" if ticker.split(".")[0].isdigit() else ticker
+    from trading_agent.mcp_tools.fundamentals import to_yfinance_symbol
+
+    # v2.10: 新型 ticker (141A 等) も .T 付与する to_yfinance_symbol 経由
+    sym = to_yfinance_symbol(ticker)
     t = yf.Ticker(sym)
 
     frames = []
@@ -149,8 +289,8 @@ def _fetch_yfinance_statements(ticker: str) -> RawStatements:
     if not frames:
         return {"periods": [], "rows": {}}
 
-    # 期（列）：最初のフレームの列を基準に直近3期
-    cols = list(frames[0].columns)[:3]
+    # 期（列）：最初のフレームの列を基準に直近 max_periods 期
+    cols = list(frames[0].columns)[:max_periods]
     periods = [_period_str(c) for c in cols]
     rows: dict[str, list] = {}
     for df in frames:
