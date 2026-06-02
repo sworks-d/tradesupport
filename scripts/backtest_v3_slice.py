@@ -68,15 +68,28 @@ def _fetch_quotes(client, ticker: str, frm: dt.date, to: dt.date) -> list[tuple[
     return out
 
 
+def _cache_sufficient(cached: list[tuple[dt.date, float]], frm: dt.date, to: dt.date) -> bool:
+    """cache が要求期間を両端までカバーしているか（codex 指摘 2: len>63 だけだと片寄り見逃し）。
+
+    RS に足る本数(>63) かつ 開始/終了近辺（±10 日）まで価格があることを要求する。
+    片側に偏った cache を「十分」と誤判定して欠損のまま backtest しないため。
+    """
+    if len(cached) <= 63:
+        return False
+    dates = [d for d, _ in cached]
+    near = dt.timedelta(days=10)
+    return min(dates) <= frm + near and max(dates) >= to - near
+
+
 def _load_or_fetch(
     client, code: str, frm: dt.date, to: dt.date, *,
     cache_only: bool, max_fetch_left: int, throttle: float,
 ) -> tuple[list[tuple[dt.date, float]], bool, int]:
-    """cache-first で価格を返す。cache に十分あれば API を叩かない。
+    """cache-first で価格を返す。cache が両端までカバーしていれば API を叩かない。
     Returns: (quotes, rate_limited, max_fetch_left)。rate_limited=True なら呼び出し側は以降の fetch を止める。
     """
     cached = load_quotes(code, frm, to)
-    if len(cached) > 63 or cache_only or max_fetch_left <= 0:
+    if _cache_sufficient(cached, frm, to) or cache_only or max_fetch_left <= 0:
         return cached, False, max_fetch_left
     # cache 不足 & API 余地あり → fetch（throttle）
     time.sleep(throttle)
@@ -114,15 +127,16 @@ def main() -> int:
     print(f"universe={len(tickers)} 件（JP4桁・小型優先・survivorship biased）/ cache 済={len(have & set(tickers))} 件 "
           f"/ cache-only={cache_only} max-fetch={max_fetch} throttle={throttle}s")
 
-    market, rl, _ = _load_or_fetch(client, _MARKET_ETF, warmup_from, end,
-                                   cache_only=cache_only, max_fetch_left=1, throttle=throttle)
+    # codex 指摘 1: market fetch も budget から消費（--max-fetch 0 = API ゼロ呼出の直感に合わせる）
+    budget = max_fetch
+    market, rl, budget = _load_or_fetch(client, _MARKET_ETF, warmup_from, end,
+                                        cache_only=cache_only, max_fetch_left=budget, throttle=throttle)
     if not market:
-        print(f"市場ベンチ {_MARKET_ETF} 取得不可（cache 無 & fetch 不可/枯渇）。回復後 --fetch か別日で。")
+        print(f"市場ベンチ {_MARKET_ETF} 取得不可（cache 無 & fetch 不可/枯渇/max-fetch 0）。回復後 --max-fetch≥1 か別日で。")
         return 1
 
     quotes_by_ticker: dict[str, list[tuple[dt.date, float]]] = {}
     fetched = failed = 0
-    budget = max_fetch
     for t in tickers:
         q, rl, budget = _load_or_fetch(client, t, warmup_from, end,
                                        cache_only=cache_only, max_fetch_left=budget, throttle=throttle)
@@ -147,6 +161,10 @@ def main() -> int:
     res = run_price_slice_backtest(quotes_by_ticker, market, cfg)
     print()
     print(res.summary())
+    # codex 指摘: coverage と別に sample size（trades<10）も信号扱いしない
+    if res.n_trades < 10:
+        print(f"\n⛔ INVALID SAMPLE SIZE（確定取引 {res.n_trades} < 10）= NOT A BACKTEST SIGNAL。"
+              "\n   期間延長 or 銘柄数増（cache 蓄積後）で取引数を確保してから成績解釈する。")
     return 0
 
 

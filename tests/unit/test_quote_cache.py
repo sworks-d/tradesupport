@@ -44,3 +44,24 @@ class TestQuoteCache:
         store_quotes("7203", _q(2), path=p)
         store_quotes("6758", _q(2), path=p)
         assert cached_codes(path=p) == {"7203", "6758"}
+
+
+class TestCacheSufficient:
+    """codex 指摘 2: 両端カバレッジ判定（len>63 だけだと片寄りを見逃す）。"""
+
+    def test_sufficient_when_full_range(self) -> None:
+        from scripts.backtest_v3_slice import _cache_sufficient
+        cached = _q(100)  # 2025-01-01 から 100 日連続
+        frm, to = dt.date(2025, 1, 1), dt.date(2025, 4, 10)
+        assert _cache_sufficient(cached, frm, to) is True
+
+    def test_insufficient_when_one_sided(self) -> None:
+        # 70 本あるが全部 frm 付近に偏り、to 近辺が欠落 → 不十分
+        from scripts.backtest_v3_slice import _cache_sufficient
+        cached = _q(70)  # 2025-01-01..03-11 のみ
+        frm, to = dt.date(2025, 1, 1), dt.date(2025, 11, 1)  # to が遠い
+        assert _cache_sufficient(cached, frm, to) is False
+
+    def test_insufficient_when_too_few(self) -> None:
+        from scripts.backtest_v3_slice import _cache_sufficient
+        assert _cache_sufficient(_q(30), dt.date(2025, 1, 1), dt.date(2025, 1, 31)) is False
