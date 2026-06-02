@@ -28,6 +28,77 @@ def _engine(tmp_path: Path):
     return eng
 
 
+class TestCleanupForFreshRunGuard:
+    """A6 ガード: 評価済み実績があれば force 無しで cleanup を拒否（Phase C 実績保護）。"""
+
+    def test_refuses_when_evaluated_exists(self, tmp_path: Path) -> None:
+        eng = _engine(tmp_path)
+        with Session(eng, expire_on_commit=False) as s:
+            s.add(Decision(
+                date=dt.date(2026, 5, 25), ticker="7203", action="buy", status="filled",
+                hit_or_miss="hit", evaluated_at=utcnow(),
+            ))
+            s.commit()
+        counts = M.cleanup_for_fresh_run(eng)
+        assert counts.get("refused") == 1
+        assert counts.get("evaluated_protected") == 1
+        # 実績は消えていない
+        with Session(eng) as s:
+            from sqlmodel import select as _sel, col as _col
+            survived = s.exec(
+                _sel(Decision).where(_col(Decision.evaluated_at).is_not(None))
+            ).all()
+            assert len(survived) == 1
+
+    def test_force_overrides(self, tmp_path: Path) -> None:
+        eng = _engine(tmp_path)
+        with Session(eng, expire_on_commit=False) as s:
+            s.add(Decision(
+                date=dt.date(2026, 5, 25), ticker="7203", action="buy", status="approved",
+                hit_or_miss="hit", evaluated_at=utcnow(),
+            ))
+            s.commit()
+        counts = M.cleanup_for_fresh_run(eng, force=True)
+        assert "refused" not in counts  # force で強行
+
+    def test_no_evaluated_runs_normally(self, tmp_path: Path) -> None:
+        # 実績ゼロ（構築期）なら従来通り動く
+        eng = _engine(tmp_path)
+        counts = M.cleanup_for_fresh_run(eng)
+        assert "refused" not in counts
+
+    def test_refuses_on_pending_forward_clock(self, tmp_path: Path) -> None:
+        # 評価済み0でも、評価予定(evaluation_date有・pending)があれば拒否（C初期保護）
+        eng = _engine(tmp_path)
+        with Session(eng, expire_on_commit=False) as s:
+            s.add(Decision(
+                date=dt.date(2026, 5, 25), ticker="7203", action="buy", status="filled",
+                entry_price=1000.0, evaluation_date=dt.date(2026, 8, 25),
+                hit_or_miss="pending",
+            ))
+            s.commit()
+        counts = M.cleanup_for_fresh_run(eng)
+        assert counts.get("refused") == 1
+        assert counts.get("pending_forward_protected") == 1
+
+    def test_refuses_on_active_portfolio(self, tmp_path: Path) -> None:
+        # active Portfolio があれば拒否（保有中の前向きポジション保護）
+        from trading_agent.models.portfolio import Portfolio
+        eng = _engine(tmp_path)
+        with Session(eng, expire_on_commit=False) as s:
+            s.add(Portfolio(
+                ticker="7203", buy_date=dt.date(2026, 5, 25), buy_price=1000.0, qty=10,
+                currency="JPY", strategy_category="中期", target_period_days=90,
+                target_pct=0.20, stop_loss_pct=0.10,
+                target_date=dt.date(2026, 8, 25), thesis="t", status="active",
+                broker_mode="paper", planned_total_qty=10,
+            ))
+            s.commit()
+        counts = M.cleanup_for_fresh_run(eng)
+        assert counts.get("refused") == 1
+        assert counts.get("active_portfolios_protected") == 1
+
+
 def _add_decision(
     eng,
     *,

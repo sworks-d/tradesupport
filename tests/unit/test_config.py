@@ -35,7 +35,6 @@ class TestDefaults:
         assert settings.trading_mode == "paper"
         assert settings.moomoo_opend_host == "localhost"
         assert settings.moomoo_opend_port == 11111
-        assert settings.ollama_model == "llama3.1:8b"
         assert settings.macos_notification is True
         assert settings.newsapi_key is None
 

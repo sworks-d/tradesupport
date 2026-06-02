@@ -73,6 +73,40 @@ class CloseResult:
     skipped: list[tuple[str, str]] = field(default_factory=list)
 
 
+def _record_exit_on_decision(session, portfolio, *, exit_price: float, day) -> None:
+    """C: stop/time で閉じた Portfolio の実退出を、紐付く buy Decision の実績に記録する。
+
+    Portfolio.decision_id から buy Decision を引き、未評価（hit_or_miss=="pending"）なら
+    realized リターンで actual_return / hit_or_miss / evaluated_at を確定する。
+    evaluate_due_decisions は hit_or_miss!="pending" を採点しないため、二重評価しない。
+    decision_id 無し（旧データ）や評価済みは何もしない。
+    """
+    did = getattr(portfolio, "decision_id", None)
+    if did is None:
+        return
+    d = session.get(Decision, did)
+    if d is None or d.hit_or_miss != "pending":
+        return
+    entry = d.entry_price if d.entry_price else portfolio.buy_price
+    if not entry or entry <= 0:
+        return
+    actual = (exit_price - float(entry)) / float(entry)
+    stop = d.stop_pct if d.stop_pct else float(portfolio.stop_loss_pct or 0.10)
+    target = d.expected_return if d.expected_return else float(portfolio.target_pct or 0.20)
+    if actual <= -abs(stop):
+        outcome = "miss"
+    elif actual >= target:
+        outcome = "hit"
+    else:
+        outcome = "neutral"
+    d.actual_return = round(actual, 4)
+    d.hit_or_miss = outcome
+    d.evaluated_at = utcnow()
+    if d.evaluation_date is None:
+        d.evaluation_date = day
+    session.add(d)
+
+
 def paper_close_due(
     engine: Engine,
     *,
@@ -134,6 +168,12 @@ def paper_close_due(
             p.closed_price = sell.fill_price
             p.closed_reason = reason
             session.add(p)
+            # C（測定正確性）: stop/time の実退出を、紐付く buy Decision の実績に書き戻す。
+            # これが無いと評価ジョブが後日 horizon 価格で採点し、実際の stop 退出を無視して
+            # TrackRecord が現実より良く出る。realized リターンで hit/miss を確定する。
+            _record_exit_on_decision(
+                session, p, exit_price=sell.fill_price, day=day
+            )
             result.closes.append(
                 PaperClose(
                     portfolio_id=p.id,
@@ -184,12 +224,20 @@ def paper_fill_approved(
     today: dt.date | None = None,
     personality: object | None = None,
     budget_cap_per_decision_jpy: float | None = None,  # v2.2 TASK-P5: MISATO 配分上限
+    allowed_tickers: set[str] | None = None,
+    filled_via: str = "ds_dispatch",
+    market_regime: str | None = None,
 ) -> PaperResult:
     """status=approved の decision を翌寄り価格で紙約定し、Portfolio(active)化＋record_entry する。
 
     `personality` 指定時はその性格固有の sizing/horizon/stop を適用し、Portfolio.personality
     に性格名を刻む。同じ decision に対して複数性格が並行 fill する場合、
     Decision.personalities_filled に追加して重複 fill を防ぐ。
+
+    `allowed_tickers`（A+・測定帰属保護）: 指定すると、その ticker 集合の decision **だけ**を
+    fill 対象にする。dispatch 経由では picked（priority/例外/排他を通った銘柄）のみを渡すことで、
+    personality モードで awaiting を stance 一致で広く拾う経路（plan 外 fill）を物理的に塞ぐ。
+    None なら従来通り（status / stance ベース）。
 
     現金は引数で受け、残額を返す（永続化は呼び出し側＝run_paper の責務）。
     """
@@ -243,6 +291,10 @@ def paper_fill_approved(
                 .where(col(Decision.status) == "approved")
                 .where(col(Decision.action) == "buy")
             ).all()
+
+        # A+: allowed_tickers 指定時は picked 銘柄だけに物理限定（plan 外 fill 防止）
+        if allowed_tickers is not None:
+            decisions = [d for d in decisions if d.ticker in allowed_tickers]
 
     # v2.8: KAWORU の合議銘柄ロジック廃止（コントラリアン短期機に再設計のため）
     # 旧: 他 3 機が保有する銘柄を KAWORU が後追いで買う → 機跨ぎ重複の原因
@@ -498,6 +550,7 @@ def paper_fill_approved(
                         # personality 指定時は planned_total_qty > shares で後続の追加 fill を待つ
                         planned_total_qty=planned_total_qty,
                         peak_pnl_pct=None,  # 初期は未設定（初回 trailing_check で初期化）
+                        decision_id=d.id,
                     )
                 )
             if personality is not None:
@@ -523,13 +576,16 @@ def paper_fill_approved(
             )
         session.commit()
 
-    # 評価の前提（entry/stop/評価期日）を刻む。実約定価格（slippage 適用後）を渡す。
+    # 評価の前提（entry/stop/評価期日/経路/局面）を刻む。実約定価格（slippage 適用後）を渡す。
+    # A7: target_return を 0.0 → 標準 0.20 に（gate の hit/miss を他経路と整合。0.0 だと
+    #     actual≥0 が全部 hit になり hit_rate が歪む）。filled_via / market_regime も刻む。
     for f in result.fills:
         record_entry(
             engine, f.decision_id,
             entry_price=f.fill_price if f.fill_price else f.price,
-            stop_pct=stop, target_return=0.0,
+            stop_pct=stop, target_return=0.20,
             target_period_days=horizon, on_date=day,
+            filled_via=filled_via, market_regime=market_regime,
         )
 
     result.cash_after = cash

@@ -27,6 +27,7 @@ DECISION_STATUSES = (
     "held",  # 保留（防御層 default_hold 等）
     "order_listed",  # 発注リスト入り
     "ordered",  # 発注済
+    "filled",  # 約定済（paper auto fill / mark_filled / 朝バッチ notify。評価対象＝_EVALUABLE）
     "holding",  # 保有中
 )
 
@@ -72,6 +73,16 @@ class Decision(SQLModel, table=True):
     benchmark_return: float | None = None  # 同期間ベンチマーク（S&P比超過の算定用・P6）
     hit_or_miss: str = Field(default="pending", index=True)  # "hit"/"miss"/"neutral"/"pending"
     evaluated_at: dt.datetime | None = None
+    # A3/A8: エントリ（約定）時点の市場局面（ゲート⑥「両局面通過」判定用）。
+    # A8 で detect_market_cycle() の trailing 局面 "bull"/"bear"/"sideways"/"unknown" を保存。
+    # （A3 当時は detect_market_regime_live() の単日 "risk_on"/"risk_off"。gate は両方を後方互換マップ）
+    entry_market_regime: str | None = None
+    # A7: 監査・公式集合識別。
+    # filled_via: 約定経路 "ds_dispatch"（DS 公式）/ "manual"（実弾代行）/ "paper_auto"（試験シミュ）。
+    #            official_gate_evaluation は DS 公式由来だけを公式実績に数えられる。
+    # entry_date: 実約定日（benchmark 起点に使う。d.date と乖離する遅延 fill で α 歪みを防ぐ）。
+    filled_via: str | None = None
+    entry_date: dt.date | None = None
 
     # 紐付いたトピックス
     supporting_topic_ids: list[int] = Field(default_factory=list, sa_column=Column(JSON))

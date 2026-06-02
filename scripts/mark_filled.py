@@ -28,6 +28,7 @@ from pathlib import Path
 from sqlmodel import Session, col, select
 
 from trading_agent.db import get_engine
+from trading_agent.evaluation.job import stamp_evaluation_fields
 from trading_agent.models.decisions import Decision
 from trading_agent.models.portfolio import Portfolio
 from trading_agent.utils.time_utils import today_jst, utcnow
@@ -119,6 +120,21 @@ def main() -> int:
         d.status = "filled"
         d.entry_price = price
         d.shares_filled = float(shares)
+        # P0: 評価前提フィールドを刻む（実弾報告の実取引を増額ゲート⑥の実績に乗せる）。
+        # A3/A8: エントリ時点の trailing 相場局面を固定保存（両局面判定）。失敗時は unknown。
+        try:
+            from trading_agent.wille.ritsuko import detect_market_cycle
+
+            _regime = str(detect_market_cycle().get("cycle") or "unknown")
+        except Exception:
+            _regime = "unknown"
+        stamp_evaluation_fields(
+            d,
+            target_period_days=int(d.target_period_days or 90),
+            on_date=today_jst(),
+            market_regime=_regime,
+            filled_via="manual",  # 実弾代行（楽天）報告
+        )
         # personalities_filled は将来 DS 機運用向け
         if args.personality:
             existing = list(d.personalities_filled or [])
@@ -136,7 +152,7 @@ def main() -> int:
             currency="JPY",
             strategy_category=d.strategy_category or "中期",
             target_period_days=int(d.target_period_days or 90),
-            target_pct=float(d.target_pct or 0.20),
+            target_pct=float(getattr(d, "target_pct", None) or 0.20),
             stop_loss_pct=float(d.stop_pct or 0.10),
             target_date=today_jst() + dt.timedelta(days=int(d.target_period_days or 90)),
             thesis=d.thesis_at_decision or "",
@@ -144,6 +160,7 @@ def main() -> int:
             personality=args.personality,
             broker_mode=args.broker_mode,  # "live"=楽天本番、"paper"=試験運用
             planned_total_qty=shares,
+            decision_id=d.id,
         )
         s.add(portfolio)
         s.commit()

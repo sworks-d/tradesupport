@@ -148,7 +148,13 @@ def _format_plan(plan_d: dict) -> str:
 def main() -> None:
     ap = argparse.ArgumentParser(description="MISATO Dispatch CLI")
     ap.add_argument("--budget", type=float, default=None, help="今回の総予算（JPY・既定: treasury 未配分残高）")
-    ap.add_argument("--approve", action="store_true", help="実 fill を走らせる（人間承認）")
+    ap.add_argument("--approve", action="store_true", help="実 fill を走らせる（人間承認・全機）")
+    ap.add_argument(
+        "--auto-only",
+        action="store_true",
+        help="自動売買トグル ON の機だけ fill（approve=False・price_lookup は供給）。"
+        "launchd/Phase C 用：HALT/予算/機別トグルの安全装置に従う。",
+    )
     ap.add_argument("--personality", default=None, help="1 機だけ動かす場合")
     ap.add_argument("--json", action="store_true", help="JSON 出力")
     ap.add_argument("--halt-on", action="store_true", help="HALT ファイル作成")
@@ -178,6 +184,11 @@ def main() -> None:
         "--cleanup-fresh",
         action="store_true",
         help="致命的バグ対策: 全 active portfolio を closed + decision.personalities_filled クリア + treasury reset",
+    )
+    ap.add_argument(
+        "--force",
+        action="store_true",
+        help="評価済み実績(増額ゲート⑥)があっても cleanup-fresh を強行する（Phase C 中は厳禁）",
     )
     args = ap.parse_args()
 
@@ -239,7 +250,16 @@ def main() -> None:
         return
 
     if args.cleanup_fresh:
-        counts = cleanup_for_fresh_run(engine)
+        counts = cleanup_for_fresh_run(engine, force=args.force)
+        if counts.get("refused"):
+            print(
+                "⛔ 拒否: 保護対象あり（増額ゲート⑥の実績・前向きの時計）。消すと実績がゼロに戻ります。\n"
+                f"   評価済み {counts.get('evaluated_protected', 0)} 件 / "
+                f"active保有 {counts.get('active_portfolios_protected', 0)} 件 / "
+                f"評価予定 {counts.get('pending_forward_protected', 0)} 件\n"
+                "   本当に消すなら --force を付けてください（Phase C 運用中は厳禁）。"
+            )
+            return
         print(
             f"✅ Fresh cleanup: portfolio {counts['portfolios_closed']} 件 closed / "
             f"decision {counts['decisions_reset']} 件 reset / Treasury リセット"
@@ -273,12 +293,17 @@ def main() -> None:
             sys.exit(2)
         return
 
-    price, is_jp = _live_lookups(engine) if args.approve else (None, None)
+    # B 修正: --approve（人間承認・全機 fill）と --auto-only（トグル ON 機だけ fill）を分離。
+    # 旧 launchd は --approve を毎日実行し auto_trade ゲートを迂回していた（安全バグ）。
+    # --auto-only は approve=False だが price_lookup を供給するため、dispatch 内で
+    # 「自動売買 ON の機だけ fill」する分岐（misato.py の auto_trade_pilots）が正しく効く。
+    need_lookups = args.approve or args.auto_only
+    price, is_jp = _live_lookups(engine) if need_lookups else (None, None)
 
     plan = dispatch(
         engine,
         total_budget_jpy=args.budget,  # None なら treasury の available を使う
-        approve=args.approve,
+        approve=args.approve,  # --auto-only では False のまま＝全機強制 fill しない
         only_personality=args.personality,
         price_lookup=price,
         is_jp_lookup=is_jp,

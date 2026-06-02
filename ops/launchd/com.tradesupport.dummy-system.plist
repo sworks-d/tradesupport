@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- ダミーシステム自動操縦：朝バッチ後 07:15 に 3 ダミー（守式・攻式・中庸式）を順次起動 -->
+<!-- DS 自動売買: 朝バッチ後 07:15 に MISATO 経由で自動売買 ON の機だけ fill。
+     HALT ファイル / 自動売買期限 / 予算上限 などの安全装置を経由するため、
+     普段（自動売買トグル OFF）は dry-run 相当でレポートだけ更新。
+     B 修正(2026-06): --approve（全機強制 fill・auto トグル迂回の安全バグ）を
+     --auto-only（approve=False・自動売買 ON の機だけ fill）に置換。コメント通りの挙動に統一。 -->
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -8,15 +12,15 @@
 
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/a05/tradesupport/.venv/bin/python</string>
-    <string>/Users/a05/tradesupport/scripts/run_paper.py</string>
-    <string>--personality</string>
-    <string>all</string>
-    <string>--auto-approve</string>
+    <string>/opt/homebrew/bin/uv</string>
+    <string>run</string>
+    <string>python</string>
+    <string>scripts/misato_dispatch.py</string>
+    <string>--auto-only</string>
   </array>
 
   <key>WorkingDirectory</key>
-  <string>/Users/a05/tradesupport</string>
+  <string>/Users/shotaro/tradesupport</string>
 
   <!-- 07:15 = 朝バッチ完了想定の 15 分後 -->
   <key>StartCalendarInterval</key>
@@ -26,9 +30,9 @@
   </dict>
 
   <key>StandardOutPath</key>
-  <string>/Users/a05/tradesupport/data/logs/dummy-system.out.log</string>
+  <string>/Users/shotaro/.trading-agent/logs/dummy-system.out</string>
   <key>StandardErrorPath</key>
-  <string>/Users/a05/tradesupport/data/logs/dummy-system.err.log</string>
+  <string>/Users/shotaro/.trading-agent/logs/dummy-system.err</string>
 
   <key>RunAtLoad</key>
   <false/>

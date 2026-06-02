@@ -89,7 +89,390 @@ td code, .code { font-family: ui-monospace, "SF Mono", Menlo, monospace; backgro
 
 <h1>Trading Agent — アーキテクチャ接続図</h1>
 <div class="subtitle">
-最終更新 2026-05-25 / 目的を再定義（予測機→「持ち続けさせる規律監督=Core-Satellite」）＋**ペーパー運用パイプライン接続**（守りレンズ→GENDO推奨カード→人間決裁→翌寄り紙約定→評価。攻めは情報のみ枠0・昇格制）／ 関連：docs/plan/spec, docs/plan/ROADMAP_kodoku_to_paper, docs/progress, docs/reports/GENDO_v001, docs/test_result, docs/MORNING_REVIEW
+最終更新 2026-06-02 (v2.10 / PIPELINE v3) — 朝バッチを WILLE 経路に統合（19 ノード DAG）。
+さらに「勝てるか」を客観判定するための <b>計測 → 増額ゲート⑥ 層</b>を構築。下記の最新セクション参照。
+基盤の 3 層構造（KATSURAGI / AKAGI / DS 4 機）は v2.8 セクション（下方）参照。詳細は <code>docs/PIPELINE_v3.md</code> / <code>docs/HALLUCINATION_BARRIERS.md</code>
+</div>
+
+<!-- =============================================================== -->
+<!-- v2.10 / PIPELINE v3 — 朝バッチ統合 + 計測/増額ゲート層 -->
+<!-- =============================================================== -->
+<h2>v2.10 / PIPELINE v3 — 朝バッチ統合 + 計測・増額ゲート層</h2>
+
+<div class="v28-overview">
+  <h3>🌅 朝バッチ DAG（19 ノード・run_morning_batch）</h3>
+  <div class="v28-org-tree">07:00 朝バッチ start
+  │
+  ├─ pre_check          設定確認 + 前日 awaiting を翌日繰越 cancel
+  ├─ anomaly_check      H-7 DD ブレーキ / HALT（DD ≤-15% / 日次 ≤-7%）
+  ├─ universe_refresh
+  │
+  │  【入力層：候補の素材づくり】
+  ├─ topics_collector   Haiku ニュース収集（H2' ハルシネ禁止プロンプト）
+  ├─ screening          S4 財務 / S5 信用性 / S7 V字 / S7c 相対力 → ScreeningResult
+  ├─ zeele_curator      N 週連続入賞 → ZeeleState(preset)
+  ├─ zeele_llm_scout ★  Haiku で V字/テーマ/攻め探索 → ZeeleState upsert（BudgetGuard 日次¥10）
+  ├─ market_analyst     技術 + ファンダ + news → BuySignal
+  │
+  │  【MAGI 車線：3 賢者の意見表明（決定論・コスト0）】
+  ├─ materialize_decisions → Decision(verifying)
+  ├─ magi_verify        MELCHIOR/BALTHASAR/CASPER + 防御 + 統合 + 碇 → Decision(awaiting) + stance
+  │
+  ├─ <b>katsuragi_dispatch ★ = WILLE 統合フロー（dispatch() 本体・下記）</b>
+  │
+  │  【保有運用】
+  ├─ sell_recommender → trailing_check → close_due → pyramid_check
+  ├─ auto_fill          （auto モードのみ approved を即 fill）
+  └─ link_topics → summary → notify
+                          📄 発注リスト HTML（autoreport/orders/）+ paper auto fill（試験運用シミュ）</div>
+
+  <h3 style="margin-top: 16px;">🎖 katsuragi_dispatch 内部（A+：DS-first / AKAGI-verify）</h3>
+  <div class="note note-update" style="margin-top: 6px; margin-bottom: 8px;">
+    <strong>選定者(DS)と検証者(AKAGI)を分離。</strong>DS が先に自分の信号で提案 → AKAGI の重い検証は
+    <b>提案された銘柄だけ</b>に走る → KATSURAGI が採用を決める。これでゲート⑥の実績を
+    <b>DS の選定能力に帰属</b>できる（AKAGI が選定に混ざる循環を避ける）。
+  </div>
+  <div class="v28-flow-step"><div class="v28-flow-num">1</div>
+    <div>HALT / 予算（treasury available・G-7 逓減・1 命令上限 ¥500k）</div></div>
+  <div class="v28-flow-step"><div class="v28-flow-num">2</div>
+    <div>候補プール = MAGI awaiting ∪ ZEELE active 上位 5（+ live は補完 Universe）。source: magi / zeele / both</div></div>
+  <div class="v28-flow-step"><div class="v28-flow-num">3</div>
+    <div><b>DS 4 機が先に自発 proposal</b>（AKAGI 非依存）: REI/ASUKA/SHINJI=<code>select_from_pool</code>（preset/stance/score）、
+    KAWORU=<code>select_kaworu_contrarian</code>（<b>軽量 RSI のみ</b>＝<code>fetch_technicals_lite</code>。業界/ニュースは選定に使わない）</div></div>
+  <div class="v28-flow-step"><div class="v28-flow-num">4</div>
+    <div><b>AKAGI</b>(ritsuko) が<b>提案された銘柄だけ</b>を検証: TickerBrief 5 中立スコア（news LLM / industry / peer / event / deep）+ 市場 regime</div></div>
+  <div class="v28-flow-step"><div class="v28-flow-num">5</div>
+    <div><b>MISATO</b>（DS 司令塔）: AKAGI brief で priority 計算 + 例外ブロック（決算/ピア劣位/Sonnet 強売り）+ 排他制御（同銘柄=priority 最高の 1 機）</div></div>
+  <div class="v28-flow-step"><div class="v28-flow-num">6</div>
+    <div>opportunity_fill: priority 降順 greedy + 4 ガードレール（1 銘柄/source/sector/1 機上限）+ cash_floor 40%</div></div>
+  <div class="v28-flow-step"><div class="v28-flow-num">7</div>
+    <div>→ DispatchPlan（assignment: ticker→pilot, picked）。Decision に pilot / horizon / stop / preset を反映。
+    <b>fill は picked のみ</b>（<code>paper_fill_approved(allowed_tickers=picked)</code> で plan 外 fill を物理遮断）</div></div>
+  <div class="v28-warn">
+    <b>原則 1 Decision → 1 機 → 1 Portfolio</b>（排他割当）。重複回避であって 1 機 1 銘柄ではない（1 機は予算内で複数保有可）。
+    integrity I7 で「1 decision_id に Portfolio 複数（active+closed）」を検出。
+  </div>
+
+  <h3 style="margin-top: 16px;">📤 実運用（ユーザーは DS の代理として代行発注）</h3>
+  <div class="v28-org-tree">発注リスト HTML
+  └→ 楽天で代行発注（DS が出した出撃命令の最終ボタンだけ押す。ユーザー ≠ KATSURAGI）
+       └→ /purchase-report (mark_filled) → Decision filled + Portfolio(live)</div>
+
+  <h3 style="margin-top: 16px;">📏 計測 → 増額ゲート⑥ 層（「勝てるか」の客観判定・本セッション構築）</h3>
+  <div class="v28-flow-step"><div class="v28-flow-num">A</div>
+    <div>fill 時（auto_fill_paper / mark_filled / notify / paper_fill_approved）に <code>stamp_evaluation_fields</code>：
+    stop / target / 評価期日 / <b>entry_market_regime</b> を刻む。Portfolio.decision_id で紐付け</div></div>
+  <div class="v28-flow-step"><div class="v28-flow-num">B</div>
+    <div>保有 → 退出: <code>paper_close_due</code> が stop/time で閉じる時、<b>実退出損益を buy Decision に記録</b>
+    （horizon 価格で上書きしない＝守り主導の測定正確性）</div></div>
+  <div class="v28-flow-step"><div class="v28-flow-num">C</div>
+    <div><code>evaluate_due_decisions</code>（07:30）: 期日到来分を採点。TOPIX <b>保有期間</b> benchmark で対ベンチ超過、
+    往復コスト 0.44% 控除で <b>コスト後α</b> を算出</div></div>
+  <div class="v28-flow-step"><div class="v28-flow-num">D</div>
+    <div><code>official_gate_evaluation</code>: 公式部分集合（entry_market_regime 有＝正規 fill 由来・legacy 除外）に対し
+    下表 6 要件を<b>まとめて一意判定</b>。report / 昇格 / UI はこの関数だけ参照（<code>scripts/check_gate.py</code> で表示）</div></div>
+
+  <table class="v28-quality-table" style="margin-top: 10px; border-collapse: collapse;">
+    <tr style="border-bottom: 1px solid #ccc;"><td><b>要件（増額ゲート⑥ + コスト後α）</b></td><td><b>閾値（risk/params 正本）</b></td></tr>
+    <tr><td>評価件数 n</td><td>≥ 30</td></tr>
+    <tr><td>命中率 hit_rate</td><td>≥ 50%</td></tr>
+    <tr><td>平均 R（R-mult）</td><td>≥ +0.5</td></tr>
+    <tr><td>最大 DD（評価列 proxy）</td><td>≤ 15%（実口座 DD は正式判定前に置換予定）</td></tr>
+    <tr><td><b>コスト後α（対 TOPIX 超過）</b></td><td>&gt; 0 かつ <b>全件 benchmark 有</b>（部分欠損は誤通過防止のため fail）</td></tr>
+    <tr><td>両局面通過</td><td>順境 + 逆境 両方で entry 実績（※単日 regime proxy・A8 で trailing 化予定）</td></tr>
+  </table>
+
+  <div class="note note-update" style="margin-top: 12px;">
+    <strong>勝ち定義 = ゲート⑥（6 要件すべて）＋ コスト後α&gt;0。</strong>
+    通過するまで実弾を増額しない（tier 段階移行の門）。
+    <b>現状: 公式評価 n=0（フォワード実績はこれから蓄積）。</b>
+    バックテストは規律の事前足切りであって勝率証明ではない（PIT 財務欠如・survivorship のため）。
+    <br>※ 公式集合は現状「A3 後の正規 fill 全般」。DS 単一フロー専用の識別（source/filled_via 列）は A7 で追加予定。
+  </div>
+
+  <h3 style="margin-top: 16px;">🛡 安全装置・運用ゲート（本セッション追加）</h3>
+  <table class="v28-quality-table" style="border-collapse: collapse;">
+    <tr style="border-bottom: 1px solid #ccc;"><td><b>項目</b></td><td><b>内容</b></td></tr>
+    <tr><td>cleanup guard</td><td><code>cleanup_for_fresh_run</code> は評価済 / active Portfolio / 評価予定があれば <code>--force</code> 無しで拒否（フォワード実績の誤爆消去を防止）</td></tr>
+    <tr><td>fill 安全（B 修正）</td><td>dummy-system は <code>--auto-only</code>（approve=False・自動売買トグル ON の機だけ fill）。旧 <code>--approve</code>（トグル迂回の全機 fill）を撤去</td></tr>
+    <tr><td>picked のみ fill（A+ 保護）</td><td><code>paper_fill_approved(allowed_tickers=picked)</code>。dispatch の priority/例外/排他を通った銘柄だけを fill し、personality モードで awaiting を stance 一致で広く拾う <b>plan 外 fill</b> を物理遮断（測定帰属の保護）</td></tr>
+    <tr><td>integrity I7</td><td>1 decision_id → Portfolio 1 件の不変条件を検出（active+closed 総数で歪み後も捕捉）</td></tr>
+    <tr><td>11 防壁</td><td>H / G / S / C 系 + 市場ガード（<code>docs/HALLUCINATION_BARRIERS.md</code>）</td></tr>
+  </table>
+</div>
+
+<!-- =============================================================== -->
+<!-- v2.8 INVESTIGELION 全体図（WILLE 中心） -->
+<!-- =============================================================== -->
+<style>
+  .v28-overview { background: #fff; border: 1px solid #ccc; border-radius: 6px; padding: 20px; margin-bottom: 16px; }
+  .v28-overview h3 { color: #5d3fd3; margin-bottom: 12px; font-size: 14px; margin-top: 6px; }
+  .v28-org-tree { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11.5px; line-height: 1.7; background: #fafaf5; padding: 14px 18px; border-radius: 4px; border: 1px dashed #ccc; white-space: pre; overflow-x: auto; }
+  .v28-tag { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 3px; letter-spacing: 0.5px; }
+  .v28-tag-wille { background: linear-gradient(135deg, #5d3fd3, #4ade80); color: #fff; }
+  .v28-tag-magi { background: rgba(255, 140, 66, 0.2); color: #c0392b; }
+  .v28-tag-zeele { background: rgba(78, 205, 196, 0.2); color: #1ABC9C; }
+  .v28-row { display: grid; gap: 12px; margin-top: 10px; }
+  .v28-row.cols-2 { grid-template-columns: 1fr 1fr; }
+  .v28-row.cols-4 { grid-template-columns: repeat(4, 1fr); }
+  .v28-card { background: #fafaf5; border-radius: 4px; padding: 10px 12px; border-top: 3px solid #888; font-size: 11px; }
+  .v28-card-title { font-weight: 700; font-size: 12px; margin-bottom: 4px; }
+  .v28-card-meta { color: #555; font-size: 10.5px; line-height: 1.5; }
+  .v28-ds-rei { border-top-color: #4a90e2; }
+  .v28-ds-asuka { border-top-color: #e74c3c; }
+  .v28-ds-shinji { border-top-color: #9b59b6; }
+  .v28-ds-kaworu { border-top-color: #5d3fd3; }
+  .v28-flow-step { display: flex; gap: 10px; align-items: flex-start; padding: 6px 0; border-bottom: 1px dashed #ddd; font-size: 12px; }
+  .v28-flow-step:last-child { border-bottom: none; }
+  .v28-flow-num { background: rgba(93, 63, 211, 0.15); color: #5d3fd3; width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-weight: 700; font-size: 11px; }
+  .v28-quality-table { font-size: 12px; width: 100%; }
+  .v28-quality-table td { padding: 4px 8px; }
+  .v28-q-done { color: #27ae60; font-weight: 700; }
+  .v28-phase-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 10px; }
+  .v28-phase-card { background: #fff; border: 1px solid #ddd; border-radius: 4px; padding: 10px 12px; font-size: 11px; }
+  .v28-phase-card.done { background: #eafaf1; border-color: #27ae60; }
+  .v28-phase-title { font-weight: 700; font-size: 12px; margin-bottom: 4px; color: #2e7d32; }
+  .v28-warn { background: #fff7e6; border-left: 4px solid #f39c12; padding: 10px 14px; margin-top: 12px; font-size: 12px; }
+</style>
+
+<h2>v2.8 INVESTIGELION 全体図 — WILLE 司令室</h2>
+
+<div class="v28-overview">
+  <h3>🏛 組織図（責任分離）</h3>
+  <div class="v28-org-tree"><b>INVESTIGELION</b>（プロダクト・Next.js 16.2 + Python バッチ）
+  └─ <b>🛡 WILLE 司令室</b>（投資判断の包括組織）
+       ├─ <b>🎖 KATSURAGI</b>（旧 MISATO）作戦指示・配分・優先度補正
+       │   ├ 戦略パラメータ: balanced / news_focused / trend_focused / peer_focused
+       │   ├ 優先度計算: base_confidence + ritsuko_boost × 0.5
+       │   ├ 例外判定: 決算 7d / ピア最下位 / Sonnet 強売
+       │   ├ 排他制御: 同銘柄複数機 → priority 最高のみ
+       │   ├ 利益優先ジャッジ（機別誘導なし）
+       │   └ <span style="color:#27ae60;font-weight:700;">LLM 不使用</span>（再現性・監査可能性）
+       │
+       ├─ <b>🧪 AKAGI</b>（旧 RITSUKO）銘柄分析・中立スコア提供
+       │   ├ 5 中立スコア: news / industry / peer / event / deep_brief
+       │   ├ data_quality: measured / unavailable / not_implemented (B1)
+       │   ├ Haiku ニュース分類（env 制御・辞書漏れ補完・月 $0.5）
+       │   ├ Sonnet スポット 5 trigger (D1・env 制御・予算 cap $3/月)
+       │   └ industry_score 配線済 (D2・候補プールのセクター別ニュース集計)
+       │
+       └─ <b>DS 4 機</b>（執行エージェント・自発 proposal）
+           ├ 🔵 REI    守り長期 180d / Stop -15% / value/dividend
+           ├ 🔴 ASUKA  攻め中期  60d / Stop -8%  / momentum/growth
+           ├ 🟣 SHINJI 中庸     90d / Stop -10% / pullback/contrarian
+           └ 🌒 KAWORU <b>コントラリアン短期</b> 21d / Stop -5%
+                       └ 他機が選ばなかった銘柄を短期エッジで拾う（v2.8 で再設計）</div>
+
+  <h3 style="margin-top: 16px;">📥 候補発掘層（WILLE の入力）</h3>
+  <div class="v28-row cols-2">
+    <div class="v28-card" style="border-top-color: #c0392b;">
+      <div class="v28-card-title"><span class="v28-tag v28-tag-magi">MAGI</span> 業績スクリーニング</div>
+      <div class="v28-card-meta">
+        CASPER / BALTHASAR / MELCHIOR の 3 体評価 → Gendo 裁定<br>
+        stance: 推し / 要検討 / 静観 / ZEELE<br>
+        LLM: Sonnet 3 体（列挙値検証 + フォールバックあり・H2 修正済）
+      </div>
+    </div>
+    <div class="v28-card" style="border-top-color: #1ABC9C;">
+      <div class="v28-card-title"><span class="v28-tag v28-tag-zeele">ZEELE</span> テーマ駆動・ニュース駆動</div>
+      <div class="v28-card-meta">
+        topics_collector + zeele_curator<br>
+        テーマ → preset 推論 → 銘柄候補（composite_score 付き）<br>
+        LLM: Haiku
+      </div>
+    </div>
+  </div>
+
+  <h3 style="margin-top: 16px;">🤖 DS 4 機 詳細</h3>
+  <div class="v28-row cols-4">
+    <div class="v28-card v28-ds-rei">
+      <div class="v28-card-title" style="color:#4a90e2;">🔵 REI</div>
+      <div class="v28-card-meta">守り長期 / 180d / -15%<br>accept: 推し / 要検討<br>preset: value, dividend, contrarian</div>
+    </div>
+    <div class="v28-card v28-ds-asuka">
+      <div class="v28-card-title" style="color:#e74c3c;">🔴 ASUKA</div>
+      <div class="v28-card-meta">攻め中期 / 60d / -8%<br>accept: 推し / 要検討<br>preset: momentum, growth, alpha</div>
+    </div>
+    <div class="v28-card v28-ds-shinji">
+      <div class="v28-card-title" style="color:#9b59b6;">🟣 SHINJI</div>
+      <div class="v28-card-meta">中庸 / 90d / -10%<br>accept: 推し / 要検討 / ZEELE<br>preset: pullback, contrarian</div>
+    </div>
+    <div class="v28-card v28-ds-kaworu">
+      <div class="v28-card-title" style="color:#5d3fd3;">🌒 KAWORU</div>
+      <div class="v28-card-meta"><b>コントラリアン短期</b> / 21d / -5%<br>他機が選ばなかった銘柄から短期エッジで拾う<br><code>select_kaworu_contrarian</code></div>
+    </div>
+  </div>
+</div>
+
+<div class="v28-overview">
+  <h3>🔄 dispatch 1 回ぶんのデータフロー（v2.8 当時。<span style="color:#c0392b;">現行は最上部 v2.10 の A+「DS-first / AKAGI-verify」順に変更済</span>）</h3>
+  <div class="v28-flow-step">
+    <div class="v28-flow-num">1</div>
+    <div>候補プール構築: MAGI + ZEELE の和集合（<code>_build_candidate_pool</code>）</div>
+  </div>
+  <div class="v28-flow-step">
+    <div class="v28-flow-num">2</div>
+    <div><b>AKAGI</b> Brief 構築: 各銘柄に technicals (MAGI 借用 → yfinance fallback) / news / peer / industry / events</div>
+  </div>
+  <div class="v28-flow-step">
+    <div class="v28-flow-num">3</div>
+    <div>5 中立スコアを算出し data_quality を付与（measured / unavailable / not_implemented）</div>
+  </div>
+  <div class="v28-flow-step">
+    <div class="v28-flow-num">4</div>
+    <div>DS 4 機が自発 proposal: REI/ASUKA/SHINJI は <code>select_from_pool</code>、KAWORU は <code>select_kaworu_contrarian</code>（他機が選ばなかった銘柄のみ）</div>
+  </div>
+  <div class="v28-flow-step">
+    <div class="v28-flow-num">5</div>
+    <div><b>KATSURAGI</b> 優先度計算: <code>priority = base_confidence + ritsuko_boost × 0.5</code></div>
+  </div>
+  <div class="v28-flow-step">
+    <div class="v28-flow-num">6</div>
+    <div>例外判定 + 排他制御（同銘柄に複数機 proposal なら priority 最高のみ）+ 安全装置（HALT / 市場ガード / 1命令上限 / 1機上限）</div>
+  </div>
+  <div class="v28-flow-step">
+    <div class="v28-flow-num">7</div>
+    <div>paper_exec で fill: Stop-loss / time exit / 機内重複防止</div>
+  </div>
+  <div class="v28-flow-step">
+    <div class="v28-flow-num">8</div>
+    <div>snapshot.json 再生成 → UI 反映（5 分自動 + 手動ボタン）</div>
+  </div>
+</div>
+
+<div class="v28-overview">
+  <h3>💴 予算フィルター 4 段階（v2.8 実弾モード）</h3>
+  <table class="v28-quality-table">
+    <thead>
+      <tr style="background:#f5f0ff;">
+        <th style="width:80px;">Stage</th>
+        <th style="width:280px;">場所 / 関数</th>
+        <th>動作</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><b>0</b></td>
+        <td><code>_filter_existing_pool_by_budget</code><br/>(_build_candidate_pool 内)</td>
+        <td><b>候補プール構築時に予算外を除外</b>。MAGI/ZEELE 既存銘柄を yfinance bulk で価格取得 → <code>price × 100 &gt; max_lot_cost</code> なら除外。価格取得失敗は安全側で残す。<br/>
+        <span style="color:#27ae60;">効果: AKAGI が無駄に Brief 構築（peer 比較・ニュース取得）しなくなる</span></td>
+      </tr>
+      <tr>
+        <td><b>1</b></td>
+        <td><code>can_afford_one_lot</code><br/>(build_briefs_from_pool)</td>
+        <td>AKAGI Brief に <code>affordable</code> フラグを付与。UI 表示の <span class="v28-q-done">✓ 予算内</span> / <span style="color:#f87171;">✗ 予算外</span> 区別。除外はしない（Stage 0 で済んでいる）。</td>
+      </tr>
+      <tr>
+        <td><b>2</b></td>
+        <td><code>_fetch_min_budgets</code><br/>(ds_scout)</td>
+        <td>DS の自発 proposal 申請時、<code>min_budget = price × lot_size</code> が <code>max_lot_cost</code> を超えていれば <code>None</code> を返して申請拒否。</td>
+      </tr>
+      <tr>
+        <td><b>3</b></td>
+        <td><code>paper_fill_approved</code><br/>(paper_exec)</td>
+        <td>最終 fill 段階での safety net。<code>_lot_cost &gt; max_lot</code> なら <code>result.skipped</code> に追加してスキップ。</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3 style="margin-top: 16px;">📦 予算上限の決定ロジック</h3>
+  <div style="background:#fafaf5; padding:12px 14px; border-radius:4px; font-size:12px; font-family:ui-monospace, monospace;">
+<b>is_live_mode()</b>: WILLE_PAPER_MODE != 1 → True（実弾モードがデフォルト）<br/>
+<br/>
+<b>get_max_lot_cost_jpy(available_budget)</b>:<br/>
+&nbsp;&nbsp;優先 1: WILLE_MAX_LOT_JPY が設定されていればその金額（直接指定）<br/>
+&nbsp;&nbsp;優先 2: available_budget × WILLE_MAX_LOT_PCT（デフォルト 20%）<br/>
+<br/>
+<b>UI から渡せるパラメータ</b>:<br/>
+&nbsp;&nbsp;金額モード: <code>{ max_lot_jpy: 100000 }</code> → WILLE_MAX_LOT_JPY=100000<br/>
+&nbsp;&nbsp;割合モード: <code>{ max_lot_pct: 0.5 }</code>  → WILLE_MAX_LOT_PCT=0.5<br/>
+&nbsp;&nbsp;localStorage で永続化、refresh/execute API に自動送信
+  </div>
+
+  <h3 style="margin-top: 16px;">🔄 候補プール再構成の効果</h3>
+  <table class="v28-quality-table">
+    <thead>
+      <tr style="background:#f5f0ff;">
+        <th></th>
+        <th>修正前</th>
+        <th>修正後</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><b>候補プール全体</b></td>
+        <td>30 件（大型株中心）</td>
+        <td><b style="color:#27ae60;">11 件</b>（全部予算内）</td>
+      </tr>
+      <tr>
+        <td><b>予算内</b></td>
+        <td>9 件 (30%)</td>
+        <td>11 件 (100%) ✓</td>
+      </tr>
+      <tr>
+        <td><b>予算外（無駄な分析対象）</b></td>
+        <td>21 件 ⚠</td>
+        <td><b style="color:#27ae60;">0 件</b></td>
+      </tr>
+      <tr>
+        <td><b>MAGI 補完（時価総額順・防御）</b></td>
+        <td>8 件 (preset=alpha)</td>
+        <td>7-8 件</td>
+      </tr>
+      <tr>
+        <td><b>ZEELE 補完（30日リターン順・モメンタム）</b></td>
+        <td>2 件</td>
+        <td>3 件（preset=momentum/growth）</td>
+      </tr>
+      <tr>
+        <td><b>AKAGI Brief 構築コスト</b></td>
+        <td>30 件 × 全カテゴリ取得</td>
+        <td><b style="color:#27ae60;">11 件 × 全カテゴリ取得</b>（63% 削減）</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="v28-overview">
+  <h3>📊 Phase 進捗（v2.8 完了）</h3>
+  <div class="v28-phase-grid">
+    <div class="v28-phase-card done">
+      <div class="v28-phase-title">Phase A ✅</div>
+      重複削除 / RITSUKO Brief 化 / KATSURAGI Strategy / 機内重複防止 / KAWORU 再設計（合議→contrarian）
+    </div>
+    <div class="v28-phase-card done">
+      <div class="v28-phase-title">Phase B ✅</div>
+      Haiku ニュース連携 / yfinance peer・events / 市場ガード / 自動価格更新（軽量） / 日本語名表示
+    </div>
+    <div class="v28-phase-card done">
+      <div class="v28-phase-title">Phase C ✅</div>
+      情報透明化 (data_quality) / 市場ガードテスト / Sonnet 予算 cap / rate-limit クールダウン
+    </div>
+    <div class="v28-phase-card done">
+      <div class="v28-phase-title">Phase D ✅</div>
+      Sonnet スポット 5 trigger (env制御) / industry_score 配線 / 重み校正スクリプト
+    </div>
+  </div>
+
+  <h3 style="margin-top: 16px;">🛡 情報欺瞞 H1〜H4 修正済（致命的）</h3>
+  <table class="v28-quality-table">
+    <tr><td style="width:40px;"><b>H1</b></td><td style="width:30px;"><span class="v28-q-done">✓</span></td><td>RSI=50.0 偽装を None に（<code>_calc_rsi_simple</code>）— KAWORU の RSI スイートスポット偽流入を遮断</td></tr>
+    <tr><td><b>H2</b></td><td><span class="v28-q-done">✓</span></td><td>Haiku 出力の値域検証（impact / category / confidence）— "strong_buy" 等の不正値を破棄</td></tr>
+    <tr><td><b>H3</b></td><td><span class="v28-q-done">✓</span></td><td>preset=None の 0.5 偽装 → 0.2 + 10% ディスカウント — データ品質を confidence に反映</td></tr>
+    <tr><td><b>H4</b></td><td><span class="v28-q-done">✓</span></td><td>outlook を「利益優先」に書き直し — 機別誘導を削除、boost 上位を機関係なく列挙</td></tr>
+  </table>
+
+  <h3 style="margin-top: 16px;">📈 現状の品質メトリクス</h3>
+  <ul style="margin-left: 20px; font-size: 12px; line-height: 1.8;">
+    <li>テスト: <b style="color:#27ae60;">502 件 PASS</b>（v2.7 の 500 + 市場ガードテスト 2 件）</li>
+    <li>データ品質: <b style="color:#27ae60;">measured 82%</b>（旧 65% → industry 配線で +17%）</li>
+    <li>LLM コスト想定: <b>月 $3-5</b>（既存 + Haiku env 制御 + Sonnet スポット予算 cap）</li>
+    <li>UI: HTTP 200 / 自動価格更新 5 分間隔（30s/1m/5m 切替可）/ yfinance クールダウン 30 分</li>
+  </ul>
+
+  <div class="v28-warn">
+    <b>⚠ 単元未満株モード（v2.8）</b>: 現在 Paper 検証は <b>1 株単位</b>で fill している。実弾移行時は JP 株は単元株（100 株単位）なので、各保有銘柄に <code>lot_equivalent_jpy</code>（100 株相当金額）を併記。UI バナーで明示。
+  </div>
 </div>
 
 <!-- =============================================================== -->
@@ -287,7 +670,7 @@ td code, .code { font-family: ui-monospace, "SF Mono", Menlo, monospace; backgro
   <text x="670" y="358" font-size="9" fill="#666">V字/テーマ/信用性</text>
   <rect x="850" y="328" width="170" height="40" rx="3" fill="#fff" stroke="#2980b9"/>
   <text x="860" y="343" font-size="10" font-weight="600">llm_call</text>
-  <text x="860" y="358" font-size="9" fill="#666">Anthropic/Ollama</text>
+  <text x="860" y="358" font-size="9" fill="#666">Anthropic Sonnet/Haiku</text>
   <rect x="1030" y="328" width="185" height="40" rx="3" fill="#fafafa" stroke="#bbb" stroke-dasharray="3,3"/>
   <text x="1040" y="343" font-size="10" font-weight="600" fill="#888">broker_order</text>
   <text x="1040" y="358" font-size="9" fill="#888">Phase 2+</text>
@@ -341,7 +724,7 @@ td code, .code { font-family: ui-monospace, "SF Mono", Menlo, monospace; backgro
   <text x="1250" y="445" font-size="11" font-weight="700" fill="#922b21">LLM Layer</text>
   <text x="1250" y="463" font-size="9.5" fill="#666">Sonnet 4.6 (Hot)</text>
   <text x="1250" y="478" font-size="9.5" fill="#666">Opus 4.7 (Critical)</text>
-  <text x="1250" y="493" font-size="9.5" fill="#666">Ollama (Cold・無料)</text>
+  <text x="1250" y="493" font-size="9.5" fill="#666">Haiku (Cold・低コスト)</text>
   <text x="1250" y="514" font-size="9" fill="#c0392b" font-weight="700">月¥5,000予算管理</text>
   <text x="1250" y="528" font-size="9" fill="#c0392b" font-weight="700">HALT で停止</text>
   <text x="1250" y="544" font-size="9" fill="#666" font-style="italic">（③/④で注入）</text>
@@ -373,8 +756,8 @@ td code, .code { font-family: ui-monospace, "SF Mono", Menlo, monospace; backgro
   <rect x="475" y="670" width="240" height="82" rx="4" fill="#fff" stroke="#8e44ad"/>
   <text x="485" y="688" font-size="12" font-weight="700" fill="#5b2c6f">MELCHIOR</text>
   <text x="485" y="706" font-size="10" fill="#666">役割：テクニカル / 価格</text>
-  <text x="485" y="722" font-size="10" fill="#666">エンジン：Ollama（独立）</text>
-  <text x="485" y="742" font-size="9" fill="#c0392b" font-weight="700">← LLM Layer (Ollama)</text>
+  <text x="485" y="722" font-size="10" fill="#666">エンジン：決定論（run_judges）</text>
+  <text x="485" y="742" font-size="9" fill="#27ae60" font-weight="700">← LLM 不使用（コスト0）</text>
   <rect x="725" y="670" width="240" height="82" rx="4" fill="#fff" stroke="#8e44ad"/>
   <text x="735" y="688" font-size="12" font-weight="700" fill="#5b2c6f">BALTHASAR</text>
   <text x="735" y="706" font-size="10" fill="#666">役割：ファンダ・出典照合</text>
@@ -408,10 +791,10 @@ td code, .code { font-family: ui-monospace, "SF Mono", Menlo, monospace; backgro
   <!-- Side: LLM Layer (注入元・④用) -->
   <rect x="1240" y="670" width="140" height="200" rx="5" fill="#fdf2f2" stroke="#c0392b" stroke-width="1.5"/>
   <text x="1250" y="690" font-size="11" font-weight="700" fill="#922b21">LLM Layer</text>
-  <text x="1250" y="708" font-size="9" fill="#666">3審判別にモデル割当：</text>
-  <text x="1250" y="725" font-size="9.5" fill="#5b2c6f" font-weight="700">MELCHIOR ← Ollama</text>
-  <text x="1250" y="740" font-size="9.5" fill="#5b2c6f" font-weight="700">BALTHASAR ← Sonnet</text>
-  <text x="1250" y="755" font-size="9.5" fill="#5b2c6f" font-weight="700">CASPER ← Sonnet</text>
+  <text x="1250" y="708" font-size="9" fill="#666">既定は3審判とも決定論：</text>
+  <text x="1250" y="725" font-size="9.5" fill="#27ae60" font-weight="700">MELCHIOR ← 決定論</text>
+  <text x="1250" y="740" font-size="9.5" fill="#27ae60" font-weight="700">BALTHASAR ← 決定論</text>
+  <text x="1250" y="755" font-size="9.5" fill="#5b2c6f" font-weight="700">CASPER ← 決定論(Sonnet格上げ可)</text>
   <text x="1250" y="778" font-size="9" fill="#666">独立性のため</text>
   <text x="1250" y="791" font-size="9" fill="#666">プロンプトに他審判</text>
   <text x="1250" y="804" font-size="9" fill="#666">の出力を入力しない</text>
@@ -601,8 +984,147 @@ td code, .code { font-family: ui-monospace, "SF Mono", Menlo, monospace; backgro
   <rect x="60" y="1698" width="1320" height="40" rx="4" fill="#f5f5f5" stroke="#aaa"/>
   <text x="75" y="1717" font-size="11" font-weight="700" fill="#555">基盤（cross-cutting）</text>
   <text x="220" y="1717" font-size="10" fill="#666">macOS / FastAPI Server（MCPホスト＋UI配信＋APScheduler朝バッチ起動） / moomoo OpenD（常時起動・株価/残高/約定の同期）</text>
-  <text x="75" y="1732" font-size="9" fill="#888">launchd常駐・ローカル完結・月¥5,000 LLM予算 / HALT 即停止 / PAPER ⇄ LIVE 切替</text>
+  <text x="75" y="1732" font-size="9" fill="#888">launchd常駐・ローカル完結・月¥5,000 LLM予算 / HALT 即停止 / PAPER ⇄ LIVE 切替（WILLE_LIVE_MODE=1）</text>
 </svg>
+</div>
+
+<!-- =============================================================== -->
+<!-- v2.8: WILLE 司令室 SVG（MAGI/ZEELE の上に重なる判断層）-->
+<!-- =============================================================== -->
+<div class="diagram" style="margin-top: 16px;">
+<svg class="diagram-svg" viewBox="0 0 1400 720" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="warr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#5d3fd3"/>
+    </marker>
+    <linearGradient id="willeGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#5d3fd3"/>
+      <stop offset="100%" stop-color="#4ade80"/>
+    </linearGradient>
+  </defs>
+
+  <!-- タイトル -->
+  <text x="700" y="32" text-anchor="middle" font-size="16" font-weight="800" fill="#5d3fd3">🛡 WILLE 司令室 — 投資判断統括層（v2.8 INVESTIGELION）</text>
+  <text x="700" y="52" text-anchor="middle" font-size="11" fill="#666">MAGI / ZEELE の候補を受け取り、AKAGI が分析、KATSURAGI が配分、DS 4 機が執行する</text>
+
+  <!-- ====================== L2: 候補発掘層 ====================== -->
+  <rect x="60" y="80" width="600" height="80" rx="6" fill="#fff5e6" stroke="#e67e22" stroke-width="1.5"/>
+  <text x="360" y="105" text-anchor="middle" font-size="12" font-weight="700" fill="#c0392b">MAGI（業績スクリーニング）</text>
+  <text x="360" y="124" text-anchor="middle" font-size="10" fill="#555">CASPER / BALTHASAR / MELCHIOR の 3 体評価 → Gendo 裁定</text>
+  <text x="360" y="140" text-anchor="middle" font-size="10" fill="#555">+ <tspan font-weight="700" fill="#c0392b">予算ベース低額補完</tspan>（Universe から 1 単元 ≤ 上限の優良銘柄 8 件・v2.8）</text>
+
+  <rect x="740" y="80" width="600" height="80" rx="6" fill="#e8f9f5" stroke="#16a085" stroke-width="1.5"/>
+  <text x="1040" y="105" text-anchor="middle" font-size="12" font-weight="700" fill="#16a085">ZEELE（テーマ駆動）</text>
+  <text x="1040" y="124" text-anchor="middle" font-size="10" fill="#555">topics_collector + zeele_curator</text>
+  <text x="1040" y="140" text-anchor="middle" font-size="10" fill="#555">+ <tspan font-weight="700" fill="#16a085">予算ベースモメンタム補完</tspan>（30日リターン降順 +2% 以上・v2.8）</text>
+
+  <!-- ====================== L1: WILLE 統括層 ====================== -->
+  <rect x="60" y="200" width="1280" height="280" rx="8" fill="#f5f0ff" stroke="url(#willeGrad)" stroke-width="2.5"/>
+  <text x="80" y="226" font-size="13" font-weight="800" fill="#5d3fd3">🛡 WILLE</text>
+  <text x="150" y="226" font-size="11" fill="#666">投資判断の包括組織</text>
+
+  <!-- AKAGI（左ブロック）-->
+  <rect x="80" y="244" width="370" height="220" rx="6" fill="#fff" stroke="#1ABC9C" stroke-width="1.5"/>
+  <text x="265" y="266" text-anchor="middle" font-size="12" font-weight="700" fill="#16a085">🧪 AKAGI（旧 RITSUKO）</text>
+  <text x="265" y="282" text-anchor="middle" font-size="10" fill="#666">銘柄分析 / 中立スコア提供</text>
+  <line x1="100" y1="294" x2="430" y2="294" stroke="#1ABC9C" stroke-dasharray="2,2" opacity="0.5"/>
+  <text x="100" y="312" font-size="10" fill="#333">📊 5 中立スコア (boost 集約せず素材として提供):</text>
+  <text x="100" y="328" font-size="9.5" fill="#555">  • news_sentiment / industry / peer / event / deep_brief</text>
+  <text x="100" y="346" font-size="10" fill="#333">🏷 data_quality: measured / unavailable / not_implemented</text>
+  <text x="100" y="362" font-size="9.5" fill="#555">  → 「データなし」と「中立 0」を明確に区別（v2.8 B1）</text>
+  <text x="100" y="382" font-size="10" fill="#333">🤖 LLM:</text>
+  <text x="100" y="396" font-size="9.5" fill="#555">  • Haiku ニュース分類（env 制御・月 $0.5）</text>
+  <text x="100" y="412" font-size="9.5" fill="#555">  • Sonnet スポット 5 trigger（予算 cap $3/月）</text>
+  <text x="100" y="430" font-size="10" fill="#333">📍 ファイル:</text>
+  <text x="100" y="446" font-size="9.5" font-family="ui-monospace" fill="#7b2cbf">  trading_agent/wille/ritsuko.py</text>
+
+  <!-- KATSURAGI（中央ブロック）-->
+  <rect x="468" y="244" width="370" height="220" rx="6" fill="#fff" stroke="#5d3fd3" stroke-width="1.5"/>
+  <text x="653" y="266" text-anchor="middle" font-size="12" font-weight="700" fill="#5d3fd3">🎖 KATSURAGI（旧 MISATO）</text>
+  <text x="653" y="282" text-anchor="middle" font-size="10" fill="#666">作戦指示 / 予算配分 / 優先度補正</text>
+  <line x1="488" y1="294" x2="818" y2="294" stroke="#5d3fd3" stroke-dasharray="2,2" opacity="0.5"/>
+  <text x="488" y="312" font-size="10" fill="#333">🎯 戦略パラメータ（5 中立スコアの重み付け）:</text>
+  <text x="488" y="328" font-size="9.5" fill="#555">  • balanced / news_focused / trend_focused / peer_focused</text>
+  <text x="488" y="346" font-size="10" fill="#333">⚖ 優先度計算（利益優先・機別誘導なし）:</text>
+  <text x="488" y="362" font-size="9.5" fill="#555">  priority = base_confidence + ritsuko_boost × 0.5</text>
+  <text x="488" y="382" font-size="10" fill="#333">🛡 安全装置:</text>
+  <text x="488" y="396" font-size="9.5" fill="#555">  HALT / 市場ガード(日経-3%) / 1命令上限 / 1機上限</text>
+  <text x="488" y="412" font-size="10" fill="#333">🚫 排他制御:</text>
+  <text x="488" y="426" font-size="9.5" fill="#555">  同銘柄複数機 proposal → priority 最高のみ採用</text>
+  <text x="488" y="446" font-size="9.5" font-weight="700" fill="#27ae60">💡 LLM 不使用（再現性・監査可能性）</text>
+
+  <!-- DS 4 機（右ブロック）-->
+  <rect x="856" y="244" width="464" height="220" rx="6" fill="#fff" stroke="#666" stroke-width="1.5"/>
+  <text x="1088" y="266" text-anchor="middle" font-size="12" font-weight="700" fill="#444">DS 4 機（執行エージェント）</text>
+  <text x="1088" y="282" text-anchor="middle" font-size="10" fill="#666">自発 proposal で銘柄を申請</text>
+
+  <rect x="876" y="298" width="110" height="78" rx="4" fill="#eaf4fa" stroke="#4a90e2" stroke-width="3" stroke-dasharray="0"/>
+  <text x="931" y="318" text-anchor="middle" font-size="11" font-weight="700" fill="#2980b9">🔵 REI</text>
+  <text x="931" y="334" text-anchor="middle" font-size="9" fill="#444">守り長期</text>
+  <text x="931" y="348" text-anchor="middle" font-size="9" fill="#666">180d / -15%</text>
+  <text x="931" y="364" text-anchor="middle" font-size="8" fill="#666">value/dividend</text>
+
+  <rect x="996" y="298" width="110" height="78" rx="4" fill="#fde8e6" stroke="#e74c3c" stroke-width="3"/>
+  <text x="1051" y="318" text-anchor="middle" font-size="11" font-weight="700" fill="#c0392b">🔴 ASUKA</text>
+  <text x="1051" y="334" text-anchor="middle" font-size="9" fill="#444">攻め中期</text>
+  <text x="1051" y="348" text-anchor="middle" font-size="9" fill="#666">60d / -8%</text>
+  <text x="1051" y="364" text-anchor="middle" font-size="8" fill="#666">momentum/growth</text>
+
+  <rect x="1116" y="298" width="110" height="78" rx="4" fill="#f3e8f9" stroke="#9b59b6" stroke-width="3"/>
+  <text x="1171" y="318" text-anchor="middle" font-size="11" font-weight="700" fill="#8e44ad">🟣 SHINJI</text>
+  <text x="1171" y="334" text-anchor="middle" font-size="9" fill="#444">中庸</text>
+  <text x="1171" y="348" text-anchor="middle" font-size="9" fill="#666">90d / -10%</text>
+  <text x="1171" y="364" text-anchor="middle" font-size="8" fill="#666">pullback</text>
+
+  <rect x="1236" y="298" width="84" height="78" rx="4" fill="#e9e3f9" stroke="#5d3fd3" stroke-width="3"/>
+  <text x="1278" y="316" text-anchor="middle" font-size="10.5" font-weight="700" fill="#5d3fd3">🌒 KAWORU</text>
+  <text x="1278" y="330" text-anchor="middle" font-size="8.5" fill="#444">contrarian短期</text>
+  <text x="1278" y="343" text-anchor="middle" font-size="8.5" fill="#666">21d / -5%</text>
+  <text x="1278" y="358" text-anchor="middle" font-size="7.5" fill="#666">他機未選定銘柄</text>
+  <text x="1278" y="370" text-anchor="middle" font-size="7.5" fill="#666">短期エッジで拾う</text>
+
+  <text x="1088" y="408" text-anchor="middle" font-size="10" fill="#333">📥 各機の判定:</text>
+  <text x="876" y="426" font-size="9" fill="#555">• REI/ASUKA/SHINJI: select_from_pool（自分の accept_stances）</text>
+  <text x="876" y="442" font-size="9" fill="#555">• KAWORU: select_kaworu_contrarian（他機 proposal にない銘柄のみ）</text>
+  <text x="876" y="458" font-size="9" font-weight="700" fill="#27ae60">✓ 機内重複防止 + 機跨ぎ排他制御で「同銘柄 1 機」を保証</text>
+
+  <!-- ====================== 矢印（候補発掘 → WILLE） ====================== -->
+  <path d="M 360 162 L 360 240" stroke="#e67e22" stroke-width="2" fill="none" marker-end="url(#arr-orange)"/>
+  <text x="378" y="200" font-size="10" fill="#c0392b">候補 + stance</text>
+
+  <path d="M 1040 162 L 1040 240" stroke="#16a085" stroke-width="2" fill="none" marker-end="url(#warr)"/>
+  <text x="1058" y="200" font-size="10" fill="#16a085">候補 + preset</text>
+
+  <!-- ====================== L0: 執行層 ====================== -->
+  <rect x="60" y="510" width="1280" height="76" rx="6" fill="#eafaf1" stroke="#27ae60" stroke-width="1.5"/>
+  <text x="700" y="534" text-anchor="middle" font-size="12" font-weight="700" fill="#16a085">執行層（paper_exec / moomoo_sim）</text>
+  <text x="80" y="556" font-size="10" fill="#333">📍 Paper 検証: 1 株単位 fill / Stop-loss / time exit / 機内重複防止</text>
+  <text x="700" y="556" font-size="10" fill="#333">📍 実弾モード（WILLE_LIVE_MODE=1）: <b>JP 株 100 株単位</b>で fill / 単元未満は申請除外</text>
+  <text x="80" y="572" font-size="9.5" fill="#666">moomoo_sim: 手数料・スリッページ・FX を実弾相当でシミュレート</text>
+  <text x="700" y="572" font-size="9.5" fill="#666">予算が変われば候補も動的に変わる（例: ¥1M で任天堂が候補化）</text>
+
+  <!-- 矢印（WILLE → 執行） -->
+  <path d="M 700 482 L 700 508" stroke="#5d3fd3" stroke-width="2" fill="none" marker-end="url(#warr)"/>
+  <text x="718" y="500" font-size="10" fill="#5d3fd3">priority 順 fill</text>
+
+  <!-- ====================== L0: UI / snapshot ====================== -->
+  <rect x="60" y="610" width="1280" height="54" rx="6" fill="#fff" stroke="#999"/>
+  <text x="80" y="632" font-size="11" font-weight="700" fill="#444">UI (INVESTIGELION) — Next.js 16.2 / port 3100</text>
+  <text x="80" y="650" font-size="9.5" fill="#666">snapshot.json 再生成（5 分自動 + 手動）→ React fetch → WILLE / KATSURAGI / AKAGI / DS 4 機 表示</text>
+
+  <path d="M 700 590 L 700 608" stroke="#666" stroke-width="1.5" fill="none" marker-end="url(#arr)"/>
+
+  <!-- フッター -->
+  <text x="700" y="700" text-anchor="middle" font-size="10" fill="#888">v2.8 INVESTIGELION — Phase A/B/C/D 完了 / テスト 502 PASS / measured 82% / LLM 月 $3-5</text>
+</svg>
+</div>
+
+<div class="note note-update">
+  <strong>v2.8 INVESTIGELION 全体図のポイント</strong>:
+  既存の MAGI / ZEELE 図はそのまま残し、その上に <b>WILLE 統括層</b>（KATSURAGI + AKAGI + DS 4 機）を追加配置。
+  MAGI / ZEELE の候補は WILLE で AKAGI が分析、KATSURAGI が <b>利益優先</b>で配分、DS 4 機が執行する 3 層構造。
+  実弾モード切替（<code>WILLE_LIVE_MODE=1</code>）で JP 株は単元株（100 株）単位の fill に切り替わり、
+  予算によって買える銘柄が動的に変わる（¥100k では低額株のみ、¥1M で任天堂も候補化）。
 </div>
 
 <div class="note note-update">
@@ -641,7 +1163,7 @@ td code, .code { font-family: ui-monospace, "SF Mono", Menlo, monospace; backgro
     <tr>
       <td>05:02</td>
       <td>NewsAPI / RSS から過去24時間のニュース取得、AIで分類・重要度判定 → topics テーブル</td>
-      <td><span class="proto proto-mcp">news</span> + <span class="proto proto-llm">Ollama</span></td>
+      <td><span class="proto proto-mcp">news</span> + <span class="proto proto-llm">Haiku</span></td>
     </tr>
     <tr>
       <td>05:05</td>
@@ -687,8 +1209,9 @@ td code, .code { font-family: ui-monospace, "SF Mono", Menlo, monospace; backgro
 </table>
 
 <div class="note">
-  朝バッチは LLM 呼び出しが集中するタイミング。<strong>Hot Path（Sonnet）と Cold Path（Ollama）の振り分け</strong>が月¥5,000の予算遵守の鍵。
-  ニュース要約・トピックス分類は Ollama、判断系のみ Sonnet/Opus を使う。
+  朝バッチは LLM 呼び出しが集中するタイミング。<strong>Hot Path（Sonnet）と Cold Path（Haiku）の振り分け</strong>が予算遵守の鍵。
+  ニュース要約・トピックス分類は Haiku、判断系のみ Sonnet/Opus を使う。<br>
+  ※ Cold Path は当初 Ollama（ローカル・無料）を想定したが、未インストール環境のため <code>HaikuFallbackClient</code>（Anthropic Haiku）で代用中。Ollama 関連コード（<code>ollama_client.py</code> / router <code>MODEL_OLLAMA</code> / config）は将来オプションとして休眠状態で残置。
 </div>
 
 
@@ -761,9 +1284,9 @@ td code, .code { font-family: ui-monospace, "SF Mono", Menlo, monospace; backgro
       <td><span class="phase phase-1">Phase 1</span></td>
     </tr>
     <tr>
-      <td>Ollama (local)</td>
+      <td>Haiku（Cold Path）</td>
       <td><span class="proto proto-llm">LLM</span></td>
-      <td>Cold Path（要約・整形・分類）。コスト¥0</td>
+      <td>Cold Path（要約・整形・分類）。HaikuFallbackClient で代用（旧 Ollama 想定・低コスト）</td>
       <td><span class="phase phase-1">Phase 1</span></td>
     </tr>
   </tbody>
@@ -820,7 +1343,7 @@ td code, .code { font-family: ui-monospace, "SF Mono", Menlo, monospace; backgro
     </tr>
     <tr>
       <td><code>llm_call</code></td>
-      <td>LangChain経由で Anthropic / Ollama を呼び分け、コスト記録</td>
+      <td>Anthropic Sonnet（Hot）/ Haiku（Cold）を呼び分け、コスト記録</td>
       <td>全エージェント</td>
     </tr>
   </tbody>
@@ -889,7 +1412,7 @@ td code, .code { font-family: ui-monospace, "SF Mono", Menlo, monospace; backgro
   <tbody>
     <tr>
       <td>初期セットアップ</td>
-      <td>moomoo口座開設、各APIキー取得、Anthropic/J-Quants/EDINET/NewsAPI登録、 .env 設定、Ollama インストール</td>
+      <td>moomoo口座開設、各APIキー取得、Anthropic/J-Quants/EDINET/NewsAPI登録、 .env 設定（Ollama は現状不使用・Haiku 代用）</td>
       <td>初回のみ</td>
     </tr>
     <tr>

@@ -8,6 +8,7 @@ yfinance の財務諸表（income_stmt / balance_sheet / cashflow）から**直�
 
 from __future__ import annotations
 
+import datetime as dt
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -209,6 +210,78 @@ def _fetch_jquants_financials(
         prior2=periods[2] if len(periods) >= 3 else None,
         market_cap=market_cap,
         source="jquants",
+    )
+
+
+# BT-0: J-Quants statements の開示日フィールド候補。
+# 実 API dry-read（2026-06-02）で実名 = "DiscDate"（Timestamp 型）と確認。先頭に置く。
+# 財務値の実列名も確認済: Sales/OP/NP/TA/CFO/EPS（_jquants_stmt_to_period と一致）。
+_DISCLOSED_DATE_KEYS = ("DiscDate", "DisclosedDate", "DisclosureDate")
+
+
+def _parse_disclosed_date(stmt: dict) -> dt.date | None:
+    """statements の 1 期から開示日を取り出す。取れなければ None（推測しない）。"""
+    for key in _DISCLOSED_DATE_KEYS:
+        raw = stmt.get(key)
+        if raw is None or raw == "":
+            continue
+        if isinstance(raw, dt.datetime):
+            return raw.date()
+        if isinstance(raw, dt.date):
+            return raw
+        s = str(raw).strip()
+        try:
+            return dt.date.fromisoformat(s.replace("/", "-")[:10])
+        except ValueError:
+            pass
+        digits = "".join(ch for ch in s if ch.isdigit())[:8]
+        if len(digits) == 8:
+            try:
+                return dt.date(int(digits[:4]), int(digits[4:6]), int(digits[6:8]))
+            except ValueError:
+                pass
+    return None
+
+
+def fetch_financials_asof(
+    ticker: str,
+    statements: list[dict],
+    as_of: dt.date,
+    *,
+    market_cap: float | None = None,
+) -> Financials | None:
+    """BT-0: as_of 時点で公表済みの財務だけで Financials を構成（PIT・look-ahead 回避・純粋関数）。
+
+    DisclosedDate ≤ as_of の開示だけを使い、開示日降順で current/prior/prior2 を作る。
+    **開示日が取れない statement は除外**（保守的＝未来財務の混入を防ぐ。silent look-ahead を出さない）。
+    API 非依存（statements を注入）なので fixtures でテスト可能。
+
+    ⚠ J-Quants SDK の開示日フィールド実名は実 API で要確認（_DISCLOSED_DATE_KEYS の候補で対応中）。
+       実名が候補外だと全 statement が除外され None を返す（＝backtest が空＝バグに気づける／嘘は出さない）。
+    """
+    eligible: list[tuple[dt.date, dict]] = []
+    for stmt in statements:
+        d = _parse_disclosed_date(stmt)
+        if d is None or d > as_of:
+            continue
+        eligible.append((d, stmt))
+    if not eligible:
+        return None
+    eligible.sort(key=lambda x: x[0], reverse=True)
+    periods: list[PeriodFinancials] = []
+    for _, stmt in eligible[:3]:
+        pf = _jquants_stmt_to_period(stmt)
+        if pf is not None:
+            periods.append(pf)
+    if not periods:
+        return None
+    return Financials(
+        ticker=ticker,
+        current=periods[0],
+        prior=periods[1] if len(periods) >= 2 else None,
+        prior2=periods[2] if len(periods) >= 3 else None,
+        market_cap=market_cap,
+        source="jquants_asof",
     )
 
 

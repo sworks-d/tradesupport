@@ -227,7 +227,6 @@ autoreport/
 - [[feedback_pipeline_observability]] — 閾値を spec のまま実装しない、上流データで発火確認
 - [[jp_ticker_suffix]] — yfinance には `to_yfinance_symbol(ticker)` 経由
 - [[misato_orchestrator]] — DS の司令塔、1 命令上限 ¥500k、dry-run→approve 2 段ゲート
-- [[ollama_haiku_fallback]] — Cold Path は HaikuFallbackClient
 
 ---
 

@@ -24,10 +24,69 @@ from trading_agent.models.decisions import Decision
 from trading_agent.utils.time_utils import today_jst, utcnow
 
 PriceLookup = Callable[[str], float | None]
-BenchmarkLookup = Callable[[str], float | None]  # ticker→同期間ベンチマークリターン（任意）
+# A4: decision ごとの保有期間（entry→evaluation_date）ベンチマークリターン。
+# 当日騰落ではなく decision の保有期間に同期する必要があるため、ticker 単体でなく
+# Decision を受け取る（entry 日 / evaluation_date / ticker を参照できる）。
+BenchmarkLookup = Callable[["Decision"], float | None]
 
 # 評価対象の status（保有/発注済/承認＝ポジションを持ち得る段階）
-_EVALUABLE = ("approved", "order_listed", "ordered", "holding")
+# v2.10 P0: "filled"（paper auto fill / mark_filled / 朝バッチ notify の直書き約定）も
+# 評価対象に含める。これらの経路は record_entry を通らず status="filled" を直書きするため、
+# stamp_evaluation_fields で評価前提フィールドを刻んだ上で評価ジョブに乗せる。
+_EVALUABLE = ("approved", "order_listed", "ordered", "holding", "filled")
+
+
+# fill 時に評価の前提フィールドを刻むときの既定値（朝バッチ Portfolio 生成と整合）。
+_DEFAULT_STOP_PCT = 0.10
+_DEFAULT_TARGET_RETURN = 0.20
+_DEFAULT_PERIOD_DAYS = 90
+
+# P0.5: 取引コスト（往復）の既定値。楽天リアルタイム往復 0.22%×2＝0.44%。
+# backtest エンジン（transaction_cost_pct=0.0044）と整合。寄付執行なら ~0% だが
+# 保守的に realtime 往復を既定とする。「コスト後α>0」の判定に使う。
+_DEFAULT_ROUND_TRIP_COST_PCT = 0.0044
+
+
+def stamp_evaluation_fields(
+    d: Decision,
+    *,
+    stop_pct: float | None = None,
+    target_return: float | None = None,
+    target_period_days: int | None = None,
+    on_date: dt.date | None = None,
+    market_regime: str | None = None,
+    filled_via: str | None = None,
+) -> None:
+    """fill 時に評価の前提（stop / target / 評価期日 / entry regime / 経路）を Decision に刻む（in-place）。
+
+    `record_entry` と違い entry_price / shares は触らない。status="filled" を直書きする
+    fill 経路（auto_fill_paper / mark_filled / 朝バッチ notify）が、呼び出し側の Session で
+    既にセットした entry_price をそのまま活かしつつ、評価に必要な
+    stop_pct / expected_return / target_period_days / evaluation_date / entry_market_regime
+    を補完するための関数。
+
+    既に値がある場合は上書きしない（katsuragi_dispatch 等で設定済みの値を尊重する）。
+    `market_regime` は A3：ゲート⑥「両局面通過」判定のためエントリ時点の市場地合いを固定保存する。
+    """
+    base = on_date or today_jst()
+    period = int(target_period_days or d.target_period_days or _DEFAULT_PERIOD_DAYS)
+    if d.stop_pct is None:
+        d.stop_pct = float(stop_pct if stop_pct is not None else _DEFAULT_STOP_PCT)
+    if d.expected_return is None:
+        d.expected_return = float(
+            target_return if target_return is not None else _DEFAULT_TARGET_RETURN
+        )
+    if d.target_period_days is None:
+        d.target_period_days = period
+    if d.evaluation_date is None:
+        d.evaluation_date = base + dt.timedelta(days=period)
+    if d.entry_market_regime is None and market_regime is not None:
+        d.entry_market_regime = market_regime
+    # A7: 約定経路（公式集合識別）と実約定日（benchmark 起点）を刻む。
+    if d.filled_via is None and filled_via is not None:
+        d.filled_via = filled_via
+    if d.entry_date is None:
+        d.entry_date = base
 
 
 def record_entry(
@@ -40,11 +99,14 @@ def record_entry(
     target_period_days: int,
     shares: float = 1.0,
     on_date: dt.date | None = None,
+    filled_via: str | None = None,
+    market_regime: str | None = None,
 ) -> bool:
     """発注時：entry/stop/target/評価期日を decision に刻む（評価の前提）。
 
     v2.1 TASK-E2: 複数 fill の場合、shares で加重平均する。
     最初の fill: そのまま記録 / 2 回目以降: (既存価格×既存株数 + 新価格×新株数) / 合計株数
+    A7: filled_via（経路）/ entry_date（実約定日）/ market_regime も刻む（既存値は尊重）。
     """
     base = on_date or today_jst()
     with Session(engine, expire_on_commit=False) as session:
@@ -66,6 +128,12 @@ def record_entry(
         d.expected_return = target_return
         d.target_period_days = target_period_days
         d.evaluation_date = base + dt.timedelta(days=target_period_days)
+        if d.entry_date is None:
+            d.entry_date = base
+        if d.filled_via is None and filled_via is not None:
+            d.filled_via = filled_via
+        if d.entry_market_regime is None and market_regime is not None:
+            d.entry_market_regime = market_regime
         if d.status in ("approved", "order_listed"):
             d.status = "ordered"
         session.add(d)
@@ -79,6 +147,7 @@ def evaluate_due_decisions(
     price_lookup: PriceLookup,
     benchmark_lookup: BenchmarkLookup | None = None,
     today: dt.date | None = None,
+    cost_pct: float = _DEFAULT_ROUND_TRIP_COST_PCT,
 ) -> tuple[int, TrackRecord]:
     """評価期日が到来した未評価 decision を実価格で採点する。
 
@@ -113,7 +182,7 @@ def evaluate_due_decisions(
             bench = None
             if benchmark_lookup is not None:
                 try:
-                    bench = benchmark_lookup(d.ticker)
+                    bench = benchmark_lookup(d)
                     if bench is None:
                         from trading_agent.utils.logger import get_logger
                         get_logger("evaluation").info(
@@ -128,6 +197,7 @@ def evaluate_due_decisions(
             res = evaluate_position(
                 entry_price=d.entry_price, exit_price=exit_price,
                 target_return=target, stop_pct=stop, benchmark_return=bench,
+                cost_pct=cost_pct,
             )
             d.actual_return = res.actual_return
             d.benchmark_return = bench
@@ -144,11 +214,17 @@ def evaluate_due_decisions(
             evaluated_now += 1
         session.commit()
 
-    return evaluated_now, _track_record(engine)
+    return evaluated_now, _track_record(engine, cost_pct=cost_pct)
 
 
-def _track_record(engine: Engine) -> TrackRecord:
-    """評価済み（hit/miss/neutral）decision から Track Record を集計。"""
+def _track_record(
+    engine: Engine, *, cost_pct: float = _DEFAULT_ROUND_TRIP_COST_PCT
+) -> TrackRecord:
+    """評価済み（hit/miss/neutral）decision から Track Record を集計。
+
+    actual_return は DB にグロスで保存されているため、net 系（avg_net_return /
+    avg_net_excess＝コスト後α）は集計時に cost_pct を差し引いて導出する（DB カラム追加なし）。
+    """
     with Session(engine) as session:
         done = session.exec(
             select(Decision).where(col(Decision.hit_or_miss).in_(("hit", "miss", "neutral")))
@@ -165,6 +241,7 @@ def _track_record(engine: Engine) -> TrackRecord:
                 r_multiple=d.actual_return / d.stop_pct,
                 outcome=d.hit_or_miss,
                 benchmark_return=d.benchmark_return,
+                cost_pct=cost_pct,
             )
         )
     return build_track_record(results)

@@ -9,7 +9,11 @@ import pytest
 from sqlmodel import Session
 
 from trading_agent.db import create_all, get_engine
-from trading_agent.evaluation.job import evaluate_due_decisions, record_entry
+from trading_agent.evaluation.job import (
+    evaluate_due_decisions,
+    record_entry,
+    stamp_evaluation_fields,
+)
 from trading_agent.models.decisions import Decision
 
 
@@ -113,3 +117,92 @@ class TestEvaluateDue:
             benchmark_lookup=lambda _t: 0.05, today=dt.date(2026, 4, 2),
         )
         assert tr.avg_excess == pytest.approx(0.15)  # +20% − 5%
+
+
+class TestStampEvaluationFields:
+    """P0: status='filled' 直書き経路が評価に乗るための前提フィールド補完。"""
+
+    def test_stamps_defaults(self, engine) -> None:
+        did = _seed(engine, status="filled")
+        with Session(engine, expire_on_commit=False) as s:
+            d = s.get(Decision, did)
+            d.entry_price = 100.0  # fill 経路で先にセットされる想定
+            stamp_evaluation_fields(d, on_date=dt.date(2026, 1, 1))
+            s.add(d)
+            s.commit()
+        with Session(engine) as s:
+            d = s.get(Decision, did)
+            assert d.stop_pct == 0.10
+            assert d.expected_return == 0.20
+            assert d.target_period_days == 90
+            assert d.evaluation_date == dt.date(2026, 4, 1)  # +90日
+            assert d.status == "filled"  # status は触らない
+
+    def test_respects_existing_values(self, engine) -> None:
+        # katsuragi_dispatch 等で設定済みの値は上書きしない
+        did = _seed(engine, status="filled")
+        with Session(engine, expire_on_commit=False) as s:
+            d = s.get(Decision, did)
+            d.stop_pct = 0.08
+            d.target_period_days = 45
+            stamp_evaluation_fields(d, on_date=dt.date(2026, 1, 1))
+            s.add(d)
+            s.commit()
+        with Session(engine) as s:
+            d = s.get(Decision, did)
+            assert d.stop_pct == 0.08  # 既存値尊重
+            assert d.target_period_days == 45
+            assert d.evaluation_date == dt.date(2026, 2, 15)  # +45日
+
+    def test_stamps_entry_market_regime(self, engine) -> None:
+        # A3: エントリ時点 regime を固定保存（ゲート⑥両局面判定）。既存値は尊重。
+        did = _seed(engine, status="filled")
+        with Session(engine, expire_on_commit=False) as s:
+            d = s.get(Decision, did)
+            stamp_evaluation_fields(d, on_date=dt.date(2026, 1, 1), market_regime="risk_off")
+            s.add(d)
+            s.commit()
+        with Session(engine) as s:
+            assert s.get(Decision, did).entry_market_regime == "risk_off"
+        # 2 回目（別 regime）は上書きしない
+        with Session(engine, expire_on_commit=False) as s:
+            d = s.get(Decision, did)
+            stamp_evaluation_fields(d, on_date=dt.date(2026, 1, 1), market_regime="risk_on")
+            s.add(d)
+            s.commit()
+        with Session(engine) as s:
+            assert s.get(Decision, did).entry_market_regime == "risk_off"
+
+    def test_stamps_filled_via_and_entry_date(self, engine) -> None:
+        # A7: 約定経路と実約定日を刻む（既存値は尊重）
+        did = _seed(engine, status="filled")
+        with Session(engine, expire_on_commit=False) as s:
+            d = s.get(Decision, did)
+            stamp_evaluation_fields(
+                d, on_date=dt.date(2026, 3, 10), filled_via="paper_auto"
+            )
+            s.add(d)
+            s.commit()
+        with Session(engine) as s:
+            d = s.get(Decision, did)
+            assert d.filled_via == "paper_auto"
+            assert d.entry_date == dt.date(2026, 3, 10)
+
+    def test_filled_decision_flows_into_evaluation(self, engine) -> None:
+        """P0 の本丸: filled が stamp 後に評価ジョブで採点される（断絶解消の回帰）。"""
+        did = _seed(engine, status="filled")
+        with Session(engine, expire_on_commit=False) as s:
+            d = s.get(Decision, did)
+            d.entry_price = 100.0
+            stamp_evaluation_fields(d, on_date=dt.date(2026, 1, 1))
+            s.add(d)
+            s.commit()
+        n, tr = evaluate_due_decisions(
+            engine, price_lookup=lambda _t: 130.0, today=dt.date(2026, 4, 2)
+        )
+        assert n == 1  # filled が評価対象に乗った
+        assert tr.n == 1
+        with Session(engine) as s:
+            d = s.get(Decision, did)
+            assert d.hit_or_miss == "hit"  # +30% ≥ target 20%
+            assert d.actual_return == 0.3

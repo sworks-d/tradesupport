@@ -115,6 +115,27 @@ def run_integrity_check(engine: Engine) -> IntegrityResult:
                     portfolio_id=p.id,
                 )
 
+        # I7（Q2）: 1 Decision → 1 Portfolio の不変条件。
+        # 排他割当（同一銘柄=priority最高の1機）が効いていれば 1 decision_id に Portfolio は
+        # 高々1件。複数あると stop/time 退出時の実績記録が最初の1件で確定し残りがスキップされ、
+        # ゲート測定が歪む（codex 指摘）。
+        # codex 指摘3: active だけ見ると、片方が close され Decision 評価済みになった後は active が
+        # 1件に戻り検出をすり抜ける（＝歪みが起きた後を見逃す）。よって active 限定でなく
+        # 同一 decision_id の **全 Portfolio（active+closed）総数 > 1** を不変条件違反とする。
+        all_by_decision: dict[int, list[int]] = {}
+        for p in ports:
+            if p.decision_id is None:
+                continue
+            all_by_decision.setdefault(p.decision_id, []).append(p.id or -1)
+        for did, pids in all_by_decision.items():
+            if len(pids) > 1:
+                result.add(
+                    "I7_multiple_portfolio_per_decision",
+                    decision_id=did,
+                    portfolio_ids=pids,
+                    count=len(pids),
+                )
+
         result.checked = len(decisions) + len(ports)
 
     if result.issues:

@@ -9,8 +9,8 @@ from __future__ import annotations
 # モデル ID（環境のモデル一覧に準拠）
 MODEL_SONNET = "claude-sonnet-4-6"  # Hot Path
 MODEL_OPUS = "claude-opus-4-7"  # Critical
-MODEL_HAIKU = "claude-haiku-4-5"  # Cold Path（Ollama 未導入時のフォールバック実モデル）
-MODEL_OLLAMA = "ollama"  # Cold Path（実モデル名は settings.ollama_model）
+MODEL_HAIKU = "claude-haiku-4-5"  # Cold Path（要約・分類・NER）。Anthropic Haiku
+# 旧 MODEL_OLLAMA は廃止（Cold Path は Haiku 恒久）。route は cold → MODEL_HAIKU を返す。
 
 # purpose ベースの分類（SYSTEM_DESIGN §5.2/5.3）
 COLD_PURPOSES = frozenset({"summarization", "classification", "ner"})
@@ -25,8 +25,7 @@ _COLD_ESCALATION_TOKENS = 4000
 PRICING_JPY: dict[str, tuple[float, float]] = {
     MODEL_SONNET: (0.45, 2.25),
     MODEL_OPUS: (2.25, 11.25),
-    MODEL_HAIKU: (0.15, 0.75),  # 約 1/3 単価（Haiku 4.5）
-    MODEL_OLLAMA: (0.0, 0.0),
+    MODEL_HAIKU: (0.15, 0.75),  # 約 1/3 単価（Haiku 4.5）。Cold Path の実コスト
 }
 
 
@@ -42,7 +41,7 @@ def route_llm_call(routing_hint: str | None, purpose: str, prompt: str) -> str:
     """
     if routing_hint:
         if routing_hint == "cold":
-            return MODEL_OLLAMA
+            return MODEL_HAIKU
         if routing_hint == "critical":
             return MODEL_OPUS
         return MODEL_SONNET  # "hot" など
@@ -50,7 +49,7 @@ def route_llm_call(routing_hint: str | None, purpose: str, prompt: str) -> str:
     if purpose in COLD_PURPOSES:
         if estimate_tokens(prompt) > _COLD_ESCALATION_TOKENS:
             return MODEL_SONNET
-        return MODEL_OLLAMA
+        return MODEL_HAIKU
     if purpose in CRITICAL_PURPOSES:
         return MODEL_OPUS
     return MODEL_SONNET

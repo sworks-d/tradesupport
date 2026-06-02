@@ -366,7 +366,11 @@ def select_from_pool(
 
 def _compute_kaworu_short_term_confidence(
     cand: "CandidatePool",
-    brief: object | None,
+    brief: object | None = None,
+    *,
+    rsi: float | None = None,
+    industry_s: float = 0.0,
+    news_s: float = 0.0,
 ) -> float:
     """KAWORU の短期エッジ confidence (0.0-1.0)。
 
@@ -375,19 +379,22 @@ def _compute_kaworu_short_term_confidence(
       - 業界トレンド +     : 0.20
       - ニュース +         : 0.20（Phase B 後に効く）
       - 短期 horizon 適性  : 0.30
+
+    A+（DS-first）: 値（rsi/industry_s/news_s）を直接渡せる。`brief` を渡すと従来通り
+    brief から抽出する（後方互換）。dispatch の A+ 経路では選定段階で RSI のみ渡し、
+    業界/ニュースは AKAGI 検証後の priority で効かせる（選定段階では 0）。
     """
     score = 0.0
 
-    # RSI スイートスポット（50-65 = 上昇トレンド中で過熱手前）
-    rsi = None
-    industry_s = 0.0
-    news_s = 0.0
+    # brief が渡されたら brief から抽出（後方互換）。明示の値があればそちらを優先しない
+    # （brief 経路と値経路は排他的に使う想定）。
     if brief is not None:
         tech = getattr(brief, "technicals", None)
         rsi = getattr(tech, "rsi", None) if tech is not None else None
         industry_s = float(getattr(brief, "industry_score", 0.0) or 0.0)
         news_s = float(getattr(brief, "news_sentiment_score", 0.0) or 0.0)
 
+    # RSI スイートスポット（50-65 = 上昇トレンド中で過熱手前）
     if rsi is not None:
         if 50 <= rsi <= 65:
             score += 0.30
@@ -420,6 +427,7 @@ def select_kaworu_contrarian(
     *,
     excluded_tickers: set[str],
     briefs: dict[str, object] | None = None,
+    technicals_lookup: dict[str, dict[str, object]] | None = None,
     engine: "Engine | None" = None,  # noqa: ARG001  予約（将来パラメータ）
     confidence_threshold: float = 0.35,
     min_budgets: dict[str, float | None] | None = None,
@@ -429,7 +437,10 @@ def select_kaworu_contrarian(
     Args:
         pool: 候補プール全体
         excluded_tickers: REI/ASUKA/SHINJI が proposal を出した銘柄（除外対象）
-        briefs: RITSUKO TickerBrief（Phase A の build_briefs_from_pool 結果）
+        briefs: RITSUKO TickerBrief（従来経路。渡すと RSI/業界/ニュースを選定に使う）
+        technicals_lookup: A+（DS-first）経路。{ticker: {"rsi": float}} の軽量 technicals。
+            渡された場合は **RSI のみで選定**し、業界/ニュースは選定に使わない（AKAGI 検証後の
+            priority で効かせる）。briefs より優先。選定者(DS)と検証者(AKAGI)を分離する。
         confidence_threshold: 採用閾値（contrarian なので少し厳しめ 0.35）
         min_budgets: 1 株分の参考予算
 
@@ -437,6 +448,8 @@ def select_kaworu_contrarian(
         KAWORU の PilotProposal リスト（confidence 降順）
     """
     briefs = briefs or {}
+    use_technicals = technicals_lookup is not None
+    technicals_lookup = technicals_lookup or {}
 
     # 除外後の対象銘柄のみ価格取得
     target_pool = [c for c in pool if c.ticker not in excluded_tickers]
@@ -448,8 +461,16 @@ def select_kaworu_contrarian(
 
     proposals: list[PilotProposal] = []
     for cand in target_pool:
-        brief = briefs.get(cand.ticker)
-        conf = _compute_kaworu_short_term_confidence(cand, brief)
+        if use_technicals:
+            # A+ 経路: 軽量 RSI のみで選定（業界/ニュースは選定に使わない）
+            rsi_val = technicals_lookup.get(cand.ticker, {}).get("rsi")
+            rsi = float(rsi_val) if rsi_val is not None else None
+            conf = _compute_kaworu_short_term_confidence(cand, rsi=rsi)
+        else:
+            # 従来経路: brief から RSI/業界/ニュースを抽出
+            brief = briefs.get(cand.ticker)
+            conf = _compute_kaworu_short_term_confidence(cand, brief)
+            rsi = getattr(getattr(brief, "technicals", None), "rsi", None) if brief else None
         if conf < confidence_threshold:
             continue
 
@@ -459,12 +480,13 @@ def select_kaworu_contrarian(
 
         # 申請理由
         bits = ["🌒 KAWORU contrarian"]
-        rsi = getattr(getattr(brief, "technicals", None), "rsi", None) if brief else None
         if rsi is not None:
             bits.append(f"RSI={rsi:.0f}")
-        industry_s = float(getattr(brief, "industry_score", 0.0) or 0.0) if brief else 0.0
-        if industry_s > 0.2:
-            bits.append(f"業界+{industry_s:.2f}")
+        if not use_technicals:
+            brief = briefs.get(cand.ticker)
+            industry_s = float(getattr(brief, "industry_score", 0.0) or 0.0) if brief else 0.0
+            if industry_s > 0.2:
+                bits.append(f"業界+{industry_s:.2f}")
         bits.append(f"conf={conf:.2f}")
 
         proposals.append(

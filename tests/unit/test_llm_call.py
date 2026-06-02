@@ -13,7 +13,7 @@ from sqlmodel import Session, select
 from trading_agent.db import create_all, get_engine
 from trading_agent.llm.budget import BudgetGuard, record_cost
 from trading_agent.llm.router import (
-    MODEL_OLLAMA,
+    MODEL_HAIKU,
     MODEL_OPUS,
     MODEL_SONNET,
     estimate_cost_jpy,
@@ -59,12 +59,12 @@ def engine(tmp_path: Path):
 
 class TestRouter:
     def test_hints(self) -> None:
-        assert route_llm_call("cold", "analysis", "x") == MODEL_OLLAMA
+        assert route_llm_call("cold", "analysis", "x") == MODEL_HAIKU
         assert route_llm_call("critical", "analysis", "x") == MODEL_OPUS
         assert route_llm_call("hot", "analysis", "x") == MODEL_SONNET
 
     def test_purpose_defaults(self) -> None:
-        assert route_llm_call(None, "summarization", "short") == MODEL_OLLAMA
+        assert route_llm_call(None, "summarization", "short") == MODEL_HAIKU
         assert route_llm_call(None, "deep_dive", "x") == MODEL_OPUS
         assert route_llm_call(None, "analysis", "x") == MODEL_SONNET
 
@@ -75,7 +75,8 @@ class TestRouter:
     def test_cost_estimation(self) -> None:
         assert estimate_cost_jpy(MODEL_SONNET, 1000, 1000) == pytest.approx(2.7)
         assert estimate_cost_jpy(MODEL_OPUS, 1000, 1000) == pytest.approx(13.5)
-        assert estimate_cost_jpy(MODEL_OLLAMA, 1000, 1000) == 0.0
+        # Ollama 廃止後: Cold Path は Haiku 単価で正しく計上（旧 0.0 の誤計上を是正）
+        assert estimate_cost_jpy(MODEL_HAIKU, 1000, 1000) == pytest.approx(0.9)
 
 
 class TestBudget:
@@ -124,14 +125,15 @@ class TestTool:
         assert len(rows) == 1
         assert rows[0].agent == "screening"
 
-    async def test_routes_to_ollama(self, engine) -> None:
+    async def test_routes_to_cold(self, engine) -> None:
+        # cold ルートは cold_client（Haiku）へ。旧 ollama_client → cold_client。
         anthropic = _MockClient(model=MODEL_SONNET)
-        ollama = _MockClient(model="ollama:llama3.1")
-        tool = LLMCallTool(engine, anthropic_client=anthropic, ollama_client=ollama)
+        cold = _MockClient(model=MODEL_HAIKU)
+        tool = LLMCallTool(engine, anthropic_client=anthropic, cold_client=cold)
         out = await tool.execute(LLMCallInput(prompt="hi", routing_hint="cold"))
-        assert ollama.calls == 1
+        assert cold.calls == 1
         assert anthropic.calls == 0
-        assert out.model_used == "ollama:llama3.1"
+        assert out.model_used == MODEL_HAIKU
 
     async def test_budget_exceeded_rejected(self, engine) -> None:
         _insert_cost(engine, 600.0)

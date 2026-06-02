@@ -108,8 +108,10 @@ class JQuantsClient:
 
         Returns:
             日次株価リスト。失敗時は空リスト。
-            主なキー (V2 仕様): Date, Code, Open, High, Low, Close, Volume,
-                              AdjustmentClose, AdjustmentVolume, など。
+            実列名 (jquantsapi 2.1.0 ClientV2・2026-06 dry-read 確認): Date, Code,
+            O, H, L, C, Vo(出来高), Va, **AdjC(調整済終値)**, AdjO/AdjH/AdjL, AdjVo,
+            AdjFactor, UL/LL(上限/下限)。※調整済終値は AdjC（旧 "AdjustmentClose" は誤り）。
+            ※ Free は直近 12 週は遅延で空、履歴 2 年。
         """
         try:
             kwargs: dict[str, Any] = {"code": ticker}
@@ -132,8 +134,11 @@ class JQuantsClient:
 
         Returns:
             四半期財務リスト。失敗時は空リスト。
-            主なキー (V2 仕様): DisclosedDate, LocalCode, NetSales, OperatingProfit,
-                              Profit, EarningsPerShare (EPS), BookValuePerShare (BPS), など。
+            実列名 (jquantsapi 2.1.0・2026-06 dry-read 確認): **DiscDate(開示日・Timestamp)**,
+            Code, CurPerEn(当期末), Sales, OP(営業利益), NP(純利益), TA(総資産), CFO,
+            EPS, BPS, Eq, NC*(非連結), F*/Nx*(予想), Div*(配当) など。
+            ※ 開示日は DiscDate（旧 "DisclosedDate" 表記は誤り）。財務値は Sales/OP/NP/TA/CFO。
+            ※ Free は Summary のみ（cogs/在庫/負債等は無く Beneish/Altman は na/warn 化）。
         """
         try:
             df = self._cli.get_fin_summary(code=ticker)  # type: ignore[call-arg]

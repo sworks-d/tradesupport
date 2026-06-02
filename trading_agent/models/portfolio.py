@@ -42,6 +42,11 @@ class Portfolio(SQLModel, table=True):
     moomoo_position_id: str | None = None
     last_synced_at: dt.datetime = Field(default_factory=utcnow)
 
+    # C（測定正確性）: このポジションを生んだ buy Decision への紐付け。
+    # stop/time 退出時に元 Decision へ実退出リターンを書き戻し、評価ジョブが
+    # horizon 価格でなく実際の退出損益で採点できるようにする（fill 経路で設定）。
+    decision_id: int | None = Field(default=None, index=True)
+
     # ペーパー検証用：性格別 portfolio 振り分け（defender / aggressor / balanced）。
     # None は単一 portfolio 運用（旧挙動）として扱う。
     personality: str | None = Field(default=None, index=True)

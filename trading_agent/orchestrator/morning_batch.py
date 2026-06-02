@@ -65,13 +65,12 @@ def build_host(engine: Engine) -> MCPHost:
     host.register(DisclosureTool())
     host.register(TechnicalsTool())
     host.register(ScreeningTool(engine))
-    # Cold Path（Ollama）は未インストール環境のため Anthropic Haiku で代用する。
-    # Ollama を将来導入する場合は HaikuFallbackClient を OllamaClient(...) に戻す。
+    # Cold Path（要約・分類）は Anthropic Haiku（HaikuFallbackClient）。Hot/Critical は Sonnet/Opus。
     host.register(
         LLMCallTool(
             engine,
             anthropic_client=AnthropicClient(settings.anthropic_api_key),
-            ollama_client=HaikuFallbackClient(settings.anthropic_api_key),
+            cold_client=HaikuFallbackClient(settings.anthropic_api_key),
         )
     )
     return host
@@ -722,6 +721,7 @@ async def run_morning_batch(
         # 「ユーザーが推奨通りに買った想定」で Portfolio を作成し、
         # 翌日の trailing_check / close_due が自動執行する流れを担保
         try:
+            from trading_agent.evaluation.job import stamp_evaluation_fields
             from trading_agent.models.decisions import Decision as _Decision
             from trading_agent.models.portfolio import Portfolio as _Portfolio
             from trading_agent.portfolio.misato import treasury_view
@@ -733,6 +733,15 @@ async def run_morning_batch(
                 items = build_order_items(engine, available_jpy=available)
                 items_by_decision = {it.decision_id: it for it in items}
                 today_now = today_jst()
+                # A3/A8: エントリ時点の trailing 相場局面を 1 回取得（ゲート⑥両局面判定）。
+                try:
+                    from trading_agent.wille.ritsuko import detect_market_cycle
+
+                    entry_regime = str(
+                        detect_market_cycle().get("cycle") or "unknown"
+                    )
+                except Exception:
+                    entry_regime = "unknown"
                 filled_count = 0
                 with Session(engine, expire_on_commit=False) as sess:
                     decs = list(
@@ -756,8 +765,17 @@ async def run_morning_batch(
                         d.status = "filled"
                         d.entry_price = it.current_price
                         d.shares_filled = float(it.recommended_shares)
-                        sess.add(d)
                         period = int(getattr(d, "target_period_days", None) or 90)
+                        # P0: 評価前提フィールド（stop/target/評価期日）を刻む。
+                        # これが無いと filled が evaluate_due_decisions に乗らず実績が貯まらない。
+                        stamp_evaluation_fields(
+                            d,
+                            target_period_days=period,
+                            on_date=today_now,
+                            market_regime=entry_regime,
+                            filled_via="paper_auto",
+                        )
+                        sess.add(d)
                         sess.add(
                             _Portfolio(
                                 ticker=d.ticker,
@@ -775,6 +793,7 @@ async def run_morning_batch(
                                 status="active",
                                 broker_mode="paper",
                                 planned_total_qty=it.recommended_shares,
+                                decision_id=d.id,
                             )
                         )
                         filled_count += 1

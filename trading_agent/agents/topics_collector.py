@@ -4,7 +4,7 @@
 topics テーブルに保存する。
 
 LLM（llm_call）は **低重要度記事の重要度補強のみ** に使う（任意）。未登録/失敗時はルール結果を
-そのまま採用するため、Anthropic キー無し・Ollama 無しでも動作する（§6.9 Graceful Degradation）。
+そのまま採用するため、Anthropic キー無しでも動作する（§6.9 Graceful Degradation）。
 """
 
 from __future__ import annotations

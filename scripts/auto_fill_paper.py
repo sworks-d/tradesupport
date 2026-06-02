@@ -20,6 +20,7 @@ from pathlib import Path
 from sqlmodel import Session, col, select
 
 from trading_agent.db import get_engine
+from trading_agent.evaluation.job import stamp_evaluation_fields
 from trading_agent.models.decisions import Decision
 from trading_agent.models.portfolio import Portfolio
 from trading_agent.portfolio.misato import treasury_view
@@ -49,6 +50,14 @@ def main() -> int:
     items = build_order_items(engine, available_jpy=available)
     items_by_decision = {it.decision_id: it for it in items}
 
+    # A3/A8: エントリ時点の trailing 相場局面を 1 回取得（ゲート⑥両局面判定）。失敗時 unknown。
+    try:
+        from trading_agent.wille.ritsuko import detect_market_cycle
+
+        entry_regime = str(detect_market_cycle().get("cycle") or "unknown")
+    except Exception:
+        entry_regime = "unknown"
+
     filled = skipped = 0
     total_cost = 0.0
     with Session(engine, expire_on_commit=False) as s:
@@ -70,8 +79,14 @@ def main() -> int:
             d.status = "filled"
             d.entry_price = price
             d.shares_filled = float(shares)
-            s.add(d)
             period = int(getattr(d, "target_period_days", None) or 90)
+            # P0: 評価前提フィールド（stop/target/評価期日）を刻む。
+            # これが無いと evaluate_due_decisions が filled を採点できず実績が貯まらない。
+            stamp_evaluation_fields(
+                d, target_period_days=period, on_date=today,
+                market_regime=entry_regime, filled_via="paper_auto",
+            )
+            s.add(d)
             s.add(
                 Portfolio(
                     ticker=d.ticker,
@@ -88,6 +103,7 @@ def main() -> int:
                     status="active",
                     broker_mode="paper",
                     planned_total_qty=shares,
+                    decision_id=d.id,
                 )
             )
             filled += 1

@@ -70,10 +70,6 @@ class Settings(BaseSettings):
     log_dir: Path = Path("~/.trading-agent/logs")
     data_dir: Path = Path("~/.trading-agent/data")
 
-    # === LLM ===
-    ollama_host: str = "http://localhost:11434"
-    ollama_model: str = "llama3.1:8b"
-
     # === 通知（オプション） ===
     slack_webhook_url: str | None = None
     macos_notification: bool = True

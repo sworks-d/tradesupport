@@ -4,7 +4,7 @@ LLM 呼び分け・予算チェック・コスト記録を統合する。
 
 フロー（§5.6）：route → コスト見積り → 予算チェック → 実行 → cost_logs 記録。
 - 予算超過：拒否（success=False、リトライしない）。critical は警告のみで通す。
-- クライアント（Anthropic / Ollama）は注入可能（テストでモック）。
+- クライアント（Anthropic Hot / Haiku Cold）は注入可能（テストでモック）。
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from sqlalchemy.engine import Engine
 
 from trading_agent.llm.budget import BudgetGuard, record_cost
 from trading_agent.llm.router import (
-    MODEL_OLLAMA,
+    MODEL_HAIKU,
     estimate_cost_jpy,
     estimate_tokens,
     route_llm_call,
@@ -63,11 +63,11 @@ class LLMCallTool(MCPTool[LLMCallInput]):
         engine: Engine,
         *,
         anthropic_client: LLMClient | None = None,
-        ollama_client: LLMClient | None = None,
+        cold_client: LLMClient | None = None,
     ) -> None:
         self._engine = engine
         self._anthropic = anthropic_client
-        self._ollama = ollama_client
+        self._cold = cold_client  # Cold Path（Haiku）。旧 ollama_client。
         self._budget = BudgetGuard(engine)
 
     async def _execute(self, tool_input: LLMCallInput) -> MCPToolOutput:
@@ -124,12 +124,13 @@ class LLMCallTool(MCPTool[LLMCallInput]):
         )
 
     def _select_client(self, model: str) -> LLMClient:
-        client = self._ollama if model == MODEL_OLLAMA else self._anthropic
+        # Cold Path（Haiku）は cold_client、それ以外（Sonnet/Opus）は anthropic_client。
+        client = self._cold if model == MODEL_HAIKU else self._anthropic
         if client is None:
             # v2.5 TASK-LC3: ユーザーフレンドリーなエラー（設定なし時の対応案を併記）
             raise AuthError(
                 f"LLM client for '{model}' is not configured. "
-                f"対応: .env に ANTHROPIC_API_KEY 設定 or Ollama 起動 or "
+                f"対応: .env に ANTHROPIC_API_KEY 設定 or "
                 f"casper_llm が決定論版にフォールバック（CASPER のみ）"
             )
         return client

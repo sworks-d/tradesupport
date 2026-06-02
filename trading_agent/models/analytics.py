@@ -49,7 +49,7 @@ class CostLog(SQLModel, table=True):
     timestamp: dt.datetime = Field(default_factory=utcnow, index=True)
     date: dt.date = Field(index=True)
 
-    model: str  # "claude-sonnet-4-6" / "claude-opus-4-7" / "ollama:llama3.1" 等
+    model: str  # "claude-sonnet-4-6" / "claude-opus-4-7" / "claude-haiku-4-5" 等
     agent: str
     purpose: str  # "screening" / "analysis" / "summarization" 等
 
@@ -67,7 +67,7 @@ class HealthCheck(SQLModel, table=True):
     __tablename__ = "health_checks"
 
     id: int | None = Field(default=None, primary_key=True)
-    component: str  # "moomoo_opend" / "anthropic_api" / "ollama" 等
+    component: str  # "moomoo_opend" / "anthropic_api" 等
     status: str  # "ok" / "degraded" / "down"
     checked_at: dt.datetime = Field(default_factory=utcnow, index=True)
     response_time_ms: int | None = None

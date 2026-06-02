@@ -505,6 +505,77 @@ def _calc_event_score(events: list[UpcomingEvent], today: date | None = None) ->
 # ============================================================
 
 
+def classify_market_cycle(closes: list[float]) -> str:
+    """TOPIX 終値列から相場局面を分類（A8・純粋関数）。
+
+    単日 risk_on/off（detect_market_regime_live）と違い、**trailing な局面**（強気/弱気）を返す。
+    ゲート⑥「両局面通過」の判定に使う（単日スナップショットの弱さを解消）。
+
+    判定（古い→新しい順の closes）:
+      - bull    : 直近終値 ≥ 200日MA かつ 直近高値からの DD < 10%
+      - bear    : 直近終値 < 200日MA、または 直近高値からの DD ≥ 15%
+      - sideways: 上記以外（横ばい・どちらの局面でもない）
+      - unknown : サンプル不足（< 60 本）
+    """
+    if len(closes) < 60:
+        return "unknown"
+    latest = closes[-1]
+    ma200 = sum(closes[-200:]) / len(closes[-200:]) if len(closes) >= 200 else sum(closes) / len(closes)
+    recent_high = max(closes[-120:])
+    dd = (recent_high - latest) / recent_high if recent_high > 0 else 0.0
+    if latest >= ma200 and dd < 0.10:
+        return "bull"
+    if latest < ma200 or dd >= 0.15:
+        return "bear"
+    return "sideways"
+
+
+def detect_market_cycle(benchmark_ticker: str = "1306.T") -> dict[str, Any]:
+    """TOPIX ETF の日次終値から trailing 相場局面を判定（A8）。
+
+    Returns: {"cycle": "bull"/"bear"/"sideways"/"unknown", "close": float|None, "ma200": float|None}
+    ネット失敗時は cycle="unknown"（推測しない）。
+    """
+    try:
+        import yfinance as yf
+
+        df = yf.Ticker(benchmark_ticker).history(period="2y", interval="1d", auto_adjust=True)
+        closes = [float(x) for x in df["Close"].dropna().tolist()]
+    except Exception as exc:
+        _log.warning("market_cycle_fetch_failed", error_type=type(exc).__name__)
+        return {"cycle": "unknown", "close": None, "ma200": None}
+    cycle = classify_market_cycle(closes)
+    ma200 = (
+        sum(closes[-200:]) / len(closes[-200:])
+        if len(closes) >= 200 else (sum(closes) / len(closes) if closes else None)
+    )
+    return {"cycle": cycle, "close": closes[-1] if closes else None, "ma200": ma200}
+
+
+def fetch_technicals_lite(
+    engine: Engine | None, tickers: list[str]
+) -> dict[str, dict[str, Any]]:
+    """軽量 technicals（RSI 等）のみ取得（A+: KAWORU 選定用）。
+
+    news / peer / industry / LLM を呼ばず、MAGI Technicals → yfinance bulk フォールバックで
+    RSI 等の技術指標だけを返す。選定者(DS)が AKAGI の重い検証を待たずに軽量信号で選ぶための入口。
+    """
+    out: dict[str, dict[str, Any]] = {}
+    if engine is not None:
+        try:
+            out = _load_technicals_from_magi(engine, tickers)
+        except Exception as exc:
+            _log.warning("ritsuko_lite_magi_failed", error=str(exc))
+            out = {}
+    missing = [t for t in tickers if t not in out or out[t].get("rsi") is None]
+    if missing:
+        try:
+            out.update(_fetch_technicals_yfinance_bulk(missing))
+        except Exception as exc:
+            _log.warning("ritsuko_lite_yf_failed", error=str(exc))
+    return out
+
+
 def build_briefs_from_pool(
     candidates: list[Any],
     *,

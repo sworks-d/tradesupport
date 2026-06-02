@@ -103,9 +103,15 @@ def _evaluate(engine: Engine) -> None:
         print(f"  {'✓' if f.ok else '✗'} {f.rule}：{f.detail}")
     # 副次＝命中率/平均R（払戻比の産物になり得る＝過信しない）。
     price, _ = _live_lookups(engine)
-    n, tr = evaluate_due_decisions(engine, price_lookup=price)
+    from trading_agent.evaluation.benchmark import make_topix_benchmark_lookup
+
+    n, tr = evaluate_due_decisions(
+        engine, price_lookup=price, benchmark_lookup=make_topix_benchmark_lookup()
+    )
     label = "暫定" if tr.provisional else "確定"
+    net_excess = f"{tr.avg_net_excess:+.1%}" if tr.avg_net_excess is not None else "—"
     print(f"\n[副次] 評価 {n} 件採点 / n={tr.n} 命中率={tr.hit_rate} 平均R={tr.avg_r}（{label}）")
+    print(f"        コスト後α（対ベンチ超過）={net_excess}  ← 勝ち定義の中核")
     print("※守り(自爆回避)は数ヶ月のリターンに現れない＝正常。履歴が貯まればコアvsパッシブのリスク調整で測る。")
 
 

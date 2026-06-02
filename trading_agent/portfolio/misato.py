@@ -989,8 +989,11 @@ def dispatch(
         available_budget_jpy=_treasury_for_lot,
     )
 
-    # === RITSUKO Brief 構築（5 中立スコア + 生データ）===
-    briefs = wille_ritsuko.build_briefs_from_pool(pool, engine=engine)
+    # === A+（DS-first / AKAGI-verify）===
+    # 重い AKAGI Brief（news LLM / peer / industry / deep）は pool 全体でなく、DS が提案した
+    # 銘柄にだけ後段（Stage2）で構築する。選定者(DS)と検証者(AKAGI)を分離し、ゲート⑥の実績を
+    # DS の選定能力に帰属させる。KAWORU の選定に要る RSI は軽量 technicals で先に用意する。
+    briefs: dict[str, Any] = {}
 
     # === MISATO 戦略パラメータ（環境変数で切替可・デフォルト balanced）===
     import os as _os
@@ -1037,13 +1040,23 @@ def dispatch(
         for _p in ("REI", "ASUKA", "SHINJI"):
             for _prop in proposals_by_pilot.get(_p, []):
                 excluded_tickers.add(_prop.ticker)
+        # A+: KAWORU は軽量 technicals(RSI)のみで選定（業界/ニュースは AKAGI 検証後の priority へ）
+        kaworu_tickers = [c.ticker for c in pool if c.ticker not in excluded_tickers]
+        kaworu_tech = wille_ritsuko.fetch_technicals_lite(engine, kaworu_tickers)
         proposals_by_pilot["KAWORU"] = select_kaworu_contrarian(
             pool,
             excluded_tickers=excluded_tickers,
-            briefs=briefs,
+            technicals_lookup=kaworu_tech,
             engine=engine,
             min_budgets=min_budgets,
         )
+
+    # === A+ Stage2: DS が提案した銘柄にだけ AKAGI 重い Brief を構築（検証者として）===
+    proposed_tickers = {
+        prop.ticker for props in proposals_by_pilot.values() for prop in props
+    }
+    proposed_cands = [c for c in pool if c.ticker in proposed_tickers]
+    briefs = wille_ritsuko.build_briefs_from_pool(proposed_cands, engine=engine)
 
     # === MISATO priority 計算 + 例外チェック + 排他制御 ===
     # 各 proposal に boost を加算して priority を求める
@@ -1288,6 +1301,13 @@ def dispatch(
     # ticker → CandidatePool への lookup（approve 時に real_decision を引くため）
     pool_by_ticker = {c.ticker: c for c in pool}
 
+    # A7/A8: エントリ時点の trailing 相場局面を 1 回だけ取得（DS 公式 fill の regime に刻む）。
+    # 実 fill 時のみ（dry-run は上で return 済）。失敗時は unknown。
+    try:
+        _entry_cycle = str(wille_ritsuko.detect_market_cycle().get("cycle") or "unknown")
+    except Exception:
+        _entry_cycle = "unknown"
+
     for pilot_name, proposals in proposals_by_pilot.items():
         if not proposals:
             continue
@@ -1391,6 +1411,12 @@ def dispatch(
                 cash_jpy=budget,  # ← MISATO 配分予算で上限を物理的に縛る
                 today=today,
                 personality=personality,
+                # A+: picked（priority/例外/排他を通った銘柄）だけに fill を限定。
+                # personality モードで awaiting を stance 一致で広く拾う plan 外 fill を防ぐ。
+                allowed_tickers=picked_tickers_for_pilot,
+                # A7: DS 公式 dispatch 由来として刻む + エントリ時点 trailing 局面
+                filled_via="ds_dispatch",
+                market_regime=_entry_cycle,
             )
             fills_summary = {
                 "pilot": pilot_name,
@@ -1587,7 +1613,7 @@ def reset_treasury(engine: Engine, broker_mode: str | None = None) -> None:
         s.commit()
 
 
-def cleanup_for_fresh_run(engine: Engine) -> dict[str, int]:
+def cleanup_for_fresh_run(engine: Engine, *, force: bool = False) -> dict[str, int]:
     """検証メタ検証で発見した致命的バグの修正（v2.5+）。
 
     portfolio を closed にしても decision.personalities_filled が残ると、
@@ -1598,11 +1624,45 @@ def cleanup_for_fresh_run(engine: Engine) -> dict[str, int]:
       3. entry_price / shares_filled / hit_or_miss="pending" をリセット
       4. status を ordered/approved/holding → awaiting に戻す
       5. MISATO Treasury もリセット
+
+    ⚠ A6 ガード（Phase C 実績保護）: 評価済み decision（evaluated_at あり＝増額ゲート⑥の
+    実績）が 1 件でも存在する場合、`force=False` なら **何もせず拒否**する。フォワード運用
+    （Phase C）中の誤爆で track record を消し、また実績ゼロに戻る事故を構造で防ぐ。
+    構築期の真の fresh run（実績まだ無い）は従来通り動く。明示的に消すなら force=True。
     """
     from trading_agent.models.decisions import Decision
     from trading_agent.models.portfolio import Portfolio
 
     counts = {"portfolios_closed": 0, "decisions_reset": 0, "decisions_cancelled": 0}
+
+    # A6 ガード（拡張）: 評価済み実績「だけ」でなく、評価予定の前向き実績も守る。
+    # Phase C 開始〜最初の評価期日到来まで evaluated_at=0 が数十日続くため、評価済みのみの
+    # 判定では初期フォワード期間を守れない（codex 指摘）。以下が 1 件でもあれば force 無しで拒否:
+    #   - 評価済み decision（evaluated_at あり＝確定 track record）
+    #   - active Portfolio（保有中の前向きポジション）
+    #   - 評価予定 decision（evaluation_date あり & hit_or_miss=pending＝時計が回っている）
+    with Session(engine) as s:
+        evaluated = len(
+            s.exec(select(Decision).where(col(Decision.evaluated_at).is_not(None))).all()
+        )
+        active_ports = len(
+            s.exec(select(Portfolio).where(col(Portfolio.status) == "active")).all()
+        )
+        pending_fwd = len(
+            s.exec(
+                select(Decision)
+                .where(col(Decision.evaluation_date).is_not(None))
+                .where(col(Decision.hit_or_miss) == "pending")
+            ).all()
+        )
+    protected = evaluated + active_ports + pending_fwd
+    if protected > 0 and not force:
+        counts["refused"] = 1
+        counts["evaluated_protected"] = evaluated
+        counts["active_portfolios_protected"] = active_ports
+        counts["pending_forward_protected"] = pending_fwd
+        return counts
+
     now = utcnow()
     with Session(engine, expire_on_commit=False) as s:
         # 1. active portfolio → closed
