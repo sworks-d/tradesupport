@@ -152,3 +152,68 @@ class TestBackwardCompat:
         rejected_reasons = [r["reason"] for r in plan.rejected]
         # 既存テストが壊れないことだけ確認（厳密な件数は問わない）
         assert isinstance(rejected_reasons, list)
+
+
+class TestSizeGuard:
+    """大指針 #2(中小型成長株): opportunity_fill の大型/不明 exposure ガードと補完 last-resort。
+
+    2026-06-04 の Phase C 大型偏重事故の再発防止テスト。
+    """
+
+    def _cfg(self) -> GuardrailConfig:
+        # size ガードだけを効かせる（他の上限と cash floor を無効化）
+        return GuardrailConfig(
+            max_lot_pct=1.0, max_source_pct=1.0, max_sector_pct=1.0,
+            max_pilot_pct=1.0, min_cash_reserve_pct=0.0, min_boost=-1.0,
+            max_large_cap_pct=0.30,
+        )
+
+    def test_large_cap_rejected_over_budget(self) -> None:
+        # 大型(¥1兆超)だけの proposal。予算×30%=¥3000 を超える分は拒否される。
+        props = {"REI": [_MockProposal(ticker=f"L{i}", min_budget_jpy=1500.0) for i in range(5)]}
+        mc = {f"L{i}": 5.0e12 for i in range(5)}  # 全部 ¥5兆=large
+        plan = opportunity_driven_fill(
+            props, total_budget_jpy=10000.0, config=self._cfg(), market_cap_lookup=mc,
+        )
+        # 大型上限¥3000 内に収まる分しか採用されない（全採用は起きない）
+        assert sum(s["lot_cost_jpy"] for s in plan.selected) <= 3000.0 + 1
+        assert any("大型/不明" in r.get("reason", "") for r in plan.rejected)
+
+    def test_unknown_market_cap_also_guarded(self) -> None:
+        # 時価総額 lookup 漏れ(unknown)も大型と同じ上限でガードされる（すり抜け防止）。
+        props = {"REI": [_MockProposal(ticker=f"U{i}", min_budget_jpy=1500.0) for i in range(5)]}
+        plan = opportunity_driven_fill(
+            props, total_budget_jpy=10000.0, config=self._cfg(), market_cap_lookup={},  # 全部 unknown
+        )
+        assert sum(s["lot_cost_jpy"] for s in plan.selected) <= 3000.0 + 1
+        assert any("大型/不明" in r.get("reason", "") for r in plan.rejected)
+
+    def test_small_cap_not_size_rejected(self) -> None:
+        # 中小型(¥500億)は size ガードに掛からず採用される。
+        props = {"REI": [_MockProposal(ticker=f"S{i}", min_budget_jpy=1000.0) for i in range(3)]}
+        mc = {f"S{i}": 5.0e10 for i in range(3)}  # ¥500億=small
+        plan = opportunity_driven_fill(
+            props, total_budget_jpy=10000.0, config=self._cfg(), market_cap_lookup=mc,
+        )
+        assert len(plan.selected) == 3
+        assert all(s["size_bucket"] == "small" for s in plan.selected)
+
+    def test_supplement_is_last_resort(self) -> None:
+        # M4: 実候補(magi)が補完(supplement)より先に予算を取る。予算が両方に足りない時、
+        # 実候補が採用され補完が残予算落ちになる。
+        cfg = GuardrailConfig(
+            max_lot_pct=1.0, max_source_pct=1.0, max_sector_pct=1.0,
+            max_pilot_pct=1.0, min_cash_reserve_pct=0.0, min_boost=-1.0,
+        )
+        props = {"REI": [
+            _MockProposal(ticker="SUP", confidence=0.99, min_budget_jpy=8000.0, source="supplement"),
+            _MockProposal(ticker="REAL", confidence=0.50, min_budget_jpy=8000.0, source="magi"),
+        ]}
+        mc = {"SUP": 5.0e10, "REAL": 5.0e10}
+        plan = opportunity_driven_fill(
+            props, total_budget_jpy=10000.0, config=cfg, market_cap_lookup=mc,
+        )
+        # confidence は SUP の方が高いが、実候補 REAL が先に採用される（補完は last-resort）
+        selected_tickers = [s["ticker"] for s in plan.selected]
+        assert "REAL" in selected_tickers
+        assert selected_tickers[0] == "REAL"  # 実候補が先頭

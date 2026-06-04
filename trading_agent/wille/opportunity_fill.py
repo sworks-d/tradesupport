@@ -41,6 +41,9 @@ class GuardrailConfig:
     min_boost: float = -0.10        # boost 最低ライン
     fee_margin_pct: float = 0.015   # 手数料・スリッページ余裕（1.5%）
     min_cash_reserve_pct: float = 0.40  # cash 余力ハード制約: 予算 × この比率は買付不可（上昇株への身動き確保）
+    # 大指針 #2(中小型成長株): 大型(¥1兆超)への配分上限。予算 × この比率を超える大型 fill を拒否。
+    # 中小型優先のサンプリング(M1/M2)が効けば普段ヒットしないが、fill 側の最終防御として持つ。
+    max_large_cap_pct: float = 0.30
 
 
 @dataclass
@@ -63,6 +66,21 @@ class OpportunityFillPlan:
     quality_filter_count: int = 0
 
 
+# 大指針 #2(中小型成長株)の size 区分（時価総額 JPY）。large=¥1兆超 / mid=¥3000億〜¥1兆 / small=未満。
+_LARGE_CAP_MIN_JPY = 1.0e12
+_MID_CAP_MIN_JPY = 3.0e11
+
+
+def size_bucket(market_cap_jpy: float | None) -> str:
+    if not market_cap_jpy or market_cap_jpy <= 0:
+        return "unknown"
+    if market_cap_jpy >= _LARGE_CAP_MIN_JPY:
+        return "large"
+    if market_cap_jpy >= _MID_CAP_MIN_JPY:
+        return "mid"
+    return "small"
+
+
 def opportunity_driven_fill(
     proposals_by_pilot: dict[str, list[Any]],
     *,
@@ -73,6 +91,7 @@ def opportunity_driven_fill(
     blocked_tickers: set[str] | None = None,
     pilot_multipliers: dict[str, float] | None = None,
     account_total_jpy: float | None = None,
+    market_cap_lookup: dict[str, float] | None = None,
 ) -> OpportunityFillPlan:
     """全 proposal を priority 降順で並べ、ガードレール内で greedy fill。
 
@@ -98,6 +117,7 @@ def opportunity_driven_fill(
     boost_lookup = boost_lookup or {}
     blocked_tickers = blocked_tickers or set()
     pilot_multipliers = pilot_multipliers or {}
+    market_cap_lookup = market_cap_lookup or {}
 
     # N1: G-7 逓減と整合した min_cash_reserve_pct を動的取得
     if account_total_jpy is not None and account_total_jpy > 0:
@@ -109,22 +129,31 @@ def opportunity_driven_fill(
 
     plan = OpportunityFillPlan(total_budget=total_budget_jpy)
 
-    # 1) 全 proposal を平坦化して priority(=confidence) 降順
+    # 1) 全 proposal を平坦化。M4(大指針): 補完(source=supplement)は last-resort なので、
+    #    実候補(screening/MAGI/ZEELE)を先に、補完を後に並べる。各群内は priority(confidence) 降順。
+    #    これで実候補が予算を先取りし、補完は残予算のみ埋める（補完の主経路化を防ぐ）。
     all_props: list[tuple[str, Any]] = []
     for pilot, props in proposals_by_pilot.items():
         for prop in props:
             all_props.append((pilot, prop))
-    all_props.sort(key=lambda x: -float(getattr(x[1], "confidence", 0.0)))
+    all_props.sort(
+        key=lambda x: (
+            str(getattr(x[1], "source", "")) == "supplement",  # 補完は後（False=実候補が先）
+            -float(getattr(x[1], "confidence", 0.0)),
+        )
+    )
 
     # 2) 上限値（円換算）を予算から計算
     lot_cap = total_budget_jpy * config.max_lot_pct
     source_cap = total_budget_jpy * config.max_source_pct
     sector_cap = total_budget_jpy * config.max_sector_pct
     pilot_cap = total_budget_jpy * config.max_pilot_pct
+    large_cap = total_budget_jpy * config.max_large_cap_pct  # 大型(¥1兆超)への配分上限
 
     spent_by_pilot: dict[str, float] = defaultdict(float)
     spent_by_source: dict[str, float] = defaultdict(float)
     spent_by_sector: dict[str, float] = defaultdict(float)
+    spent_by_size: dict[str, float] = defaultdict(float)
     plan.guardrail_hits = defaultdict(int)
 
     # 3) priority 降順で greedy fill
@@ -184,6 +213,22 @@ def opportunity_driven_fill(
             })
             plan.guardrail_hits["1セクター"] += 1
             continue
+        # 大指針 #2: 大型(¥1兆超)+不明(時価総額 lookup 漏れ=検証不能)への配分上限。
+        # codex P1: unknown は size_bucket 判定できず大型がすり抜けるので、large と合算して縛る。
+        # 中小型優先のサンプリングをすり抜けても fill 側で止める最終防御。
+        bucket = size_bucket(market_cap_lookup.get(ticker))
+        if bucket in ("large", "unknown"):
+            risky_spent = spent_by_size["large"] + spent_by_size["unknown"]
+            if risky_spent + lot_cost > large_cap:
+                plan.rejected.append({
+                    "ticker": ticker, "pilot": pilot, "size_bucket": bucket,
+                    "reason": (
+                        f"大型/不明上限超過 ({bucket}: ¥{int(risky_spent + lot_cost):,} > "
+                        f"¥{int(large_cap):,}; 中小型優先)"
+                    )
+                })
+                plan.guardrail_hits["大型/不明上限"] += 1
+                continue
         # 1 機上限: feedback ループから受け取った multiplier で拡張/縮小
         # 機別に勝率が高い→ 1.2、低い→ 0.5、データ不足→ 1.0（中立）
         pilot_mul = float(pilot_multipliers.get(pilot, 1.0))
@@ -229,11 +274,13 @@ def opportunity_driven_fill(
             "boost": boost,
             "source": source,
             "sector": sector,
+            "size_bucket": bucket,  # small/mid/large（中小型偏重の可視化・再発検知）
         })
         spent_by_pilot[pilot] += lot_cost
         spent_by_source[source] += lot_cost
         if sector != "unknown":
             spent_by_sector[sector] += lot_cost
+        spent_by_size[bucket] += lot_cost
         plan.total_planned += lot_cost
 
     # 4) 機別予算を集計（paper_fill_approved に渡す用）

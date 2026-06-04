@@ -46,6 +46,11 @@ PriceHistory = Callable[[str], list[float]]
 import os as _os
 _CREDIBILITY_PENALTY = float(_os.environ.get("CREDIBILITY_PENALTY", "0.7"))
 
+# 大指針 #2(中小型成長株): screening 入口の中小型バンド。
+# フロア未満=低流動性マイクロ / 上限以上=大型 を scoring 対象外にし、小型〜中型を均等サンプル。
+_SCREENING_MIN_MARKET_CAP_JPY = 1.0e10  # ¥100億（流動性フロア）
+_SCREENING_MAX_MARKET_CAP_JPY = 1.0e12  # ¥1兆（大型除外の上限）
+
 
 def enrich_candidates(
     results: list[dict[str, Any]],
@@ -204,15 +209,38 @@ class ScreeningAgent(Agent[ScreeningAgentInput]):
         )
 
     def _load_universe(self, engine: Engine, limit: int) -> list[Universe]:
+        # 大指針 #2: 大型偏向でなく中小型成長株。旧実装は market_cap 降順で入口 limit 件が
+        # 大型寄りになり、小型が scoring 対象から外れていた（Phase C 大型偏重の一因・2026-06-04）。
+        # 中小型バンド(¥100億〜¥1兆・大型と低流動性マイクロを除外)から、小型に偏らせず
+        # 中型まで満遍なく拾うため stratified stride でサンプルする（純昇順だと小型だけになる）。
+        # バンドは JP の中小型成長株が対象。US は ETF=core 等で size 対象外（バンドを適用しない）。
         with Session(engine) as session:
-            return list(
+            band = list(
                 session.exec(
                     select(Universe)
                     .where(col(Universe.is_active))
-                    .order_by(col(Universe.market_cap_jpy).desc())
-                    .limit(limit)
+                    .where(
+                        (col(Universe.market) != "JP")
+                        | (
+                            (col(Universe.market_cap_jpy) >= _SCREENING_MIN_MARKET_CAP_JPY)
+                            & (col(Universe.market_cap_jpy) < _SCREENING_MAX_MARKET_CAP_JPY)
+                        )
+                    )
+                    .order_by(col(Universe.market_cap_jpy).asc())
                 )
             )
+        if len(band) <= limit:
+            return band
+        stride = len(band) / limit  # 小型〜中型を均等に間引く（端は確実に含む）
+        sampled = [band[min(int(i * stride), len(band) - 1)] for i in range(limit)]
+        # 重複除去（stride 端の丸めで稀に重複）
+        seen: set[str] = set()
+        out: list[Universe] = []
+        for u in sampled:
+            if u.ticker not in seen:
+                seen.add(u.ticker)
+                out.append(u)
+        return out
 
     async def _gather(self, u: Universe, *, keyword_count: int = 0) -> ScreeningTickerData:
         data = ScreeningTickerData(

@@ -551,11 +551,13 @@ def _build_candidate_pool(
                 pool = _filter_existing_pool_by_budget(pool, max_lot)
 
                 # MAGI 補完 (v2.9: max 20 / Universe 300 で候補プール拡大)
+                # M4(大指針): source="supplement" で実 screening/MAGI 候補と区別し last-resort 化
+                # （補完が source=magi を名乗ると実候補と同格に扱われ主経路化する）。
                 magi_supplements = _supplement_with_budget_friendly(
                     engine,
                     pool,
                     max_lot,
-                    source="magi",
+                    source="supplement",
                     gendo_stance="推し",
                     fixed_preset="alpha",
                     target_period_days=60,
@@ -571,7 +573,7 @@ def _build_candidate_pool(
                     engine,
                     pool,
                     max_lot,
-                    source="zeele",
+                    source="supplement",  # M4: 補完は last-resort（source で実候補と区別）
                     gendo_stance="ZEELE",
                     fixed_preset=None,
                     auto_preset_from_momentum=True,
@@ -677,6 +679,11 @@ def _filter_existing_pool_by_budget(
     return kept + supplements_or_real
 
 
+# 大指針 #2(中小型成長株)の補完バンド。¥1兆超=大型は除外、¥100億未満=低流動性マイクロは除外。
+_SUPPLEMENT_MIN_MARKET_CAP_JPY = 1.0e10   # ¥100億（流動性フロア）
+_SUPPLEMENT_MAX_MARKET_CAP_JPY = 1.0e12   # ¥1兆（大型を除外する上限）
+
+
 def _supplement_with_budget_friendly(
     engine: Engine,
     existing_pool: list[CandidatePool],
@@ -694,10 +701,14 @@ def _supplement_with_budget_friendly(
     sort_after_yf_by: str = "default",  # "default"=時価総額順 / "return_desc"=30日リターン降順
     id_offset: int = 20000,
 ) -> list[CandidatePool]:
-    """予算内（1 単元 ≤ max_lot_cost）の優良銘柄を Universe から補完。
+    """予算内（1 単元 ≤ max_lot_cost）の中小型成長銘柄を Universe から補完（last-resort）。
+
+    大指針 #2: 中小型バンド(¥100億〜¥1兆)に限定し時価総額 昇順(小型優先)で sample する。
+    補完は実 screening/MAGI 候補の last-resort なので source="supplement" を渡して低優先化する
+    （旧実装は大型降順 + source=magi で、補完大型が主経路化していた・2026-06-04 修正）。
 
     Args:
-        source: "magi" / "zeele" 等。CandidatePool.source に入る
+        source: 通常 "supplement"（last-resort 識別）。CandidatePool.source に入る
         gendo_stance: "推し" / "ZEELE" 等。CandidatePool.gendo_stance に入る
         fixed_preset: 固定 preset 名（None で auto_preset_from_momentum 参照）
         auto_preset_from_momentum: True なら 30 日リターンで preset を自動判定
@@ -708,7 +719,7 @@ def _supplement_with_budget_friendly(
         target_period_days: CandidatePool.target_period_days
         stop_pct: CandidatePool.stop_pct
         max_supplement: 最大補完数
-        sample_universe: Universe からサンプリングする件数（時価総額上位）
+        sample_universe: 中小型バンドから時価総額 昇順(小型優先)で sample する件数
         min_return_pct: 30 日リターン下限（-10% より悪い銘柄は除外）
         id_offset: virtual decision_id のオフセット（MAGI=20000 / ZEELE=30000）
     """
@@ -722,8 +733,18 @@ def _supplement_with_budget_friendly(
     except Exception:
         return []
 
-    candidates = [u for u in rows if u.ticker not in existing_tickers]
-    candidates.sort(key=lambda u: -(u.market_cap_jpy or 0))
+    # 大指針 #2: 大型偏向でなく中小型成長株。補完は中小型バンド(¥100億〜¥1兆)に限定し、
+    # 小型優先(時価総額 昇順)で sample する。旧実装は market_cap 降順=大型優先で、Phase C 初回が
+    # 全件メガキャップになった直接原因だった(2026-06-04 検出)。¥1兆超(大型)と ¥100億未満
+    # (低流動性マイクロ)は補完対象から除外。成長性は後段の 30 日リターン/preset で選別する。
+    candidates = [
+        u
+        for u in rows
+        if u.ticker not in existing_tickers
+        and (u.market_cap_jpy or 0) >= _SUPPLEMENT_MIN_MARKET_CAP_JPY
+        and (u.market_cap_jpy or 0) < _SUPPLEMENT_MAX_MARKET_CAP_JPY
+    ]
+    candidates.sort(key=lambda u: (u.market_cap_jpy or 0))  # 小型優先(昇順)
     candidates = candidates[:sample_universe]
 
     if not candidates:
@@ -1172,8 +1193,9 @@ def dispatch(
             opportunity_driven_fill,
         )
 
-        # ticker → sector lookup（Universe テーブル）
+        # ticker → sector / market_cap lookup（Universe テーブル）
         sector_lookup: dict[str, str] = {}
+        market_cap_lookup: dict[str, float] = {}  # 大指針 #2: opportunity_fill の大型上限ガード用
         try:
             from trading_agent.models.universe import Universe
 
@@ -1188,6 +1210,8 @@ def dispatch(
                 for _r in _rows:
                     if _r.sector:
                         sector_lookup[_r.ticker] = _r.sector
+                    if _r.market_cap_jpy:
+                        market_cap_lookup[_r.ticker] = float(_r.market_cap_jpy)
         except Exception:
             pass
         # ticker → boost lookup
@@ -1230,6 +1254,7 @@ def dispatch(
             blocked_tickers={t for (_p, t) in blocked_by_key},
             pilot_multipliers=_pilot_mul,
             account_total_jpy=_account_total if _account_total > 0 else None,
+            market_cap_lookup=market_cap_lookup,  # 大指針 #2: 大型上限ガード
         )
         # 機別予算は計画から算出（needs-based 配分は使わない）
         per_pilot_from_opp = {

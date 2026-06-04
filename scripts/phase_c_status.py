@@ -266,6 +266,17 @@ def _print_v2(engine) -> None:
           f"（gate n は Decision 粒度・明細/breakdowns は fill record 粒度）/ 評価前の保有: {len(opens)} 件"
           "（JSON: decisions_detail_paper / open_positions_paper に全項目）")
 
+    sb = _size_breakdown_paper(engine)
+    bb = sb["by_bucket"]
+    flag = "🟢 大指針 OK" if sb["policy_ok"] else "🔴 大型偏重(大指針逸脱)"
+    print()
+    print(_line("="))
+    print(f"⑧ 保有の size 分布（大指針 #2: 中小型成長株）— {flag}")
+    print(_line("="))
+    print(f"  小型 {bb['small']['n']} / 中型 {bb['mid']['n']} / 大型 {bb['large']['n']} / 不明 {bb['unknown']['n']}")
+    print(f"  (大型+不明) 件数比 {sb['risky_n_pct']}% / 取得原価比 {sb['risky_cost_pct']}%"
+          "（どちらか 40%超で逸脱・不明は検証不能で要注意）")
+
 
 def _gate_dict(gate) -> dict[str, Any]:
     return {
@@ -279,6 +290,53 @@ def _gate_dict(gate) -> dict[str, Any]:
             for c in gate.criteria
         ],
         "notes": gate.notes,
+    }
+
+
+def _size_breakdown_paper(engine) -> dict[str, Any]:
+    """大指針 #2 の再発検知: active paper 保有を size_bucket(small/mid/large)別に集計（コスト0）。
+
+    Universe.market_cap_jpy から size_bucket を判定し、件数・取得コストを出す。
+    large の比率が高い＝中小型成長戦略から逸脱（2026-06-04 の大型偏重を即可視化するため）。
+    """
+    from trading_agent.models.universe import Universe
+    from trading_agent.wille.opportunity_fill import size_bucket
+
+    with Session(engine) as s:
+        ports = s.exec(
+            select(Portfolio)
+            .where(col(Portfolio.status) == "active")
+            .where(col(Portfolio.broker_mode) == "paper")
+        ).all()
+        mc = {
+            u.ticker: u.market_cap_jpy
+            for u in s.exec(select(Universe)).all()
+        }
+    out: dict[str, dict] = {
+        b: {"n": 0, "cost_jpy": 0.0} for b in ("small", "mid", "large", "unknown")
+    }
+    for p in ports:
+        bucket = size_bucket(mc.get(p.ticker))
+        cost = float(p.buy_price or 0) * float(p.qty or 0)
+        out[bucket]["n"] += 1
+        out[bucket]["cost_jpy"] += cost
+    total_n = sum(b["n"] for b in out.values())
+    total_cost = sum(b["cost_jpy"] for b in out.values())
+    # codex P1: 件数比だけでなく取得原価比でも判定。unknown(時価総額不明)は検証不能なので
+    # 大型と同様に「中小型でない」リスク扱いにする（lookup 漏れ等で大型がすり抜けるのを防ぐ）。
+    risky_n = out["large"]["n"] + out["unknown"]["n"]
+    risky_cost = out["large"]["cost_jpy"] + out["unknown"]["cost_jpy"]
+    large_pct = (out["large"]["n"] / total_n * 100) if total_n else 0.0
+    risky_n_pct = (risky_n / total_n * 100) if total_n else 0.0
+    risky_cost_pct = (risky_cost / total_cost * 100) if total_cost else 0.0
+    return {
+        "by_bucket": out,
+        "total_n": total_n,
+        "large_pct": round(large_pct, 1),
+        "risky_n_pct": round(risky_n_pct, 1),       # (大型+不明) 件数比
+        "risky_cost_pct": round(risky_cost_pct, 1),  # (大型+不明) 取得原価比
+        # 大指針: 大型+不明が 件数・原価 どちらでも 40% 超なら逸脱。unknown は検証不能で要注意。
+        "policy_ok": risky_n_pct <= 40.0 and risky_cost_pct <= 40.0,
     }
 
 
@@ -423,6 +481,8 @@ def build_phase_c_status(engine) -> dict[str, Any]:
         "decisions_detail_paper": paper_official,
         # 評価前の保有スナップショット（余すことなく記録・codex P1/P2）。価格 fetch なし。
         "open_positions_paper": _open_positions_paper(engine),
+        # M5(大指針 #2): 保有の size_bucket 内訳（大型偏重の再発を即検知）。
+        "size_breakdown_paper": _size_breakdown_paper(engine),
         # exit理由別 / stance別 / 局面別 の成績（公式 paper・勝ち負けパターンの手掛かり）
         "breakdowns_paper": _breakdowns(paper_official),
         # 配分の透明性: なぜこの機体に予算が寄るか（pilot_multipliers の根拠）

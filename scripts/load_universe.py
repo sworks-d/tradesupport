@@ -8,7 +8,8 @@
 - **US ETFサテライト（10%）**：QQQ / VOO の 2本のみ（個別米株は D-25 で禁止）。
 
 メタ情報（社名・セクター・時価総額・出来高）は **yfinance から取得**（時価総額の動的補完）。
-upsert（ticker主キー）で冪等。`screening_agent._load_universe` が market_cap_jpy 降順で読む。
+upsert（ticker主キー）で冪等。`screening_agent._load_universe` は JP 中小型バンド(¥100億〜¥1兆)を
+時価総額 stratified sample で読む（大指針 #2・大型偏向回避）。
 
 実行:
     .venv/bin/python scripts/load_universe.py            # 既定DBへ投入（live, JPX 取得）
