@@ -8,12 +8,12 @@
 
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/a05/tradesupport/.venv/bin/python</string>
-    <string>/Users/a05/tradesupport/scripts/run_morning_batch.py</string>
+    <string>/Users/shotaro/tradesupport/.venv/bin/python</string>
+    <string>/Users/shotaro/tradesupport/scripts/run_morning_batch.py</string>
   </array>
 
   <key>WorkingDirectory</key>
-  <string>/Users/a05/tradesupport</string>
+  <string>/Users/shotaro/tradesupport</string>
 
   <!-- 毎日 7:00（平日のみにしたい場合は Weekday を 1〜5 で複数 dict に） -->
   <key>StartCalendarInterval</key>
@@ -23,9 +23,9 @@
   </dict>
 
   <key>StandardOutPath</key>
-  <string>/Users/a05/tradesupport/data/logs/morning-batch.out.log</string>
+  <string>/Users/shotaro/tradesupport/data/logs/morning-batch.out.log</string>
   <key>StandardErrorPath</key>
-  <string>/Users/a05/tradesupport/data/logs/morning-batch.err.log</string>
+  <string>/Users/shotaro/tradesupport/data/logs/morning-batch.err.log</string>
 
   <key>RunAtLoad</key>
   <false/>

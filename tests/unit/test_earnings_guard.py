@@ -167,16 +167,23 @@ class TestFetchNextEarningsDate:
         client._cli.get_eq_earnings_cal.assert_called_once_with()  # 引数なし
 
     def test_finds_future_date_by_code(self):
+        # 日付相対（hardcode だと当日経過で「未来の決算日」が過去化して flake るため）
+        base = dt.date.today()
+        d_9432 = base + dt.timedelta(days=3)
         df = pd.DataFrame(
             {
                 "Code": ["94320", "94340", "72110"],
-                "DisclosedDate": ["2026-06-03", "2026-06-05", "2026-06-01"],
+                "DisclosedDate": [
+                    d_9432.isoformat(),
+                    (base + dt.timedelta(days=5)).isoformat(),
+                    (base + dt.timedelta(days=1)).isoformat(),
+                ],
             }
         )
         client = self._client_with_df(df)
         # ticker "9432" → universe_to_jquants で "94320"（末尾 0 補完）に対応
         result = fetch_next_earnings_date("9432", client=client)
-        assert result == dt.date(2026, 6, 3)
+        assert result == d_9432
 
     def test_empty_dataframe_returns_none(self):
         client = self._client_with_df(pd.DataFrame())

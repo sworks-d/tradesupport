@@ -43,9 +43,12 @@ def _accuracy_to_multiplier(
 
 
 def compute_pilot_multipliers(
-    engine: Engine, lookback_days: int = 30
+    engine: Engine, lookback_days: int = 30, broker_mode: str | None = None
 ) -> dict[str, Any]:
     """機別の予算重みを計算（judgment_accuracy ベース）。
+
+    broker_mode（paper/live）を渡すと、その broker_mode の実績だけで重みを計算する
+    （dispatch 配分が paper/live/legacy 混在で歪まないように・codex High#6）。
 
     返り値:
       {
@@ -55,7 +58,9 @@ def compute_pilot_multipliers(
         "status": "active" | "insufficient_data",
       }
     """
-    ja = compute_judgment_accuracy(engine, lookback_days=lookback_days)
+    ja = compute_judgment_accuracy(
+        engine, lookback_days=lookback_days, broker_mode=broker_mode
+    )
     multipliers: dict[str, float] = {}
     details: dict[str, dict[str, Any]] = {}
     for pilot in ("REI", "ASUKA", "SHINJI", "KAWORU"):

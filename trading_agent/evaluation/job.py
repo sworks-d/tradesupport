@@ -56,8 +56,9 @@ def stamp_evaluation_fields(
     on_date: dt.date | None = None,
     market_regime: str | None = None,
     filled_via: str | None = None,
+    broker_mode: str | None = None,
 ) -> None:
-    """fill 時に評価の前提（stop / target / 評価期日 / entry regime / 経路）を Decision に刻む（in-place）。
+    """fill 時に評価の前提（stop / target / 評価期日 / entry regime / 経路 / broker_mode）を Decision に刻む（in-place）。
 
     `record_entry` と違い entry_price / shares は触らない。status="filled" を直書きする
     fill 経路（auto_fill_paper / mark_filled / 朝バッチ notify）が、呼び出し側の Session で
@@ -87,6 +88,9 @@ def stamp_evaluation_fields(
         d.filled_via = filled_via
     if d.entry_date is None:
         d.entry_date = base
+    # broker_mode 分離（gate⑥/昇格を paper/live で分けるため）。既存値は尊重。
+    if d.entry_broker_mode is None and broker_mode is not None:
+        d.entry_broker_mode = broker_mode
 
 
 def record_entry(
@@ -101,12 +105,14 @@ def record_entry(
     on_date: dt.date | None = None,
     filled_via: str | None = None,
     market_regime: str | None = None,
+    broker_mode: str | None = None,
 ) -> bool:
     """発注時：entry/stop/target/評価期日を decision に刻む（評価の前提）。
 
     v2.1 TASK-E2: 複数 fill の場合、shares で加重平均する。
     最初の fill: そのまま記録 / 2 回目以降: (既存価格×既存株数 + 新価格×新株数) / 合計株数
     A7: filled_via（経路）/ entry_date（実約定日）/ market_regime も刻む（既存値は尊重）。
+    broker_mode（paper/live）も刻む（gate⑥/昇格の分離集計用・既存値尊重）。
     """
     base = on_date or today_jst()
     with Session(engine, expire_on_commit=False) as session:
@@ -134,6 +140,8 @@ def record_entry(
             d.filled_via = filled_via
         if d.entry_market_regime is None and market_regime is not None:
             d.entry_market_regime = market_regime
+        if d.entry_broker_mode is None and broker_mode is not None:
+            d.entry_broker_mode = broker_mode
         if d.status in ("approved", "order_listed"):
             d.status = "ordered"
         session.add(d)

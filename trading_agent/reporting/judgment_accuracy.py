@@ -67,25 +67,26 @@ def _summarize(decs: list[Decision]) -> dict[str, Any]:
 
 
 def compute_judgment_accuracy(
-    engine: Engine, lookback_days: int = 30
+    engine: Engine, lookback_days: int = 30, broker_mode: str | None = None
 ) -> dict[str, Any]:
     """過去 lookback_days 日の Decision から判断精度を集計。
 
     集計対象: action="buy" の Decision（売り判断は別途）。
+    broker_mode（paper/live）を渡すと entry_broker_mode で絞る（dispatch 配分の重みを
+    paper/live/legacy で混ぜない・codex High#6）。既定 None=全件（後方互換）。
     返り値の status:
       - "active": 評価済み件数 >= _MIN_FOR_ACCURACY、accuracy が意味を持つ
       - "insufficient_data": サンプル不足、accuracy=None
     """
     cutoff = dt.date.today() - dt.timedelta(days=lookback_days)
     with Session(engine) as s:
-        decs = list(
-            s.exec(
-                select(Decision).where(
-                    col(Decision.date) >= cutoff,
-                    col(Decision.action) == "buy",
-                )
-            ).all()
+        stmt = select(Decision).where(
+            col(Decision.date) >= cutoff,
+            col(Decision.action) == "buy",
         )
+        if broker_mode is not None:
+            stmt = stmt.where(col(Decision.entry_broker_mode) == broker_mode)
+        decs = list(s.exec(stmt).all())
 
     overall = _summarize(decs)
 

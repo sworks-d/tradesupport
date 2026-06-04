@@ -59,7 +59,7 @@ class RakutenBroker:
         for p in rows:
             positions.append(
                 Position(
-                    ticker=p.ticker,
+                    code=p.ticker,
                     qty=int(p.qty or 0),
                     cost_price=float(p.buy_price or 0.0),
                     currency=p.currency or "JPY",

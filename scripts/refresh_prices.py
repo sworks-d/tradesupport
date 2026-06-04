@@ -198,8 +198,36 @@ def main() -> int:
         pilot["pnl_jpy"] = pnl
         pilot["pnl_pct"] = (pnl / overlay * 100) if overlay else 0.0
 
-    # generated_at を更新（軽量更新であることを示すため別キーも追加）
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # 5. top-level holdings（メインパネル）も同じ price_map で更新する。
+    # これが無いと dummy_system 保有だけ更新され、top-level holdings が朝の値のまま残り
+    # 「価格更新が反映されない」になる（ユーザー報告・部分更新 stale の解消）。
+    for tk, h in (data.get("holdings") or {}).items():
+        cur = price_map.get(tk)
+        if cur is None:
+            continue
+        qty = float(h.get("qty") or 0)
+        cost_price = float(h.get("cost_price") or 0)
+        is_jp = len(tk) == 4 and tk.isdigit()
+        h["current_price"] = cur
+        h["price_display"] = f"¥ {cur:,.0f}" if is_jp else f"$ {cur:,.2f}"
+        unreal = (cur - cost_price) * qty
+        h["unrealized_jpy"] = unreal
+        denom = cost_price * qty
+        ratio = (unreal / denom * 100) if denom else 0.0
+        h["pnl"] = {
+            "ratio_display": f"{ratio:+.1f}%",
+            "direction": "up" if ratio >= 0 else "down",
+        }
+        h["as_of"] = now_str
+        updated += 1
+
+    # 6. generated_at を更新（top-level + dummy_system 双方）。
+    # top-level を更新しないと UI の「最終更新」が朝バッチ時刻のまま固まり、価格が更新済でも
+    # 古く見える（generated_at 不整合の解消）。prices_refreshed_at で軽量更新であることも明示。
+    data["generated_at"] = now_str[:16]
+    data["prices_refreshed_at"] = now_str
     if "dummy_system" in data:
         data["dummy_system"]["generated_at"] = now_str[:16]  # 秒は表示外
         data["dummy_system"]["last_price_refresh_at"] = now_str

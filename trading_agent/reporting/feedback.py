@@ -24,12 +24,24 @@ from trading_agent.models.decisions import Decision
 from trading_agent.models.portfolio import Portfolio
 
 
+_OFFICIAL_SOURCES = ("ds_dispatch", "manual")
+
+
 def collect_feedback_records(
-    engine: Engine, *, since: dt.date | None = None
+    engine: Engine, *, since: dt.date | None = None, broker_mode: str | None = None,
+    official_only: bool = False,
 ) -> list[dict[str, Any]]:
     """評価期日到来済の decision を性格別に展開してフィードバック records を返す。
 
     1 つの decision を複数性格が fill していた場合は、それぞれを別 record として展開。
+    `broker_mode`（paper/live）を渡すと、その broker_mode の record だけに絞る
+    （昇格/配分を paper=edge検証 と live=実運用 で分離するため・既定 None=全件）。
+    `official_only`=True で gate⑥ 公式集合述語と完全同値に絞る（codex P1）:
+    filled_via∈(ds_dispatch,manual) ∧ entry_market_regime あり ∧ actual_return あり ∧
+    stop_pct ∧ entry_broker_mode==broker_mode（broker_mode の authority も Decision 側）。
+    ※ 戻り値は personalities_filled 展開後の **fill record 粒度**（1 Decision を複数機体が fill
+    すると複数 record）。gate n は Decision 粒度なので、件数一致を要するなら decision_id で uniq する。
+    各 record には broker_mode（Portfolio 優先、無ければ Decision.entry_broker_mode）を含める。
     """
     records: list[dict[str, Any]] = []
     with Session(engine) as s:
@@ -43,20 +55,50 @@ def collect_feedback_records(
             select(Portfolio).where(col(Portfolio.status) == "closed")
         ).all()
 
+    # codex P0: 同一 (ticker, personality) を複数 decision で取引すると、(ticker, personality)
+    # 引きでは別 decision の Portfolio（broker_mode/exit_reason/days_held）が混ざる。
+    # decision_id 優先で紐付け、legacy（decision_id 無し）だけ (ticker, personality) fallback。
+    port_by_decision_personality: dict[tuple[int, str | None], Portfolio] = {}
     port_by_ticker_personality: dict[tuple[str, str | None], Portfolio] = {}
     for p in ports:
-        key = (p.ticker, p.personality)
-        port_by_ticker_personality[key] = p
+        did = getattr(p, "decision_id", None)
+        if did is not None:
+            port_by_decision_personality[(did, p.personality)] = p
+        port_by_ticker_personality[(p.ticker, p.personality)] = p
 
     for d in decs:
         if since and d.evaluation_date and d.evaluation_date < since:
             continue
         filled = list(d.personalities_filled or []) or [None]
         for personality_name in filled:
-            port = port_by_ticker_personality.get((d.ticker, personality_name))
+            # decision_id 優先 → 無ければ legacy の (ticker, personality)。
+            port = port_by_decision_personality.get((d.id, personality_name))
+            if port is None:
+                port = port_by_ticker_personality.get((d.ticker, personality_name))
+            # broker_mode は Portfolio 優先（紐付けが正確）、無ければ Decision の entry_broker_mode。
+            rec_broker_mode = (
+                getattr(port, "broker_mode", None) if port else None
+            ) or d.entry_broker_mode
+            # broker_mode フィルタの authority（codex P1）:
+            #  - official_only=True: gate.py と同じく Decision.entry_broker_mode を authority にする
+            #    （下の official_only 条件で判定）。Portfolio.broker_mode 不整合データで gate n とズレない。
+            #  - official_only=False: 従来どおり Portfolio 優先の rec_broker_mode で絞る。
+            if not official_only and broker_mode is not None and rec_broker_mode != broker_mode:
+                continue
+            if official_only and not (
+                d.filled_via in _OFFICIAL_SOURCES
+                and d.entry_market_regime is not None
+                and d.actual_return is not None
+                and d.stop_pct
+                and (broker_mode is None or d.entry_broker_mode == broker_mode)
+            ):
+                # gate.py の公式集合述語と完全同値（filled_via 公式 ∧ regime ∧ actual_return ∧
+                # stop_pct ∧ entry_broker_mode==broker_mode）。
+                continue
             records.append(
                 {
                     "decision_id": d.id,
+                    "broker_mode": rec_broker_mode,
                     "ticker": d.ticker,
                     "evaluation_date": (
                         d.evaluation_date.isoformat() if d.evaluation_date else None
@@ -79,6 +121,14 @@ def collect_feedback_records(
                         if port and port.closed_at and port.created_at
                         else None
                     ),
+                    # Review Report v2 用の明細フィールド（exit/stance/局面別 集計 + 透明性）
+                    "action": d.action,
+                    "filled_via": d.filled_via,
+                    "entry_date": d.entry_date.isoformat() if d.entry_date else None,
+                    "entry_market_regime": d.entry_market_regime,
+                    "benchmark_return": d.benchmark_return,
+                    "target_period_days": d.target_period_days,
+                    "thesis": (d.thesis_at_decision or "")[:120],
                 }
             )
     return records

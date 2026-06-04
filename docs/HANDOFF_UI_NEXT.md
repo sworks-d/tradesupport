@@ -97,3 +97,111 @@ INVESTIGELION の朝の運用を **シンプル・低ミス**にする UI。ユ�
 - [[project_system_purpose]] — ¥10万から段階大規模化・実運用品質
 - [[ds_operation_intent]] — ユーザーは DS の代理として発注代行（ユーザー≠KATSURAGI）
 - [[feedback_proposal_format]] / [[feedback_proposal_self_review]] — UI 提案時のメリデメ・自己レビュー
+
+---
+
+## 9. 【2026-06-03 追記】paper/live 役割分担 + ¥10万→¥100万 段階大規模化（UI 反映必須）
+
+backend で broker_mode 分離 + Phase C 段階大規模化を実装済（commit 予定）。UI は以下を**正しく反映**すること。
+
+### 9-1. 確定した役割分担（ユーザー方針）
+
+| | paper（試験） | live（本番） |
+|---|---|---|
+| 何 | DS が「ユーザーが手動売買した想定」を**自動 fill** してシステムの edge を検証 | ユーザーが**実楽天で手動発注**→ `/purchase-report` で報告 |
+| 約定経路 | 原則 `filled_via=ds_dispatch`（手動 paper 報告は `broker_mode=paper`+`manual`・`--force` 原則禁止） | `filled_via=manual` |
+| 自動売買 | あり（auto_trade ON） | なし（手動のみ） |
+| 口座・運用枠 | **口座総額 ¥100万 固定** / **deploy 解放枠 ¥10万 start** → ゲート⑥通過で段階的に ¥100万 へ解放（unlock 方式・§9-3） | 楽天実残高 |
+| 意味 | システムの強さの証明 | 実運用の実績 |
+
+⚠ **paper と live は別トラック。UI で絶対に混ぜない**。ゲート⑥（増額判断）も別々に見せる。
+⚠ paper は「口座資本 ¥10万」ではなく「**口座 ¥100万・初期 deploy 上限 ¥10万**」（混同しない・codex 指摘）。
+
+### 9-2. ゲート⑥は broker_mode 別に表示（混在汚染防止・codex 指摘）
+
+- `official_gate_evaluation(engine, broker_mode="paper")` と `(..., broker_mode="live")` を**別パネル**で表示。
+- combined（`combined_gate_reference(engine)`）は **「参考のみ・増額不可」ラベル必須**（`actionable=False`）。combined の passed を増額根拠に見せてはいけない。
+- CLI: `scripts/check_gate.py`（paper+live+combined 表示）、`--paper` / `--live` で個別。
+- 各 `GateResult` に `.broker_mode` / `.actionable` フィールドあり。
+
+### 9-3. 段階大規模化ウィジェット（paper 専用・**unlock 方式**・founding purpose の可視化）
+
+⚠ 設計確定（codex 推奨・2026-06-03）：**deposit ではなく unlock 方式**。paper は口座総額 ¥100万 を
+最初から固定で置き（資本注入で equity 曲線を歪めない）、実際に deploy してよい上限だけを段階解放する。
+
+`treasury_view(engine, "paper")` が返す（実装済）:
+- `account_capital_jpy` — 口座総額（¥100万・固定）
+- `current_risk_budget_jpy` — **解放済み deploy 上限**（¥10万 start → gate⑥通過で解放）
+- `active_exposure_jpy` — 使用中（active paper 取得コスト）
+- `deployable_jpy` — 今 deploy 可能（= 解放上限 − exposure）
+- `target_ceiling_jpy` — 解放上限（¥100万）/ `ceiling_progress_pct` — 解放率（%）
+
+→ **「口座 ¥100万 / 解放済み ¥X（Y%）/ 使用中 ¥Z / deploy可能 ¥W」** を出す。ladder = 10→30→60→100万（unlock）。
+ゲート⑥(paper)通過ごとに `scripts/misato_dispatch.py --advance-paper` で次 tier を解放（履歴は `treasury_injection` 台帳：amount=解放差分 / tier_after=解放後上限 / reason）。
+
+### 9-4. レポートボタン（サイドカラム・ユーザー指示 2026-06-03）
+
+ユーザー要望：**サイドカラムに「レポート」ボタンを設置し、押すと Phase C 現況ビューへ遷移**して中身が分かるようにする。**常に最新ステータスが反映**されること（2026-06-03 追加指示）。
+
+- **データソース（確定）：`snapshot.json` の `phase_c` キー**。`build_snapshot.py` が **phase_c を常駐で載せる**実装済（朝バッチ + **5分自動更新** + 手動更新で再生成 → UI は常に最新）。**UI は別 fetch 不要・snapshot を読むだけ**。
+  - 単発確認/archive 用に `scripts/phase_c_status.py --json`（純 JSON・**コスト0・DB のみ・価格 fetch なし**）/ `--archive`（`autoreport/phase_c/YYYY-MM-DD.json` 日次履歴）もある。
+  - `snapshot.json.phase_c` の中身は `build_phase_c_status` と同一 dict（下記キー）。
+- JSON 構造（`snapshot.json.phase_c`）：
+  - `intent`（treasury paper/live・auto_trade・halt）
+  - `pnl_realized`（broker_mode 別・**`official` と `legacy_reference` に分離**＝legacy closed を確定取引と混ぜない）
+  - `gates`（paper・live・combined_reference 各 criteria・`actionable`）
+  - `pilot_performance_paper` / `fix_direction_paper`（failing_criteria・promotions）
+  - **`decisions_detail_paper`**（公式 paper 評価済み明細：ticker/action/filled_via/entry・exit/stop・target/actual_return/R/benchmark/hit_or_miss/regime/thesis）
+  - **`open_positions_paper`**（評価前の active 保有：ticker/qty/buy_price/target_date/evaluation_date/stop/thesis/personality・価格 fetch なし）
+  - **`breakdowns_paper`**（exit理由別 / stance別 / 局面別 の n・命中・avgR）
+  - **`feedback_transparency`**（pilot_multipliers の multiplier/accuracy/evaluated/reason＝なぜこの機体に予算が寄るか）
+  - `data_breakdown`（status/filled_via/broker_mode 内訳・`None`→`legacy(None)`）
+- 遷移ビューのブロック（CLI と同構成）：
+  ① 実行意図 ② 損益（official/legacy 分離）③ 分析（ゲート⑥ paper/live）④ 修正の方向性 ⑤ 要素データ ⑥ FB 透明性（配分根拠）⑦ 成績パターン（exit/stance/局面別）+ Decision 明細・評価前保有。
+- combined は `actionable=false` を**「参考・増額不可」明示**で。`fix_direction_paper.failing_criteria` を「次にやること」として目立たせる。
+- [[ui_f0_master_fidelity]] 厳守：サイドカラム/ボタン/遷移は dashboard.html の既存構造・クラスを踏襲（新規ページでなく既存パネル遷移が無難）。
+- 含み損益・現在評価額は従来どおり build_snapshot（要価格）側。phase_c_status は確定値のみ（cost0）。
+
+### 9-5. データソース早見
+
+| 表示したいもの | 取得元 |
+|---|---|
+| Phase C 統合現況（推奨） | `scripts/phase_c_status.py --json` / `build_phase_c_status(engine)` |
+| paper/live ゲート⑥ | `official_gate_evaluation(engine, broker_mode=...)` → `GateResult.summary()` / `.criteria` |
+| combined 参考 | `combined_gate_reference(engine)`（actionable=False を明示） |
+| paper unlock 状態 | `treasury_view(engine, "paper")` の account_capital / current_risk_budget / deployable / ceiling |
+| unlock 履歴 | `treasury_injection` テーブル（amount_jpy=解放差分 / tier_after_jpy / reason / created_at） |
+| 保有・含み損益（既存） | `build_snapshot.py`（broker_mode 別に既に分離・§3 参照・要価格） |
+
+### 9-6. 注意
+
+- `filled_via=manual` は **live 専用ではない**（paper/manual もあり得る）。トラック判定は **broker_mode** で行う（filled_via 単独で live と判定しない）。
+- unlock は資本注入ではない（口座総額固定）。だが解放上限内の deployed capital に対する R/return で edge を見る。口座総額 ¥100万 全体の P&L で勝ち判定すると未解放 cash で希薄化するので使わない（gate⑥ は解放枠内の decisions で判定）。
+- 実 equity DD は backend で別途実装予定（現状ゲートは評価列 proxy）。
+
+### 9-7. 既知の暫定/未配線（UI で「実データ」と誤読させない・2026-06-03 監査 by codex）
+
+backend 監査で判明。UI はこれらを「最新の実データ」として出さず、注記/ラベルを付ける：
+
+- **`pnl_realized[mode]`**：`official`/`legacy_reference` の入れ子。**後方互換でフラット `n/pnl_jpy/wins`（=official）も併存**。UI は official（公式 Phase C 確定）と legacy_reference（cleanup 等・参考・公式対象外）を**別表示**。`official_decision_n`(=gate n 基準) と `official_fill_record_n`(=明細粒度) を区別。
+- **`candidates`**：card_id→候補の**純 map**（メタは入れない）。5分自動更新（`--light`）では**前回（朝バッチ）生成を再利用**。stale 情報は **`candidates_meta: {stale, source_generated_at}`**（candidates dict とは別キー）にあるので、UI は `candidates_meta.stale=true` 時に「候補は朝の生成（as of `source_generated_at`）」と明示。価格/MAGI/judge は最新ではない。⚠ 件数は `candidates` のキー数で数える（メタは混入しない）。
+- **`allocation.posture_used` / `posture_source`**：posture は exposure_decision 由来に配線済だが、exposure 入力（breadth/uptrend 等）が**未配線で LOW confidence** の間は保守側（REDUCE_ONLY 寄り）。`posture_source` が `fixed_safe_default` なら「暫定」と表示し意思決定根拠にしない。
+- **`exposure`**：5入力中 portfolio_dd_pct のみ配線・他は未配線（X-2C 待ち）。`inputs_missing` を UI で「暫定/低信頼」と明示。
+- **`holding_health`**：T2(配当)/T5(決算サプライズ)は**暫定スキップ**（X-2B 待ち）。T1/T3/T4 のみ。UI で coverage を明示。
+- **`news_sentiment`（market_analyst 経路）**：news MCP の見出しを keyword 分類(+/-/0)→(pos-neg)/total を 0-100 にマップした**決定論スコア**（cost0）。**ニュース無し/取得失敗/方向性なし時のみ中立 50**。LLM ブレンドは将来拡張（旧「固定50ダミー」は解消済）。
+- **`usdjpy`**：fetch 失敗時 0.0 になり US 銘柄が ¥0 化し得る（backend 修正候補）。UI は usdjpy=0/null 時に US 金額を信用しない。
+
+### 9-8. データ鮮度/更新伝播（codex 監査 2026-06-04・「価格が反映されない」の同種問題）
+
+snapshot は複数経路で部分更新される。UI は「どのセクションがいつ更新されたか」を区別すること：
+
+- **更新経路と範囲**（backend 修正済の前提）：
+  - `/api/refresh-prices`（`refresh_prices.py`）= **top-level holdings + dummy_system holdings の価格/含み損益** + `generated_at`/`prices_refreshed_at` 更新。**account 総資産・candidates・phase_c・allocation は更新しない**。
+  - `/api/refresh-holdings`（`refresh_holdings.py`）= holdings/pending/account + **phase_c/scaling/gates 再生成（約定後の Phase C レポート更新・追加済）**。dummy_system は更新しない。
+  - `/api/refresh`（`build_snapshot.py`）= full（重い・LLM 含み得る）。「完全再生成」専用に。通常は refresh-prices/holdings。
+  - 朝バッチ 07:00 / daily-report 18:00 = full 再生成。**それ以外の intraday 定期 full 再生成は無い**。
+- **`generated_at` の意味が経路で混在**（full生成時刻 / 価格更新時刻 / 保有更新時刻を上書き共有）。UI は **価格鮮度は `prices_refreshed_at`、全体鮮度は `generated_at`** と分けて表示し、「全体が最新」と誤認させない。
+- **`candidates_meta: {stale, source_generated_at}`** に分離済（候補件数バグ回避）。`candidates` は card_id→候補の純 map。`--light` 時は `candidates_meta.stale=true`＝「候補は朝の生成」と表示。
+- **自動価格ループの伝播**：`DummySystemPanel` の自動更新は自 state のみ。**メイン holdings/サイドバーに伝播しない**（LiveData は mount 時 fetch）。→ 自動更新後に共有 store/イベントで LiveData も再描画 or 軽量更新を central fetch/reload に統一。
+- **account 総資産が時価連動でない**：価格は動くのに総資産が動かない見え方。`account` に時価ベース総資産/含み損益を追加するか「取得原価ベース」とラベル明示。
+- **更新失敗/クールダウン**：refresh-prices が no-holdings/cooldown で snapshot を書かない → UI に「更新失敗中」が出ない。API response の status をUIで表示。

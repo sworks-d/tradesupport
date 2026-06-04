@@ -30,11 +30,13 @@ from trading_agent.models.universe import Universe
 from trading_agent.portfolio.misato import (
     AUTO_TRADE_DEFAULT_HOURS,
     DEFAULT_HALT_FILE,
+    advance_paper_budget,
     auto_trade_view,
     check_halt,
     cleanup_for_fresh_run,
     deposit,
     dispatch,
+    init_paper_staging,
     plan_to_dict,
     reset_treasury,
     set_master_auto_trade,
@@ -164,6 +166,16 @@ def main() -> None:
     ap.add_argument("--reset-treasury", action="store_true", help="預かり金と配分を全リセット")
     ap.add_argument("--balance", action="store_true", help="預かり金・配分状況を表示")
     ap.add_argument(
+        "--init-paper-staging",
+        action="store_true",
+        help="Phase C 開始: paper を ¥10万 start・ceiling ¥100万 で初期化（冪等・資本注入を台帳記録）",
+    )
+    ap.add_argument(
+        "--advance-paper",
+        action="store_true",
+        help="paper ゲート⑥が通過していれば次 tier へ staged deposit（¥100万 上限）",
+    )
+    ap.add_argument(
         "--auto-on",
         default=None,
         help="自動売買 ON: 'master' or 'REI'/'ASUKA'/'SHINJI'/'KAWORU'",
@@ -215,17 +227,50 @@ def main() -> None:
     engine = get_engine(Path("data") / "trading.sqlite")
     create_all(engine)
 
+    if args.init_paper_staging:
+        info = init_paper_staging(engine)
+        print(f"✅ Phase C paper staging (unlock 方式): {info['status']}")
+        print(f"  口座総額 (account capital):  ¥{int(info['account_capital_jpy']):,}（固定）")
+        print(f"  解放済み deploy 上限:        ¥{int(info['current_risk_budget_jpy']):,}（start ¥10万）")
+        print(f"  解放上限 (ceiling):          ¥{int(info['ceiling_jpy']):,}")
+        print("  → ゲート⑥(paper)通過ごとに --advance-paper で次 tier を解放（10→30→60→100万）")
+        return
+
+    if args.advance_paper:
+        info = advance_paper_budget(engine)
+        status = info.get("status")
+        if status == "advanced":
+            print(f"✅ unlock: deploy 上限 ¥{int(info['from_jpy']):,} → ¥{int(info['to_jpy']):,}（ゲート⑥通過）")
+        elif status == "gate_not_passed":
+            print("⛔ ゲート⑥(paper)未通過 → 解放しない（フォワード実績を貯め続ける）")
+            print(info.get("gate_summary", ""))
+        elif status == "insufficient_fresh_evals":
+            print(f"⏸ ゲート通過済だが前回解放以降の新規評価が不足"
+                  f"（{info['fresh_evals']}/{info['required']} 件）→ 多重解放防止のため保留")
+        elif status == "ceiling_reached":
+            print(f"🎯 解放上限到達: ¥{int(info['current_risk_budget_jpy']):,}（これ以上は解放しない）")
+        return
+
     if args.balance:
         view = treasury_view(engine)
         if args.json:
             print(json.dumps(view, ensure_ascii=False, indent=2))
         else:
-            print(f"=== MISATO Treasury ===")
-            print(f"預かり金 (seed):   ¥{view['seed_jpy']:,}")
-            print(f"配分済 (allocated): ¥{view['allocated_jpy']:,}")
-            print(f"未配分 (available): ¥{view['available_jpy']:,}")
+            print(f"=== MISATO Treasury ({view['broker_mode']}) ===")
+            unlocked = view.get("current_risk_budget_jpy") or 0
+            ceiling = view.get("target_ceiling_jpy") or 0
+            if ceiling:
+                # Phase C unlock 方式（口座総額固定・deploy 上限を段階解放）
+                print(f"口座総額 (capital):       ¥{view['account_capital_jpy']:,}（固定）")
+                print(f"解放済み deploy 上限:     ¥{unlocked:,} / 上限 ¥{ceiling:,}"
+                      f"（{view.get('ceiling_progress_pct')}% 解放）")
+                print(f"使用中 exposure:          ¥{view['active_exposure_jpy']:,}")
+                print(f"今 deploy 可能:           ¥{view.get('deployable_jpy') or 0:,}")
+            else:
+                print(f"預かり金 (seed):   ¥{view['seed_jpy']:,}")
+                print(f"配分済 (allocated): ¥{view['allocated_jpy']:,}")
+                print(f"未配分 (available): ¥{view['available_jpy']:,}")
             print(f"入金回数: {view['deposit_count']}")
-            print(f"直近入金: {view['last_deposit_at'] or '—'}")
             print(f"--- 各機配分 ---")
             for pilot, jpy in view["allocations"].items():
                 print(f"  {pilot:8s}: ¥{jpy:,}")

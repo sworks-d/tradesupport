@@ -36,7 +36,35 @@ class MisatoTreasury(SQLModel, table=True):
     deposit_count: int = 0
     last_deposit_at: dt.datetime | None = None
     master_auto_trade_until: dt.datetime | None = None
+    # Phase C 段階大規模化（unlock 方式・codex 推奨）。
+    # paper は口座総額 seed=¥100万 を固定で置き、実際に使える deploy 上限だけを段階解放する。
+    # unlocked_budget_jpy: 現在解放済みの運用上限（¥10万 start → gate⑥通過で ¥100万 へ）。
+    # target_ceiling_jpy : 解放上限（paper=¥100万）。0.0=未設定。
+    # last_unlock_eval_n : 直近 unlock 時点の公式評価件数（同一 gate snapshot での多重 unlock 防止）。
+    # 資本注入(deposit)で seed を増やさない → equity 曲線が注入で歪まず純粋に edge を測れる。
+    unlocked_budget_jpy: float = 0.0
+    target_ceiling_jpy: float = 0.0
+    last_unlock_eval_n: int = 0
     updated_at: dt.datetime = Field(default_factory=utcnow)
+
+
+class TreasuryInjection(SQLModel, table=True):
+    """paper budget unlock の台帳（codex 推奨の unlock 方式）。
+
+    口座総額 seed は固定（¥100万）なので「資本注入」ではなく「deploy 上限の段階解放」を記録する。
+    amount_jpy=今回の解放差分 / tier_after_jpy=解放後の運用上限 / reason=解放理由。
+    現運用規模 current_risk_budget = MisatoTreasury.unlocked_budget_jpy（解放済み上限）で読む
+    （台帳は監査履歴）。equity 曲線は口座総額固定なので注入で歪まない。
+    """
+
+    __tablename__ = "treasury_injection"
+
+    id: int | None = Field(default=None, primary_key=True)
+    broker_mode: str = Field(default="paper", index=True)
+    amount_jpy: float = 0.0  # 今回の解放差分（unlock delta）
+    reason: str = ""  # "phase_c_start_unlock" / "gate_pass_unlock" / "manual" 等
+    tier_after_jpy: float = 0.0  # 解放後の運用上限（unlocked cap after）
+    created_at: dt.datetime = Field(default_factory=utcnow)
 
 
 class PilotAllocation(SQLModel, table=True):

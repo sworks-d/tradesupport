@@ -67,6 +67,19 @@ def main() -> None:
         index_path = write_index(out_dir)
         print(f"✅ index {index_path}")
 
+        # Phase C 現況を日次 archive（余すことなく履歴を残す・コスト0・価格 fetch なし）。
+        # ユーザー要望「テストの中身を余さず記録して FB に使う」。autoreport/phase_c/YYYY-MM-DD.json。
+        try:
+            import sys as _sys
+
+            _sys.path.insert(0, str(Path(__file__).resolve().parent))
+            import phase_c_status as _pcs
+
+            pc_path = _pcs.archive_to_file(engine, target_date.isoformat())
+            print(f"✅ phase_c 現況 archive {pc_path}")
+        except Exception as exc:  # noqa: BLE001
+            print(f"⚠ phase_c archive 失敗（日次レポートは継続）: {type(exc).__name__}: {exc}")
+
 
 if __name__ == "__main__":
     main()

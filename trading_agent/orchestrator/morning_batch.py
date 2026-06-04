@@ -517,6 +517,7 @@ async def run_morning_batch(
             price_lookup=_price_lookup,
             is_jp_lookup=_is_jp_lookup,
             cash_jpy=cash,
+            broker_mode=broker_mode,  # codex: 明示渡しで環境モード混線を防ぐ（cap も効く）
         )
         return {
             "status": "active",
@@ -724,12 +725,25 @@ async def run_morning_batch(
             from trading_agent.evaluation.job import stamp_evaluation_fields
             from trading_agent.models.decisions import Decision as _Decision
             from trading_agent.models.portfolio import Portfolio as _Portfolio
-            from trading_agent.portfolio.misato import treasury_view
+            from trading_agent.portfolio.misato import (
+                deployable_budget_jpy,
+                treasury_view,
+            )
             from trading_agent.reporting.order_list import build_order_items
 
+            # codex B/#2: Phase C unlock 有効時は paper_auto を無効化する。
+            # この直 fill は paper_fill_approved を通らず available(¥100万側) を直叩きするため、
+            # 解放枠(¥10万) を無視して active exposure を膨らませ、公式 ds_dispatch の deployable を侵食する。
+            # Phase C では公式フロー(dummy-system ds_dispatch)が fill を担うので、paper_auto は止める。
+            _phase_c_active = deployable_budget_jpy(engine, "paper") is not None
             tv = treasury_view(engine, "paper")
             available = float(tv.get("available_jpy") or 0)
-            if available > 0:
+            if _phase_c_active:
+                result["paper_auto_filled"] = 0
+                result["paper_auto_skipped"] = "phase_c_unlock_active"
+                _log.info("paper_auto_skipped_phase_c",
+                          reason="unlock active: official ds_dispatch handles fills")
+            elif available > 0:
                 items = build_order_items(engine, available_jpy=available)
                 items_by_decision = {it.decision_id: it for it in items}
                 today_now = today_jst()

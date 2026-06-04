@@ -4,7 +4,9 @@ screening 候補を個別に深掘りし、5軸スコア + 3シナリオ + thesi
 
 - fundamental_score / technical_score：純粋関数（§2.5）。取得できたフィールドのみ採点。
 - strategy_fit_score：screening_results.composite_score を採用。
-- news_sentiment_score：Phase 1 は中立 50（LLM センチメントは後日。§2.8 ニュース無し=50 と整合）。
+- news_sentiment_score：news MCP で直近ニュースを取得し見出しを keyword 分類(+/-/0)→
+  (pos-neg)/total を 0-100 にマップ（決定論・コスト0）。ニュース無し/方向性なし=中立 50。
+  LLM ブレンドは将来拡張（§2.8 ニュース無し=50 と整合）。
 - ai_confidence / scenarios / thesis_checklist / reasons / risks：llm_call（Hot）の JSON。
   LLM 未登録/失敗時は graceful default（確信度 50・空シナリオ）。
 - 推奨数量・指値：§2.7 のルール。
@@ -26,8 +28,10 @@ from trading_agent.llm.json_extract import extract_json
 from trading_agent.mcp_tools.fundamentals import FundamentalsInput, is_jp_ticker
 from trading_agent.mcp_tools.llm_call import LLMCallInput
 from trading_agent.mcp_tools.market_data import MarketDataInput
+from trading_agent.mcp_tools.news import NewsInput
 from trading_agent.mcp_tools.technicals import TechnicalsInput
 from trading_agent.models.portfolio import PortfolioSnapshot
+from trading_agent.wille.news_keywords import classify_headline
 from trading_agent.models.settings import Setting
 from trading_agent.models.signals import BuySignal, ScreeningResult
 from trading_agent.utils.logger import get_logger
@@ -252,7 +256,7 @@ class MarketAnalystAgent(Agent[MarketAnalystInput]):
             rsi=tech.get("rsi"),
             macd_cross_recent=bool(tech.get("macd_cross_recent")),
         )
-        news_sentiment = 50.0
+        news_sentiment = await self._news_sentiment(ticker)
         strategy_fit = screen.get("composite_score", 0.0)
         is_v_shape = screen.get("v_shape_score", 0.0) >= screen.get("theme_score", 0.0)
 
@@ -344,6 +348,38 @@ class MarketAnalystAgent(Agent[MarketAnalystInput]):
         except Exception as exc:
             self._log.warning("market_analyst_tech_failed", ticker=ticker, error=str(exc))
         return {}
+
+    async def _news_sentiment(self, ticker: str) -> float:
+        """ニュース見出しの impact(+/-/0)を集計して 0-100 で返す（決定論・LLM 不使用・コスト0）。
+
+        旧版は固定 50（ダミー）。news MCP ツールで直近ニュースを取得し、
+        wille.news_keywords.classify_headline でキーワード分類 → (pos-neg)/total ∈ [-1,1] を
+        0-100 にマップ（50+score*50）。ニュース無し/分類不能は 50（中立＝正当なデフォルト・§2.8）。
+        LLM ブレンドは将来の拡張（その時はコスト提示）。
+        """
+        try:
+            out = await self._ctx.call_tool("news", NewsInput(tickers=[ticker]))
+            articles = list(getattr(out, "articles", None) or [])
+            if not getattr(out, "success", True) or not articles:
+                return 50.0
+            pos = neg = 0
+            for a in articles:
+                headline = str(a.get("title") or a.get("summary") or "")
+                if not headline:
+                    continue
+                impact = classify_headline(headline).get("impact", "0")
+                if impact == "+":
+                    pos += 1
+                elif impact == "-":
+                    neg += 1
+            total = pos + neg
+            if total == 0:
+                return 50.0  # ニュースはあるが方向性なし＝中立
+            score = (pos - neg) / total  # -1.0 ~ +1.0
+            return max(0.0, min(100.0, 50.0 + score * 50.0))
+        except Exception as exc:
+            self._log.warning("market_analyst_news_sentiment_failed", ticker=ticker, error=str(exc))
+            return 50.0  # 取得失敗は中立（推測しない・H10）
 
     def _screening_result(self, engine: Engine, ticker: str) -> dict[str, Any]:
         with Session(engine) as session:

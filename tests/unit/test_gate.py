@@ -22,7 +22,7 @@ def _engine(tmp_path: Path):
 def _add_evaluated(
     eng, *, ticker: str, actual: float, outcome: str, regime: str,
     bench: float = 0.0, stop: float = 0.10, official: bool = True,
-    filled_via: str = "ds_dispatch",
+    filled_via: str = "ds_dispatch", broker_mode: str = "paper",
 ) -> None:
     with Session(eng, expire_on_commit=False) as s:
         s.add(Decision(
@@ -32,6 +32,7 @@ def _add_evaluated(
             evaluated_at=utcnow(),
             entry_market_regime=regime if official else None,
             filled_via=filled_via if official else None,
+            entry_broker_mode=broker_mode if official else None,
         ))
         s.commit()
 
@@ -51,7 +52,7 @@ class TestMaxDrawdown:
 
 class TestOfficialGate:
     def test_empty_db_not_passed(self, tmp_path: Path) -> None:
-        res = official_gate_evaluation(_engine(tmp_path))
+        res = official_gate_evaluation(_engine(tmp_path), broker_mode="paper")
         assert res.passed is False
         assert res.n == 0
 
@@ -59,7 +60,7 @@ class TestOfficialGate:
         eng = _engine(tmp_path)
         # entry_market_regime=None（legacy）は公式カウントから除外
         _add_evaluated(eng, ticker="0001", actual=0.2, outcome="hit", regime="x", official=False)
-        res = official_gate_evaluation(eng)
+        res = official_gate_evaluation(eng, broker_mode="paper")
         assert res.n == 0
 
     def test_excludes_paper_auto_from_official(self, tmp_path: Path) -> None:
@@ -69,13 +70,13 @@ class TestOfficialGate:
                        filled_via="paper_auto")
         _add_evaluated(eng, ticker="0002", actual=0.2, outcome="hit", regime="bull",
                        filled_via="ds_dispatch")
-        res = official_gate_evaluation(eng)
+        res = official_gate_evaluation(eng, broker_mode="paper")
         assert res.n == 1  # ds_dispatch のみ。paper_auto は除外
 
     def test_insufficient_n_not_passed(self, tmp_path: Path) -> None:
         eng = _engine(tmp_path)
         _add_evaluated(eng, ticker="7203", actual=0.2, outcome="hit", regime="risk_on")
-        res = official_gate_evaluation(eng)
+        res = official_gate_evaluation(eng, broker_mode="paper")
         assert res.passed is False
         # n 要件が落ちている
         n_crit = next(c for c in res.criteria if c.name == "評価件数")
@@ -91,7 +92,7 @@ class TestOfficialGate:
         for i in range(10):
             _add_evaluated(eng, ticker=f"B{i:04d}", actual=0.08, outcome="hit",
                            regime="risk_off", bench=0.0)
-        res = official_gate_evaluation(eng)
+        res = official_gate_evaluation(eng, broker_mode="paper")
         assert res.n == 30
         assert res.passed is True, res.summary()
 
@@ -104,7 +105,7 @@ class TestOfficialGate:
         for i in range(10):
             _add_evaluated(eng, ticker=f"B{i:04d}", actual=0.08, outcome="hit",
                            regime="bear", bench=0.0)
-        res = official_gate_evaluation(eng)
+        res = official_gate_evaluation(eng, broker_mode="paper")
         regime_crit = next(c for c in res.criteria if c.name == "両局面通過")
         assert regime_crit.passed is True  # bull(順境)+bear(逆境)
         assert res.passed is True, res.summary()
@@ -115,7 +116,7 @@ class TestOfficialGate:
         for i in range(30):
             _add_evaluated(eng, ticker=f"A{i:04d}", actual=0.10, outcome="hit",
                            regime="sideways", bench=0.0)
-        res = official_gate_evaluation(eng)
+        res = official_gate_evaluation(eng, broker_mode="paper")
         regime_crit = next(c for c in res.criteria if c.name == "両局面通過")
         assert regime_crit.passed is False
 
@@ -125,7 +126,7 @@ class TestOfficialGate:
         for i in range(30):
             _add_evaluated(eng, ticker=f"A{i:04d}", actual=0.10, outcome="hit",
                            regime="risk_on", bench=0.0)
-        res = official_gate_evaluation(eng)
+        res = official_gate_evaluation(eng, broker_mode="paper")
         regime_crit = next(c for c in res.criteria if c.name == "両局面通過")
         assert regime_crit.passed is False
         assert res.passed is False
@@ -148,10 +149,10 @@ class TestOfficialGate:
                     status="filled", entry_price=1000.0, stop_pct=0.10, expected_return=0.20,
                     actual_return=0.08, benchmark_return=None, hit_or_miss="hit",
                     evaluated_at=utcnow(), entry_market_regime="risk_off",
-                    filled_via="ds_dispatch",
+                    filled_via="ds_dispatch", entry_broker_mode="paper",
                 ))
             s.commit()
-        res = official_gate_evaluation(eng)
+        res = official_gate_evaluation(eng, broker_mode="paper")
         alpha_crit = next(c for c in res.criteria if c.name == "コスト後α")
         assert alpha_crit.passed is False  # benchmark 欠損 10 件 → fail
         assert res.passed is False
@@ -165,7 +166,48 @@ class TestOfficialGate:
         for i in range(10):
             _add_evaluated(eng, ticker=f"B{i:04d}", actual=0.10, outcome="hit",
                            regime="risk_off", bench=0.12)
-        res = official_gate_evaluation(eng)
+        res = official_gate_evaluation(eng, broker_mode="paper")
         alpha_crit = next(c for c in res.criteria if c.name == "コスト後α")
         assert alpha_crit.passed is False
         assert res.passed is False
+
+
+class TestBrokerModeSeparation:
+    """M3: paper(edge検証) と live(実運用) を gate⑥ で混ぜない（codex 指摘の汚染防止）。"""
+
+    def test_paper_and_live_counted_separately(self, tmp_path: Path) -> None:
+        eng = _engine(tmp_path)
+        # paper 3 件 / live 2 件（どちらも公式条件は満たす）
+        for i in range(3):
+            _add_evaluated(eng, ticker=f"P{i:04d}", actual=0.10, outcome="hit",
+                           regime="bull", broker_mode="paper")
+        for i in range(2):
+            _add_evaluated(eng, ticker=f"L{i:04d}", actual=0.10, outcome="hit",
+                           regime="bull", filled_via="manual", broker_mode="live")
+        assert official_gate_evaluation(eng, broker_mode="paper").n == 3
+        assert official_gate_evaluation(eng, broker_mode="live").n == 2
+
+    def test_combined_reference_sums_both_but_not_actionable(self, tmp_path: Path) -> None:
+        from trading_agent.evaluation.gate import combined_gate_reference
+        eng = _engine(tmp_path)
+        _add_evaluated(eng, ticker="P0001", actual=0.10, outcome="hit",
+                       regime="bull", broker_mode="paper")
+        _add_evaluated(eng, ticker="L0001", actual=0.10, outcome="hit",
+                       regime="bull", filled_via="manual", broker_mode="live")
+        ref = combined_gate_reference(eng)
+        assert ref.n == 2  # paper+live 合算
+        assert ref.actionable is False  # 増額根拠にしない
+
+    def test_manual_paper_not_leaked_into_live(self, tmp_path: Path) -> None:
+        # filled_via=manual でも broker_mode=paper なら live 集合に入らない
+        # （codex 指摘: filled_via だけで live 判定してはいけない）。
+        eng = _engine(tmp_path)
+        _add_evaluated(eng, ticker="X0001", actual=0.10, outcome="hit",
+                       regime="bull", filled_via="manual", broker_mode="paper")
+        assert official_gate_evaluation(eng, broker_mode="live").n == 0
+        assert official_gate_evaluation(eng, broker_mode="paper").n == 1
+
+    def test_invalid_broker_mode_raises(self, tmp_path: Path) -> None:
+        import pytest
+        with pytest.raises(ValueError):
+            official_gate_evaluation(_engine(tmp_path), broker_mode="both")

@@ -29,22 +29,44 @@ def _conn(path: Path | None = None) -> sqlite3.Connection:
     return c
 
 
+def _valid_price(adj) -> float | None:
+    """有限かつ正の価格のみ返す。None/NaN/inf/0以下/変換不能は None（codex 指摘）。
+
+    SQLite は NaN を NULL 化し load の float(None) で壊れる。inf や 0以下は価格系列として
+    異常値なので、推測補完せず弾く（H10: 推測しない）。store/load/fetch で共通利用。
+    """
+    if adj is None:
+        return None
+    try:
+        v = float(adj)
+    except (TypeError, ValueError):
+        return None
+    if v != v or v in (float("inf"), float("-inf")) or v <= 0:  # NaN / ±inf / 0以下
+        return None
+    return v
+
+
 def store_quotes(
     code: str, quotes: list[tuple[dt.date, float]], *, path: Path | None = None,
     now: str = "",
 ) -> int:
-    """(date, AdjC) を upsert。再 fetch 抑止のため既存は置換。"""
-    if not quotes:
+    """(date, AdjC) を upsert。再 fetch 抑止のため既存は置換。NaN/None/inf/0以下 行は保存しない。"""
+    rows = [
+        (code, d.isoformat(), v, now)
+        for d, adj in quotes
+        if (v := _valid_price(adj)) is not None
+    ]
+    if not rows:
         return 0
     c = _conn(path)
     try:
         c.executemany(
             "INSERT OR REPLACE INTO jquants_daily_quotes(code, date, adjc, fetched_at) "
             "VALUES (?, ?, ?, ?)",
-            [(code, d.isoformat(), float(adj), now) for d, adj in quotes],
+            rows,
         )
         c.commit()
-        return len(quotes)
+        return len(rows)
     finally:
         c.close()
 
@@ -62,7 +84,13 @@ def load_quotes(
         ).fetchall()
     finally:
         c.close()
-    return [(dt.date.fromisoformat(d), float(a)) for d, a in rows]
+    # 防御的: 旧 cache に NULL/inf/0以下 が残っていても壊れず skip（NaN 由来の残骸対策）
+    out: list[tuple[dt.date, float]] = []
+    for d, a in rows:
+        v = _valid_price(a)
+        if v is not None:
+            out.append((dt.date.fromisoformat(d), v))
+    return out
 
 
 def cached_codes(*, path: Path | None = None) -> set[str]:

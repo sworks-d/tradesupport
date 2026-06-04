@@ -83,6 +83,11 @@ class Decision(SQLModel, table=True):
     # entry_date: 実約定日（benchmark 起点に使う。d.date と乖離する遅延 fill で α 歪みを防ぐ）。
     filled_via: str | None = None
     entry_date: dt.date | None = None
+    # 公式集合の broker_mode 識別（paper=システム edge 検証 / live=実運用実績）。
+    # filled_via=manual は live 専用ではない（mark_filled は paper/manual もある）ため、
+    # gate⑥/昇格は filled_via だけでなく broker_mode で分離集計する必要がある（混在汚染防止）。
+    # entry（fill）時点で刻む。既存値は尊重（上書きしない）。
+    entry_broker_mode: str | None = None
 
     # 紐付いたトピックス
     supporting_topic_ids: list[int] = Field(default_factory=list, sa_column=Column(JSON))

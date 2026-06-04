@@ -40,3 +40,7 @@ ui/.next/
 ui/out/
 # 生成物（バックエンドが build_snapshot.py で出力。コミットしない）
 ui/public/data/
+
+# === エージェント連携・transient（コミットしない）===
+.codex/
+agmsg/

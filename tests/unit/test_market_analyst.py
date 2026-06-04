@@ -199,3 +199,56 @@ class TestAgent:
         )
         assert out.success is True
         assert len(out.skipped) == 1
+
+
+class _NEWS(MCPTool):
+    """news MCP モック：与えた記事を返す（impact 分類は本物の classify_headline）。"""
+
+    name = "news"
+
+    def __init__(self, articles: list[dict]) -> None:
+        super().__init__()
+        self._articles = articles
+
+    async def _execute(self, tool_input):  # type: ignore[override]
+        from trading_agent.mcp_tools.news import NewsOutput
+
+        return NewsOutput(success=True, articles=list(self._articles))
+
+
+def _news_ctx(tmp_path: Path, articles: list[dict]):
+    host = MCPHost()
+    host.register(_NEWS(articles))
+    return AgentContext(host=host, engine=_engine(tmp_path), invocation_id="inv")
+
+
+class TestNewsSentiment:
+    """固定50 を解消した決定論 news_sentiment（keyword impact 集計・0-100）。"""
+
+    async def test_positive_news_high(self, tmp_path: Path) -> None:
+        ctx = _news_ctx(tmp_path, [{"title": "通期業績を上方修正、最高益へ"}, {"title": "増配と自社株買いを発表"}])
+        score = await MarketAnalystAgent(ctx)._news_sentiment("7203")
+        assert score > 50.0
+
+    async def test_negative_news_low(self, tmp_path: Path) -> None:
+        ctx = _news_ctx(tmp_path, [{"title": "通期見通しを下方修正"}, {"title": "赤字転落、減益が拡大"}])
+        score = await MarketAnalystAgent(ctx)._news_sentiment("7203")
+        assert score < 50.0
+
+    async def test_no_news_neutral(self, tmp_path: Path) -> None:
+        ctx = _news_ctx(tmp_path, [])
+        score = await MarketAnalystAgent(ctx)._news_sentiment("7203")
+        assert score == 50.0
+
+    async def test_mixed_news_neutral(self, tmp_path: Path) -> None:
+        # +1 と -1 で相殺 → 中立 50
+        ctx = _news_ctx(tmp_path, [{"title": "上方修正で最高益"}, {"title": "下方修正で赤字転落"}])
+        score = await MarketAnalystAgent(ctx)._news_sentiment("7203")
+        assert score == 50.0
+
+    async def test_no_news_tool_graceful(self, tmp_path: Path) -> None:
+        # news ツール未登録でも例外を出さず中立 50（推測しない・H10）
+        host = MCPHost()
+        ctx = AgentContext(host=host, engine=_engine(tmp_path), invocation_id="inv")
+        score = await MarketAnalystAgent(ctx)._news_sentiment("7203")
+        assert score == 50.0

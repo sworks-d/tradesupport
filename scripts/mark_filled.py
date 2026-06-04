@@ -48,6 +48,11 @@ def main() -> int:
         choices=["paper", "live"],
         help='記録先 broker_mode（"live"=楽天本番、"paper"=試験運用）。デフォルト live',
     )
+    p.add_argument(
+        "--force",
+        action="store_true",
+        help="paper Phase C の解放枠(deployable)超過チェックを無視して強行（通常は使わない）",
+    )
     args = p.parse_args()
 
     if not args.decision_id and not args.ticker:
@@ -116,6 +121,24 @@ def main() -> int:
         except Exception:
             pass  # 警告のみ。fill 処理は止めない
 
+        # codex 残P0: paper の手動 fill は gate 公式集合(filled_via=manual, broker_mode=paper)に
+        # 入るため、Phase C 解放枠(deployable)を超える paper fill を混ぜられないよう **ハード停止**
+        # する（--force で回避）。これが無いと手動で解放枠外の paper 実績を公式 edge に混入できる。
+        if args.broker_mode == "paper" and not args.force:
+            try:
+                from trading_agent.portfolio.misato import deployable_budget_jpy
+
+                _dep = deployable_budget_jpy(engine, "paper")
+            except Exception:
+                _dep = None
+            if _dep is not None and price * shares > _dep + 100:  # ¥100 許容
+                print(
+                    f"⛔ paper 解放枠オーバー: 約定額 ¥{price * shares:,.0f} > deploy 可能 ¥{_dep:,.0f}。\n"
+                    "   Phase C は解放枠(¥10万 start)内でのみ paper 公式実績を積む。"
+                    "ゲート⑥通過で --advance-paper 解放後に。意図的なら --force。"
+                )
+                return 1
+
         # Decision を filled に
         d.status = "filled"
         d.entry_price = price
@@ -134,6 +157,7 @@ def main() -> int:
             on_date=today_jst(),
             market_regime=_regime,
             filled_via="manual",  # 実弾代行（楽天）報告
+            broker_mode=args.broker_mode,  # paper/live を Decision にも刻む（gate 分離）
         )
         # personalities_filled は将来 DS 機運用向け
         if args.personality:

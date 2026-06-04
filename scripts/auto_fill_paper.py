@@ -43,8 +43,16 @@ def main() -> int:
     if available is None:
         tv = treasury_view(engine, "paper")
         available = float(tv.get("available_jpy") or 0)
+    # codex C/#3: 直 fill 経路なので、Phase C unlock 有効時は available(¥100万側) を
+    # deployable（解放上限 − active exposure）で cap する（解放枠 ¥10万 を無視させない）。
+    from trading_agent.portfolio.misato import deployable_budget_jpy
+
+    _dep = deployable_budget_jpy(engine, "paper")
+    if _dep is not None and available > _dep:
+        print(f"⚠ Phase C unlock 有効: available ¥{available:,.0f} → deployable ¥{_dep:,.0f} に cap")
+        available = _dep
     if available <= 0:
-        print("paper Treasury 残ゼロ。fill しません")
+        print("paper deploy 可能額ゼロ（解放枠使い切り or 未解放 or Treasury 残ゼロ）。fill しません")
         return 0
 
     items = build_order_items(engine, available_jpy=available)

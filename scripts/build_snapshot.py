@@ -1047,6 +1047,18 @@ def _build_pending_decisions(engine: Engine) -> dict[str, dict[str, object]]:
         [d.ticker for d in sorted_rows if d.id is not None], days=30
     )
 
+    # 要件①「何株・いくらで」: order_list の推奨株数 / 想定価格 / stop を join。
+    # build_order_items は yfinance 価格取得のみ（LLM なし・コスト0）。失敗しても続行。
+    order_items: dict[int, object] = {}
+    try:
+        from trading_agent.reporting.order_list import build_order_items
+
+        for it in build_order_items(engine, available_jpy=None):
+            if it.decision_id:
+                order_items[it.decision_id] = it
+    except Exception as exc:  # noqa: BLE001
+        _log.warning("order_items_join_failed", error_type=type(exc).__name__)
+
     out: dict[str, dict[str, object]] = {}
     for d in sorted_rows:
         if d.id is None:
@@ -1054,6 +1066,16 @@ def _build_pending_decisions(engine: Engine) -> dict[str, dict[str, object]]:
         card_id = f"d{d.id}"
         cmd = commanders.get(d.id)
         meta = universe_meta.get(d.ticker, {"name": "", "market": "JP", "sector": ""})
+        oi = order_items.get(d.id)
+        _hist = histories.get(d.ticker, [])
+        # 想定価格: order_list の現在値 → 無ければ 30日履歴の最新終値 → 無ければ entry_price。
+        # （予算非依存。何株は予算待ちでも価格/stop は出せる）
+        _sugg = (
+            (oi.current_price if (oi and oi.current_price) else None)
+            or (float(_hist[-1]) if _hist else None)
+            or d.entry_price
+        )
+        _stop = _sugg * (1.0 - abs(float(d.stop_pct or 0.10))) if _sugg else None
         out[card_id] = {
             "decision_id": d.id,
             "ticker": d.ticker,
@@ -1073,6 +1095,13 @@ def _build_pending_decisions(engine: Engine) -> dict[str, dict[str, object]]:
             "commander_counter": cmd.counter_argument if cmd else None,
             "verdicts": verdicts_by_decision.get(d.id, {}),
             "price_history_30d": histories.get(d.ticker, []),
+            # 要件①: 何株・いくらで・stop（order_list から join。約定ボタンのプリフィル元）
+            "recommended_shares": oi.recommended_shares if oi else None,
+            "suggested_price": _sugg,
+            "stop_price": _stop,
+            "estimated_cost_jpy": oi.estimated_cost_jpy if oi else None,
+            "target_price": oi.target_price if oi else None,
+            "expected_return_pct": oi.expected_return_pct if oi else None,
         }
     return out
 
@@ -1337,7 +1366,91 @@ async def _build_candidates(
     return out
 
 
-async def build(*, live: bool, prefer_moomoo: bool) -> dict[str, object]:
+def _serialize_gate(g) -> dict[str, object]:
+    """GateResult → UI 用 dict。"""
+    return {
+        "passed": g.passed,
+        "n": g.n,
+        "actionable": g.actionable,
+        "broker_mode": g.broker_mode,
+        "max_drawdown": round(g.max_drawdown, 4),
+        "regimes_present": list(g.regimes_present),
+        "notes": list(g.notes),
+        "summary": g.summary(),
+        "criteria": [
+            {
+                "name": c.name,
+                "value": c.value,
+                "threshold": c.threshold,
+                "passed": c.passed,
+            }
+            for c in g.criteria
+        ],
+    }
+
+
+def _build_gates_section(engine: Engine) -> dict[str, object]:
+    """増額ゲート⑥を paper/live 別 + combined(参考・増額不可) で評価して返す。
+
+    paper=システム edge 検証 / live=実運用実績 を **混ぜない**（broker_mode で分離）。
+    combined は actionable=False（増額根拠にしない・「参考」ラベル必須）。
+    """
+    from trading_agent.evaluation.gate import (
+        combined_gate_reference,
+        official_gate_evaluation,
+    )
+
+    out: dict[str, object] = {}
+    for mode in ("paper", "live"):
+        try:
+            out[mode] = _serialize_gate(
+                official_gate_evaluation(engine, broker_mode=mode)
+            )
+        except Exception as exc:  # noqa: BLE001
+            out[mode] = {"error": f"{type(exc).__name__}: {exc}"}
+    try:
+        out["combined"] = _serialize_gate(combined_gate_reference(engine))
+    except Exception as exc:  # noqa: BLE001
+        out["combined"] = {"error": f"{type(exc).__name__}: {exc}"}
+    return out
+
+
+def _build_scaling_section(engine: Engine) -> dict[str, object]:
+    """段階大規模化（paper 専用）: treasury_view(paper) + 資本注入履歴 + ladder。"""
+    from trading_agent.models.misato_treasury import TreasuryInjection
+    from trading_agent.portfolio.misato import PAPER_CEILING_JPY, treasury_view
+
+    tv = treasury_view(engine, "paper")
+    injections: list[dict[str, object]] = []
+    with Session(engine) as s:
+        rows = s.exec(
+            select(TreasuryInjection)
+            .where(col(TreasuryInjection.broker_mode) == "paper")
+            .order_by(col(TreasuryInjection.created_at).asc())
+        ).all()
+        for r in rows:
+            injections.append(
+                {
+                    "amount_jpy": round(float(r.amount_jpy)),
+                    "reason": r.reason,
+                    "tier_after_jpy": round(float(r.tier_after_jpy)),
+                    "created_at": r.created_at.strftime("%Y-%m-%d %H:%M")
+                    if r.created_at
+                    else None,
+                }
+            )
+    return {
+        "current_risk_budget_jpy": tv.get("current_risk_budget_jpy"),
+        "target_ceiling_jpy": tv.get("target_ceiling_jpy") or PAPER_CEILING_JPY,
+        "ceiling_progress_pct": tv.get("ceiling_progress_pct"),
+        "ladder_jpy": [100000, 300000, 600000, 1000000],
+        "injections": injections,
+        "seed_jpy": tv.get("seed_jpy"),
+        "deposit_count": tv.get("deposit_count"),
+    }
+
+
+async def build(*, live: bool, prefer_moomoo: bool, light: bool = False) -> dict[str, object]:
     eng = get_engine(Path(tempfile.gettempdir()) / "snapshot.sqlite")
     create_all(eng)
 
@@ -1350,7 +1463,9 @@ async def build(*, live: bool, prefer_moomoo: bool) -> dict[str, object]:
     prod_engine = get_engine(Path("data") / "trading.sqlite")
     create_all(prod_engine)
 
-    positions, broker_src = load_positions(prefer_moomoo=prefer_moomoo, settings=settings)
+    positions, broker_src = load_positions(
+        prefer_moomoo=prefer_moomoo, settings=settings, engine=prod_engine
+    )
     account, account_src = load_account(prod_engine, settings)
     total = account.total_assets
     cash = account.cash
@@ -1370,6 +1485,35 @@ async def build(*, live: bool, prefer_moomoo: bool) -> dict[str, object]:
         out = await tool.execute(
             MarketDataInput(tickers=[p.code for p in positions], fields=["current_price"])
         )
+        # 保有カード拡充用メタ: 名称/セクター(Universe) + 目標/stop/取得日(Portfolio) + 30日履歴
+        _codes_h = [p.code for p in positions]
+        _hist_h = _fetch_price_histories(_codes_h, days=30)
+        _uni_h: dict[str, dict[str, str]] = {}
+        _pf_h: dict[str, dict[str, object]] = {}
+        with Session(prod_engine) as _sh:
+            from trading_agent.models.portfolio import Portfolio as _PfH
+
+            for _u in _sh.exec(
+                select(Universe).where(col(Universe.ticker).in_(_codes_h))
+            ).all():
+                _uni_h[_u.ticker] = {
+                    "name": _u.name or "",
+                    "sector": _u.sector or "",
+                    "market": _u.market or "",
+                }
+            for _r in _sh.exec(
+                select(_PfH)
+                .where(col(_PfH.status) == "active")
+                .where(col(_PfH.ticker).in_(_codes_h))
+            ).all():
+                _pf_h[_r.ticker] = {
+                    "target_pct": _r.target_pct,
+                    "stop_loss_pct": _r.stop_loss_pct,
+                    "buy_date": str(_r.buy_date) if _r.buy_date else None,
+                    "strategy": _r.strategy_category or "",
+                    "thesis": _r.thesis or "",
+                    "target_period_days": _r.target_period_days,
+                }
         for p in positions:
             price = p.nominal_price or out.data.get(p.code, {}).get("current_price")
             pnl = None
@@ -1381,15 +1525,62 @@ async def build(*, live: bool, prefer_moomoo: bool) -> dict[str, object]:
             elif price is not None and p.cost_price:
                 r = (price - p.cost_price) / p.cost_price * 100.0
                 pnl = {"ratio_display": f"{r:+.1f}%", "direction": "up" if r >= 0 else "down"}
+            _cost = float(p.cost_price or 0.0)
+            _qty = float(p.qty or 0)
+            _unreal = ((price - _cost) * _qty) if (price is not None and _cost) else None
+            _um = _uni_h.get(p.code, {})
+            _pm = _pf_h.get(p.code, {})
             holdings[p.code] = {
                 "price_display": _fmt_price(p.code, price) if price is not None else None,
+                "current_price": price,
                 "reconciliation": out.reconciliation.get(p.code, "single"),
                 "as_of": out.data_asof.strftime("%Y-%m-%d %H:%M") if out.data_asof else None,
                 "pnl": pnl,
+                "qty": _qty,
+                "cost_price": _cost,
+                "cost_jpy": _cost * _qty,
+                "unrealized_jpy": _unreal,
+                "name": _um.get("name") or p.code,
+                "sector": _um.get("sector") or "",
+                "market": _um.get("market") or "",
+                "target_pct": _pm.get("target_pct"),
+                "stop_pct": _pm.get("stop_loss_pct"),
+                "buy_date": _pm.get("buy_date"),
+                "strategy": _pm.get("strategy"),
+                "thesis": _pm.get("thesis"),
+                "target_period_days": _pm.get("target_period_days"),
+                "history_30d": _hist_h.get(p.code, []),
             }
 
-    llm_tool = _maybe_llm_tool(eng, live=live)
-    candidates = await _build_candidates(live, total, cash, usdjpy, llm_tool=llm_tool)
+    if light:
+        # 軽量リフレッシュ: 候補生成（唯一の LLM 経路）をスキップし、前回 snapshot の
+        # candidates を再利用。口座/保有/決定など他セクションは DB+yfinance で作り直す（コスト0）。
+        try:
+            _prior_path = (
+                Path(__file__).resolve().parent.parent
+                / "ui" / "public" / "data" / "snapshot.json"
+            )
+            _prior = json.loads(_prior_path.read_text(encoding="utf-8"))
+            candidates = _prior.get("candidates", {})
+            # codex P0: stale メタは candidates dict に同居させない（UI が Object.keys(candidates) を
+            # 候補 ID として数えるため件数が狂う）。candidates_meta に分離し、candidates は card_id→候補
+            # の純 map に保つ。前回版が誤って入れた stale/source_generated_at は除去する。
+            if isinstance(candidates, dict):
+                candidates.pop("stale", None)
+                candidates.pop("source_generated_at", None)
+            # codex P1: source は「候補生成時刻」を保持。prior の candidates_meta を優先し、
+            # 無ければ generated_at fallback（generated_at は価格/保有更新で上書きされ得るため二次）。
+            _prior_meta = _prior.get("candidates_meta") or {}
+            _src = _prior_meta.get("source_generated_at") or _prior.get("generated_at")
+            candidates_meta = {"stale": True, "source_generated_at": _src}
+        except Exception:
+            candidates = {}
+            candidates_meta = {"stale": True, "source_generated_at": None}
+    else:
+        llm_tool = _maybe_llm_tool(eng, live=live)
+        candidates = await _build_candidates(live, total, cash, usdjpy, llm_tool=llm_tool)
+        # full 生成＝候補生成時刻を確定保存（refresh では触らない）。
+        candidates_meta = {"stale": False, "source_generated_at": utcnow().strftime("%Y-%m-%d %H:%M")}
 
     holdings_source = _holdings_source_label(broker_src, settings.trading_mode, account_src)
     sell_section = _build_sell_section(prod_engine)
@@ -1443,11 +1634,16 @@ async def build(*, live: bool, prefer_moomoo: bool) -> dict[str, object]:
     theses_summary = _build_theses_summary()
 
     # === D-26 資金配分（Core / Satellite / Cash）===
+    # codex #3: posture を exposure_decision.recommendation に配線（固定 REDUCE_ONLY を解消）。
+    # exposure が未配線入力で LOW confidence の間は recommendation も保守側になるが、由来は明示する。
+    _exp_rec = getattr(exposure_decision, "recommendation", None)
     allocation = _build_allocation(
         positions=positions,
         cash_jpy=float(cash),
         total_jpy=float(total) if total else 100000.0,
         usdjpy=usdjpy,
+        posture=_exp_rec or "REDUCE_ONLY",
+        posture_source=("exposure_decision" if _exp_rec else "fixed_safe_default"),
     )
 
     # === ZEELE 攻めレコメンド枠（D-24/D-25・X-2 ZEELE 車線） ===
@@ -1461,6 +1657,20 @@ async def build(*, live: bool, prefer_moomoo: bool) -> dict[str, object]:
         available_cash_jpy=float(cash) if cash else float(total) if total else 100000.0,
     )
 
+    # 増額ゲート⑥（paper/live 別 + combined 参考）と 段階大規模化（paper 専用）
+    gates = _build_gates_section(prod_engine)
+    scaling = _build_scaling_section(prod_engine)
+
+    # Phase C 現況（レポートビュー用・常に最新・コスト0・DBのみ・価格 fetch なし）。
+    # _suppressed で構造化ログを stderr へ逃がし純度を保ち、_json_safe で None キーを正規化（codex P0/P1）。
+    try:
+        import phase_c_status as _pcs
+
+        with _pcs._suppressed():
+            phase_c = _pcs._json_safe(_pcs.build_phase_c_status(prod_engine))
+    except Exception as exc:  # noqa: BLE001
+        phase_c = {"error": f"{type(exc).__name__}: {exc}"}
+
     # v2.10: dashboard が provider 別バッジを表示できるよう broker_provider を出力
     from trading_agent.utils.lot_size import get_broker_provider as _gbp_for_snap
 
@@ -1469,6 +1679,9 @@ async def build(*, live: bool, prefer_moomoo: bool) -> dict[str, object]:
         "mode": "live" if live else "demo",
         "trading_mode": settings.trading_mode,
         "broker_provider": _gbp_for_snap(),
+        "gates": gates,
+        "scaling": scaling,
+        "phase_c": phase_c,
         "broker": broker_src,
         "account_source": account_src,
         "holdings_source": holdings_source,
@@ -1521,6 +1734,7 @@ async def build(*, live: bool, prefer_moomoo: bool) -> dict[str, object]:
         })(),
         "holdings": holdings,
         "candidates": candidates,
+        "candidates_meta": candidates_meta,  # codex P0: stale 等は candidates と分離（件数誤りを防ぐ）
         "zeele": zeele,
         "allocation": allocation,
         "dummy_system": dummy_system,
@@ -1573,6 +1787,10 @@ async def build(*, live: bool, prefer_moomoo: bool) -> dict[str, object]:
     except Exception:
         pass
 
+    # 注: Phase C 現況（snap_out["phase_c"]）は上の dict リテラルで 1 回だけ生成済み
+    # （_suppressed + _json_safe）。常に UI 最新反映は build_snapshot 再生成（朝バッチ+5分自動更新+
+    # 手動更新）で担保。二重生成しない（codex P1）。
+
     return snap_out
 
 
@@ -1609,6 +1827,8 @@ def _build_allocation(
     cash_jpy: float,
     total_jpy: float,
     usdjpy: float,
+    posture: str = "REDUCE_ONLY",
+    posture_source: str = "fixed_safe_default",
 ) -> dict[str, object]:
     """D-26 資金配分の計算（current / target / 月次追加配分提案）。
 
@@ -1640,9 +1860,8 @@ def _build_allocation(
     target_jpy = {k: round(total_jpy * v / 100) for k, v in _ALLOC_TARGET_PCT.items()}
     gap_jpy = {k: target_jpy[k] - current[k] for k in target_jpy}
 
-    # 月次追加配分（posture 簡易：cash=total なら NEW_ENTRY_ALLOWED と仮定。
-    # 実際は exposure_coach の結果を参照。今は安全側で "REDUCE_ONLY" 既定とする）
-    posture = "REDUCE_ONLY"  # 暫定：実 exposure_decision と整合させるのは次セッションで
+    # 月次追加配分: posture は exposure_decision.recommendation を配線（codex #3）。
+    # 未配線（呼び出し側が渡さない）時のみ安全側 "REDUCE_ONLY"。posture_source で由来を明示。
     rule = _MONTHLY_ADD_RULES.get(posture, _MONTHLY_ADD_RULES["REDUCE_ONLY"])
     monthly_default = _MONTHLY_ADD_DEFAULT_JPY
     split = {
@@ -1670,6 +1889,7 @@ def _build_allocation(
         "monthly_addition_default_jpy": monthly_default,
         "monthly_addition_split": split,
         "posture_used": posture,
+        "posture_source": posture_source,  # exposure_decision 由来か fixed_safe_default か（codex #3）
         "rule_pct": rule,
         "warnings": warnings,
         "note": (
@@ -1966,7 +2186,8 @@ def _build_theses_summary() -> dict[str, object]:
 async def main() -> None:
     live = "--demo" not in sys.argv
     prefer_moomoo = "--moomoo" in sys.argv
-    snapshot = await build(live=live, prefer_moomoo=prefer_moomoo)
+    light = "--light" in sys.argv
+    snapshot = await build(live=live, prefer_moomoo=prefer_moomoo, light=light)
     out_path = Path(__file__).resolve().parent.parent / "ui" / "public" / "data" / "snapshot.json"
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(snapshot, ensure_ascii=False, indent=2), encoding="utf-8")

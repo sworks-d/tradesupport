@@ -19,14 +19,15 @@ from pathlib import Path
 
 from sqlmodel import Session, col, select
 
-from trading_agent.backtest.quote_cache import cached_codes, load_quotes, store_quotes
+from trading_agent.backtest.quote_cache import _valid_price, cached_codes, load_quotes, store_quotes
 from trading_agent.backtest.v3_slice import BacktestConfig, run_price_slice_backtest
 from trading_agent.db import get_engine
 from trading_agent.mcp_tools.jquants import get_default_client
 from trading_agent.models.universe import Universe
 from trading_agent.utils.ticker_normalize import universe_to_jquants
 
-_MIN_COVERAGE = 10  # これ未満は INVALID DATA COVERAGE（backtest 信号として読まない）
+_MIN_COVERAGE = 10  # これ未満は INVALID_DATA_COVERAGE（backtest 信号として読まない）
+_MIN_TRADES = 10    # これ未満は INVALID_SAMPLE_SIZE（成績解釈禁止）
 
 _MARKET_ETF = "1306"  # TOPIX 連動 ETF（相対力の分母）
 
@@ -58,12 +59,10 @@ def _fetch_quotes(client, ticker: str, frm: dt.date, to: dt.date) -> list[tuple[
     for r in rows:
         d = _to_date(r.get("Date"))
         adj = r.get("AdjC", r.get("AdjustmentClose", r.get("C", r.get("Close"))))
-        if d is None or adj in (None, ""):
+        v = _valid_price(adj)  # 有限 ∧ 正のみ（NaN/inf/0以下 を入口で弾く・store と同基準）
+        if d is None or v is None:
             continue
-        try:
-            out.append((d, float(adj)))
-        except (TypeError, ValueError):
-            continue
+        out.append((d, v))
     out.sort(key=lambda x: x[0])
     return out
 
@@ -132,7 +131,13 @@ def main() -> int:
     market, rl, budget = _load_or_fetch(client, _MARKET_ETF, warmup_from, end,
                                         cache_only=cache_only, max_fetch_left=budget, throttle=throttle)
     if not market:
-        print(f"市場ベンチ {_MARKET_ETF} 取得不可（cache 無 & fetch 不可/枯渇/max-fetch 0）。回復後 --max-fetch≥1 か別日で。")
+        if cache_only:
+            why = "cache に市場ベンチ未蓄積。先に --max-fetch≥1 で 1306 を取得してから --cache-only を。"
+        elif max_fetch <= 0:
+            why = "--max-fetch 0（API 抑止指定）で cache にも無し。--max-fetch≥1 か別日で。"
+        else:
+            why = "fetch 失敗/レート枯渇。同日は追加 fetch せず、別日に --max-fetch≥1 で。"
+        print(f"市場ベンチ {_MARKET_ETF} 取得不可: {why}")
         return 1
 
     quotes_by_ticker: dict[str, list[tuple[dt.date, float]]] = {}
@@ -150,21 +155,26 @@ def main() -> int:
             break
     print(f"backtest 対象（cache+今回fetch）={fetched} 件 / 不足/失敗={failed} / 市場={len(market)} 本")
 
-    # coverage 妥当性ゲート（codex: <10 は結果でなく data availability report）
+    # === status 3 分類（codex Q3: 誤読防止）=================================
+    # INVALID_DATA_COVERAGE: 取得銘柄 <10 → backtest でなくデータ可用性レポート
+    # INVALID_SAMPLE_SIZE  : 銘柄は足りるが確定取引 <10 → 成績解釈禁止
+    # VALID_SMOKE          : 両方 ≥10 → スモークとして読める（※ゲート⑥証明ではない）
     if fetched < _MIN_COVERAGE:
-        print(f"\n⛔ INVALID DATA COVERAGE（{fetched} < {_MIN_COVERAGE}）= NOT A BACKTEST SIGNAL。")
-        print("   これは backtest 結果ではなく『データ可用性レポート』。cache を貯めてから再実行：")
-        print("   レート回復後 --max-fetch 5 --throttle 3 を数回 → cache 蓄積 → --cache-only で実行。")
+        print(f"\n[STATUS] INVALID_DATA_COVERAGE（取得 {fetched} < {_MIN_COVERAGE}）= NOT A BACKTEST SIGNAL。")
+        print("   backtest 結果ではなく『データ可用性レポート』。同日は欲張らず、別日に")
+        print("   --max-fetch 5 --throttle 4 を数回 → cache 蓄積 → --cache-only で再実行。")
         return 0
 
     cfg = BacktestConfig(start=start, end=end)
     res = run_price_slice_backtest(quotes_by_ticker, market, cfg)
     print()
     print(res.summary())
-    # codex 指摘: coverage と別に sample size（trades<10）も信号扱いしない
-    if res.n_trades < 10:
-        print(f"\n⛔ INVALID SAMPLE SIZE（確定取引 {res.n_trades} < 10）= NOT A BACKTEST SIGNAL。"
-              "\n   期間延長 or 銘柄数増（cache 蓄積後）で取引数を確保してから成績解釈する。")
+    if res.n_trades < _MIN_TRADES:
+        print(f"\n[STATUS] INVALID_SAMPLE_SIZE（確定取引 {res.n_trades} < {_MIN_TRADES}）= NOT A BACKTEST SIGNAL。")
+        print("   coverage は足りるが取引が薄い。期間延長 or 銘柄数増（cache 蓄積後）で取引数を確保してから成績解釈する。")
+    else:
+        print(f"\n[STATUS] VALID_SMOKE（coverage {fetched}≥{_MIN_COVERAGE} ∧ 取引 {res.n_trades}≥{_MIN_TRADES}）"
+              "= スモークとして読める。※ゲート⑥（増額判断）の証明ではない（survivorship/Free薄サンプル/財務&LLM OFF）。")
     return 0
 
 

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- 日次運用レポートを毎日 18:00 に autoreport/YYYY-MM-DD.html へ出力 -->
+<!-- 日次運用レポートを毎日 18:00 に autoreport/daily/YYYY-MM-DD.html へ出力 -->
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -8,12 +8,14 @@
 
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/a05/tradesupport/.venv/bin/python</string>
-    <string>/Users/a05/tradesupport/scripts/build_report.py</string>
+    <string>/opt/homebrew/bin/uv</string>
+    <string>run</string>
+    <string>python</string>
+    <string>scripts/build_report.py</string>
   </array>
 
   <key>WorkingDirectory</key>
-  <string>/Users/a05/tradesupport</string>
+  <string>/Users/shotaro/tradesupport</string>
 
   <!-- 毎日 18:00（朝バッチ・自動売買・評価が完了済の時刻） -->
   <key>StartCalendarInterval</key>
@@ -23,9 +25,9 @@
   </dict>
 
   <key>StandardOutPath</key>
-  <string>/Users/a05/tradesupport/data/logs/daily-report.out.log</string>
+  <string>/Users/shotaro/.trading-agent/logs/daily-report.out</string>
   <key>StandardErrorPath</key>
-  <string>/Users/a05/tradesupport/data/logs/daily-report.err.log</string>
+  <string>/Users/shotaro/.trading-agent/logs/daily-report.err</string>
 
   <key>RunAtLoad</key>
   <false/>

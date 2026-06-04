@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.tradesupport.ds-report-am</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/uv</string>
+        <string>run</string>
+        <string>python</string>
+        <string>scripts/build_ds_integrated_report.py</string>
+        <string>--slot</string>
+        <string>AM</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/shotaro/tradesupport</string>
+
+    <!-- 07:30 朝 -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>7</integer>
+        <key>Minute</key>
+        <integer>30</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/shotaro/.trading-agent/logs/ds-report-am.out</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/shotaro/.trading-agent/logs/ds-report-am.err</string>
+
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>

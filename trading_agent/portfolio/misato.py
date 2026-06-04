@@ -27,7 +27,11 @@ from sqlalchemy.engine import Engine
 from sqlmodel import Session, col, select
 
 from trading_agent.models.decisions import Decision
-from trading_agent.models.misato_treasury import MisatoTreasury, PilotAllocation
+from trading_agent.models.misato_treasury import (
+    MisatoTreasury,
+    PilotAllocation,
+    TreasuryInjection,
+)
 from trading_agent.models.portfolio import Portfolio
 from trading_agent.portfolio.personality import (
     PERSONALITIES,
@@ -130,18 +134,22 @@ def check_halt(halt_file: Path | None = None) -> tuple[bool, str]:
 
 # ----- 予算配分 -----
 
-def _pilot_performance(engine: Engine) -> dict[str, dict[str, float]]:
+def _pilot_performance(
+    engine: Engine, broker_mode: str | None = None
+) -> dict[str, dict[str, float]]:
     """各機体の (n, hit_rate, avg_r) を Decision から集計。
 
     評価期日到来済の decision を personalities_filled で展開し性格別に集計。
     feedback.collect_feedback_records と意味同等の軽量版（重複ロジックを避けるため再利用も可）。
+    broker_mode（paper/live）を渡すと、その broker_mode の実績だけで集計する
+    （昇格を paper=edge検証 と live=実運用 で分離するため）。
     """
     from trading_agent.reporting.feedback import (
         collect_feedback_records,
         summarize_feedback,
     )
 
-    records = collect_feedback_records(engine)
+    records = collect_feedback_records(engine, broker_mode=broker_mode)
     s = summarize_feedback(records)
     return s.get("by_personality", {})
 
@@ -153,6 +161,7 @@ def allocate_budget(
     demand_by_pilot: dict[str, int] | None = None,
     weighted_demand_by_pilot: dict[str, float] | None = None,
     weighted_threshold_n: int = 10,
+    broker_mode: str | None = None,
 ) -> BudgetAllocation:
     """**需要ベース**で総予算を 4 機に配分する。
 
@@ -206,8 +215,8 @@ def allocate_budget(
             per_pilot_demand=dict(demand_by_pilot),
         )
 
-    # 実績重み付けを使うか判定
-    perf = _pilot_performance(engine) if engine is not None else {}
+    # 実績重み付けを使うか判定（broker_mode 別の実績で重み付け）
+    perf = _pilot_performance(engine, broker_mode=broker_mode) if engine is not None else {}
     use_weighted = any(
         (perf.get(p, {}).get("n", 0) or 0) >= weighted_threshold_n for p in pilots
     )
@@ -840,13 +849,17 @@ def _confidence_interval_95(hits: int, n: int) -> tuple[float, float]:
     return (max(0.0, p - 1.96 * se), min(1.0, p + 1.96 * se))
 
 
-def evaluate_promotions(engine: Engine) -> list[PromotionCandidate]:
+def evaluate_promotions(
+    engine: Engine, broker_mode: str | None = None
+) -> list[PromotionCandidate]:
     """D-23 準拠の昇格判定（v2.4 TASK-P8: 段階制）。
 
     n ≥10 で「観察開始」、≥20 で「暫定推奨」、≥30 で「正式推奨（昇格）」。
     hit_rate と avg_R の閾値は全段階共通。信頼区間も note に表示。
+    broker_mode（paper/live）を渡すと、その broker_mode の実績だけで昇格判定する
+    （paper 昇格 ≠ live 昇格・codex 指摘の混在汚染防止）。
     """
-    perf = _pilot_performance(engine)
+    perf = _pilot_performance(engine, broker_mode=broker_mode)
     out: list[PromotionCandidate] = []
     for name, d in perf.items():
         if not name:
@@ -945,6 +958,23 @@ def dispatch(
             plan.halted = True
             return plan
 
+    # Phase C unlock 方式（codex 指摘 4）: 解放済み deploy 上限 − active exposure で物理的に縛る。
+    # paper 口座 seed=¥100万 を available として直叩きして ¥100万 を deploy する穴を塞ぐ。
+    # 解放上限が未設定(legacy/非 Phase C)なら None＝cap なし＝従来挙動を壊さない。
+    _deployable = deployable_budget_jpy(engine)
+    if _deployable is not None:
+        if total_budget_jpy > _deployable:
+            _log.info("misato_budget_capped_by_unlock",
+                      requested=total_budget_jpy, deployable=_deployable)
+            total_budget_jpy = _deployable
+        if total_budget_jpy <= 0:
+            plan.halt_reason = (
+                "deploy 可能予算が ¥0（解放上限 − 使用中 exposure）。"
+                "解放上限まで使い切りか未解放。ゲート⑥(paper)通過で --advance-paper。"
+            )
+            plan.halted = True
+            return plan
+
     if total_budget_jpy <= 0:
         plan.halt_reason = f"予算 ¥{total_budget_jpy} は不正（>0 必須）"
         plan.halted = True
@@ -957,7 +987,9 @@ def dispatch(
         )
 
     plan.total_budget_jpy = min(total_budget_jpy, MAX_BUDGET_PER_DISPATCH_JPY)
-    plan.promotions = evaluate_promotions(engine)
+    # broker_mode 分離: dispatch が動く broker_mode の実績だけで昇格判定（paper 昇格 ≠ live 昇格）。
+    _disp_mode = _resolve_broker_mode(None)
+    plan.promotions = evaluate_promotions(engine, broker_mode=_disp_mode)
 
     # 1. 候補 pool 構築（MAGI + ZEELE 上位 N）
     pool = _build_candidate_pool(engine)
@@ -1169,16 +1201,23 @@ def dispatch(
         _adaptive_lot_pct = get_max_lot_pct(plan.total_budget_jpy)
 
         # v2.10 Phase 2 Mini Feedback: 機別 multiplier（過去 30 日の判断精度ベース）
-        # データ不足時は全機 1.0（中立）→ 通常動作と等価
+        # データ不足時は全機 1.0（中立）→ 通常動作と等価。
+        # codex High#6: broker_mode を通して paper/live/legacy の実績を混ぜない。
         from trading_agent.portfolio.feedback import compute_pilot_multipliers
-        _feedback = compute_pilot_multipliers(engine, lookback_days=30)
+        _feedback = compute_pilot_multipliers(
+            engine, lookback_days=30, broker_mode=_disp_mode
+        )
         _pilot_mul = _feedback.get("multipliers", {})
 
         # N1: account_total を treasury から取得し opportunity_fill に渡す。
         # G-7 逓減 (TAPER_SCHEDULE) と整合した cash_floor で動的に運用 (少額時 0.20 /
         # 大額時 0.10)。これで少額 Treasury でも selected=0 状態を緩和できる。
+        # codex E#7: Phase C paper は口座総額(¥100万 seed)でなく解放枠(unlocked)を運用規模に。
+        # cash_floor/taper が「¥10万 運用の挙動」を反映するようにする（口座総額の余力管理に寄せない）。
         try:
-            _account_total = float(treasury_view(engine).get("seed_jpy") or 0)
+            _tv = treasury_view(engine)
+            _rb = float(_tv.get("current_risk_budget_jpy") or 0)
+            _account_total = _rb if _rb > 0 else float(_tv.get("seed_jpy") or 0)
         except Exception:
             _account_total = 0.0
 
@@ -1225,6 +1264,7 @@ def dispatch(
             engine=engine,
             demand_by_pilot=demand_by_pilot,
             weighted_demand_by_pilot=weighted_demand_by_pilot,
+            broker_mode=_disp_mode,  # broker_mode 別実績で重み付け
         )
 
     # 4. 機別 top-K 選別：confidence × ダブル推奨ブースト で上位を採用
@@ -1417,6 +1457,9 @@ def dispatch(
                 # A7: DS 公式 dispatch 由来として刻む + エントリ時点 trailing 局面
                 filled_via="ds_dispatch",
                 market_regime=_entry_cycle,
+                # broker_mode 分離: dispatch が使う treasury と同じモードで fill を刻む
+                # （Decision.entry_broker_mode = paper/live。gate⑥/昇格の分離集計用）。
+                broker_mode=_resolve_broker_mode(None),
             )
             fills_summary = {
                 "pilot": pilot_name,
@@ -1543,6 +1586,180 @@ def deposit(
         s.commit()
         s.refresh(row)
         return row
+
+
+# ===== Phase C 段階大規模化（unlock 方式・codex 推奨）==========================
+# paper は口座総額 ¥100万 を最初から置き（seed=¥100万・固定）、実際に deploy してよい
+# 運用上限だけを ¥10万 から段階解放する（gate⑥通過ごとに 10→30→60→100万）。
+# deposit で seed を増やさない → equity 曲線が資本注入で歪まず、純粋に edge を測れる。
+# 解放は TreasuryInjection 台帳（unlock 履歴）に記録し、現運用上限は
+# MisatoTreasury.unlocked_budget_jpy で読む。dispatch/fill は deployable_budget_jpy で物理的に縛る。
+PAPER_ACCOUNT_CAPITAL_JPY = 1_000_000.0  # ¥100万（paper 仮想口座総額・seed 固定）
+PAPER_START_BUDGET_JPY = 100_000.0       # ¥10万（初期解放 deploy 上限）
+PAPER_CEILING_JPY = 1_000_000.0          # ¥100万（解放上限＝口座総額）
+# 解放ラダー：gate⑥通過ごとに次の上限へ unlock（観測しやすい離散ステップ）。
+PAPER_BUDGET_TIERS = (100_000.0, 300_000.0, 600_000.0, 1_000_000.0)
+
+
+def current_risk_budget_jpy(engine: Engine, broker_mode: str | None = None) -> float:
+    """現運用上限 = この broker_mode の解放済み deploy 上限（unlocked_budget_jpy）。"""
+    mode = _resolve_broker_mode(broker_mode)
+    t = get_treasury(engine, mode)
+    return float(t.unlocked_budget_jpy or 0.0)
+
+
+# codex F#8: exposure は cap 観点では少し過大に見積もる方が安全（解放枠超過を確実に防ぐ）。
+# 手数料/スリッページ分の保守バッファ（entry コスト相当）を上乗せする。
+_EXPOSURE_COST_BUFFER = 1.005  # +0.5%（往復コスト ~0.44% の entry 側 + 余裕）
+
+
+def _active_paper_exposure_jpy(engine: Engine, broker_mode: str) -> float:
+    """指定 broker_mode の active Portfolio の取得コスト合計（float qty×buy_price×バッファ）。
+
+    deployable = unlocked 上限 − これ。解放上限を超える新規 deploy を物理的に防ぐ。
+    codex F#8: 小数株/部分約定に備え float qty。手数料/スリッページ分の保守バッファ込み。
+    """
+    with Session(engine) as s:
+        rows = s.exec(
+            select(Portfolio)
+            .where(col(Portfolio.status) == "active")
+            .where(col(Portfolio.broker_mode) == broker_mode)
+        ).all()
+    raw = sum(float(p.buy_price or 0.0) * float(p.qty or 0.0) for p in rows)
+    return float(raw) * _EXPOSURE_COST_BUFFER
+
+
+def deployable_budget_jpy(engine: Engine, broker_mode: str | None = None) -> float | None:
+    """今 dispatch/fill に使える deploy 上限（unlock 方式が有効な時のみ）。
+
+    解放上限が設定済み(>0)なら deployable = max(0, unlocked − active exposure)。
+    未設定（legacy / 非 Phase C）なら None を返す＝deploy cap なし（従来挙動を壊さない）。
+    """
+    mode = _resolve_broker_mode(broker_mode)
+    unlocked = current_risk_budget_jpy(engine, mode)
+    if unlocked <= 0:
+        return None
+    exposure = _active_paper_exposure_jpy(engine, mode)
+    return max(0.0, unlocked - exposure)
+
+
+def _record_unlock(
+    engine: Engine, *, broker_mode: str, unlocked_to: float, reason: str, eval_n: int
+) -> float:
+    """deploy 上限を unlocked_to に解放し、台帳(unlock 履歴)に記録。解放後の上限を返す。
+
+    seed（口座総額）は触らない（資本注入ではない＝equity 曲線を歪めない）。
+    """
+    with Session(engine, expire_on_commit=False) as s:
+        rows = s.exec(
+            select(MisatoTreasury).where(col(MisatoTreasury.broker_mode) == broker_mode)
+        ).all()
+        row = rows[0] if rows else MisatoTreasury(
+            id=2 if broker_mode == "live" else 1, broker_mode=broker_mode
+        )
+        delta = float(unlocked_to) - float(row.unlocked_budget_jpy or 0.0)
+        row.unlocked_budget_jpy = float(unlocked_to)
+        row.last_unlock_eval_n = int(eval_n)
+        row.updated_at = utcnow()
+        s.add(row)
+        s.add(TreasuryInjection(
+            broker_mode=broker_mode, amount_jpy=delta,
+            reason=reason, tier_after_jpy=float(unlocked_to), created_at=utcnow(),
+        ))
+        s.commit()
+    return float(unlocked_to)
+
+
+def _official_paper_n(engine: Engine, broker_mode: str) -> int:
+    """公式評価件数（多重 unlock 防止の snapshot 用）。"""
+    from trading_agent.evaluation.gate import official_gate_evaluation
+    return official_gate_evaluation(engine, broker_mode=broker_mode).n
+
+
+def init_paper_staging(engine: Engine) -> dict[str, float | str]:
+    """Phase C 開始: paper を 口座総額 ¥100万・初期解放 ¥10万・ceiling ¥100万 で初期化（冪等）。
+
+    seed（口座総額）は ¥100万 に正規化（reset 後のクリーン開始を担保）。
+    既に ¥10万 以上 解放済みなら二重初期化しない。
+    """
+    mode = "paper"
+    # 口座総額 seed を ¥100万 に正規化 + ceiling を記録
+    with Session(engine, expire_on_commit=False) as s:
+        rows = s.exec(
+            select(MisatoTreasury).where(col(MisatoTreasury.broker_mode) == mode)
+        ).all()
+        row = rows[0] if rows else MisatoTreasury(id=1, broker_mode=mode)
+        already = float(row.unlocked_budget_jpy or 0.0) >= PAPER_START_BUDGET_JPY
+        row.seed_jpy = PAPER_ACCOUNT_CAPITAL_JPY
+        row.target_ceiling_jpy = PAPER_CEILING_JPY
+        row.updated_at = utcnow()
+        s.add(row)
+        s.commit()
+    if already:
+        return {
+            "status": "already_initialized",
+            "account_capital_jpy": PAPER_ACCOUNT_CAPITAL_JPY,
+            "current_risk_budget_jpy": current_risk_budget_jpy(engine, mode),
+            "ceiling_jpy": PAPER_CEILING_JPY,
+        }
+    eval_n = _official_paper_n(engine, mode)
+    unlocked = _record_unlock(
+        engine, broker_mode=mode, unlocked_to=PAPER_START_BUDGET_JPY,
+        reason="phase_c_start_unlock", eval_n=eval_n,
+    )
+    return {
+        "status": "initialized",
+        "account_capital_jpy": PAPER_ACCOUNT_CAPITAL_JPY,
+        "current_risk_budget_jpy": unlocked,
+        "ceiling_jpy": PAPER_CEILING_JPY,
+    }
+
+
+def _next_tier(current: float) -> float | None:
+    """現上限より大きい最小の tier を返す（無ければ None＝ceiling 到達）。"""
+    for t in PAPER_BUDGET_TIERS:
+        if t > current + 1.0:  # 端数誤差を許容
+            return t
+    return None
+
+
+def advance_paper_budget(engine: Engine) -> dict[str, object]:
+    """paper ゲート⑥通過 + 前回 unlock 以降の新規評価が十分なら次 tier へ unlock（¥100万 まで）。
+
+    増額の唯一の根拠は official_gate_evaluation(broker_mode="paper").passed。
+    多重 unlock 防止（codex 指摘）: 同一 gate snapshot で連続解放しないよう、前回 unlock 時点の
+    評価件数から gate_min_decisions 件以上の新規評価が積まれていることを要求する。
+    """
+    from trading_agent.evaluation.gate import official_gate_evaluation
+    from trading_agent.risk.params import DEFAULT_RISK
+
+    mode = "paper"
+    current = current_risk_budget_jpy(engine, mode)
+    gate = official_gate_evaluation(engine, broker_mode=mode)
+    if current >= PAPER_CEILING_JPY:
+        return {"status": "ceiling_reached", "current_risk_budget_jpy": current,
+                "gate_passed": gate.passed}
+    if not gate.passed:
+        return {"status": "gate_not_passed", "current_risk_budget_jpy": current,
+                "gate_passed": False, "gate_summary": gate.summary()}
+    # 多重 unlock 防止: 前回 unlock 以降に gate_min_decisions 件以上の新規評価が必要。
+    last_n = int(get_treasury(engine, mode).last_unlock_eval_n or 0)
+    fresh = gate.n - last_n
+    if fresh < DEFAULT_RISK.gate_min_decisions:
+        return {"status": "insufficient_fresh_evals", "current_risk_budget_jpy": current,
+                "gate_passed": True, "fresh_evals": fresh,
+                "required": DEFAULT_RISK.gate_min_decisions}
+    target = _next_tier(current)
+    if target is None:
+        return {"status": "ceiling_reached", "current_risk_budget_jpy": current,
+                "gate_passed": True}
+    target = min(target, PAPER_CEILING_JPY)
+    unlocked = _record_unlock(
+        engine, broker_mode=mode, unlocked_to=target,
+        reason="gate_pass_unlock", eval_n=gate.n,
+    )
+    return {"status": "advanced", "from_jpy": current, "to_jpy": unlocked,
+            "gate_passed": True}
 
 
 def cleanup_fractional_holdings(engine: Engine) -> dict[str, int]:
@@ -1883,18 +2100,32 @@ def auto_trade_view(engine: Engine) -> dict[str, Any]:
 
 def treasury_view(engine: Engine, broker_mode: str | None = None) -> dict[str, Any]:
     """KATSURAGI 財務の現状を dict で返す（v2.8: broker_mode 別）。"""
+    mode = _resolve_broker_mode(broker_mode)
     t = get_treasury(engine, broker_mode)
     allocs = get_pilot_allocations(engine, broker_mode)
     allocated = sum(allocs.values())
+    # Phase C unlock 方式の観測値（口座総額固定・deploy 上限を段階解放）。
+    unlocked = float(t.unlocked_budget_jpy or 0.0)  # 解放済み運用上限
+    ceiling = float(t.target_ceiling_jpy or 0.0)
+    exposure = _active_paper_exposure_jpy(engine, mode) if unlocked > 0 else 0.0
     return {
-        "broker_mode": _resolve_broker_mode(broker_mode),
-        "seed_jpy": round(float(t.seed_jpy)),
+        "broker_mode": mode,
+        "seed_jpy": round(float(t.seed_jpy)),  # 口座総額（unlock 方式では固定）
         "allocated_jpy": round(allocated),
         "available_jpy": round(float(t.seed_jpy) - allocated),
         "allocations": {k: round(v) for k, v in allocs.items()},
         "deposit_count": t.deposit_count or 0,
         "last_deposit_at": (
             t.last_deposit_at.strftime("%Y-%m-%d %H:%M") if t.last_deposit_at else None
+        ),
+        # 段階大規模化（observability）: 口座総額 / 解放済み deploy 上限 / 使用中 / deploy 可能 / 上限。
+        "account_capital_jpy": round(float(t.seed_jpy)),
+        "current_risk_budget_jpy": round(unlocked),      # = 解放済み deploy 上限
+        "active_exposure_jpy": round(exposure),           # 使用中（active paper 取得コスト）
+        "deployable_jpy": round(max(0.0, unlocked - exposure)) if unlocked > 0 else None,
+        "target_ceiling_jpy": round(ceiling),
+        "ceiling_progress_pct": (
+            round(unlocked / ceiling * 100, 1) if ceiling > 0 else None
         ),
         "updated_at": t.updated_at.strftime("%Y-%m-%d %H:%M") if t.updated_at else None,
     }

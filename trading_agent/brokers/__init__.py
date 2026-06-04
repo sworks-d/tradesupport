@@ -33,7 +33,10 @@ _log = get_logger("broker")
 
 
 def load_positions(
-    *, prefer_moomoo: bool = False, settings: Any | None = None
+    *,
+    prefer_moomoo: bool = False,
+    settings: Any | None = None,
+    engine: Any | None = None,
 ) -> tuple[list[Position], str]:
     """保有ポジションを取得する。
 
@@ -41,8 +44,25 @@ def load_positions(
     口座未開設 / OpenD未起動 / SDK未導入では自動的にスタンドインへ落ちる。
 
     Returns:
-        (positions, source)  source は "moomoo" / "standin"。
+        (positions, source)  source は "moomoo" / "rakuten" / "standin"。
     """
+    # v2.10: 楽天/SBI/モネックス = DB(Portfolio) ベース。mark_filled で記録された
+    # broker_mode 別 active 保有を返す（load_account と対称。無いと約定が保有に出ない）。
+    if not prefer_moomoo and engine is not None:
+        try:
+            from trading_agent.utils.lot_size import get_broker_mode as _gbm
+            from trading_agent.utils.lot_size import get_broker_provider as _gbp
+
+            if _gbp() in ("rakuten", "sbi", "monex"):
+                from trading_agent.brokers.rakuten import RakutenBroker
+
+                return (
+                    RakutenBroker(engine=engine, broker_mode=_gbm()).get_positions(),
+                    _gbp(),
+                )
+        except Exception as exc:
+            _log.warning("rakuten_positions_failed", error_type=type(exc).__name__)
+
     if prefer_moomoo:
         try:
             from trading_agent.brokers.moomoo import MoomooBroker

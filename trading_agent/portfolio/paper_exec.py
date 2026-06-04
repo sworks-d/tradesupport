@@ -104,6 +104,10 @@ def _record_exit_on_decision(session, portfolio, *, exit_price: float, day) -> N
     d.evaluated_at = utcnow()
     if d.evaluation_date is None:
         d.evaluation_date = day
+    # broker_mode 安全バックフィル: entry で刻み損ねていても、紐付く Portfolio の
+    # broker_mode で補完する（gate⑥ の paper/live 分離が exit 経由でも欠けないように）。
+    if d.entry_broker_mode is None and getattr(portfolio, "broker_mode", None):
+        d.entry_broker_mode = portfolio.broker_mode
     session.add(d)
 
 
@@ -227,6 +231,7 @@ def paper_fill_approved(
     allowed_tickers: set[str] | None = None,
     filled_via: str = "ds_dispatch",
     market_regime: str | None = None,
+    broker_mode: str | None = None,
 ) -> PaperResult:
     """status=approved の decision を翌寄り価格で紙約定し、Portfolio(active)化＋record_entry する。
 
@@ -242,6 +247,12 @@ def paper_fill_approved(
     現金は引数で受け、残額を返す（永続化は呼び出し側＝run_paper の責務）。
     """
     day = today or today_jst()
+    # broker_mode 明示化（codex 指摘）: 引数 > 現在のモード。UI/設定が live でも、
+    # DS paper sim を呼ぶ側が broker_mode="paper" を渡せば paper として記録される
+    # （Portfolio.broker_mode と Decision.entry_broker_mode の両方に効かせる）。
+    from trading_agent.utils.lot_size import get_broker_mode as _resolve_gbm
+
+    fill_broker_mode = broker_mode or _resolve_gbm()
     if personality is not None:
         # 性格固有の運用ルールで上書き
         stop = float(getattr(personality, "stop_loss_pct", params.default_stop_pct))
@@ -268,7 +279,22 @@ def paper_fill_approved(
         max_pos_pct = 0.20
         personality_name = None
 
+    # codex High#5（多重防御）: 安全装置を dispatch 側だけに置くと直呼びで穴が再発する。
+    # Phase C unlock 方式が有効（broker_mode=paper ∧ 解放上限>0）なら、呼び出し側 cash を
+    # 信頼せず deployable（= 解放上限 − active exposure）で物理 cap する。これで
+    # run_auto_fill / auto_fill_paper / run_paper / dispatch 全経路が ¥100万 直叩きを防がれる。
     cash = cash_jpy
+    if fill_broker_mode == "paper":
+        from trading_agent.portfolio.misato import deployable_budget_jpy
+
+        _dep = deployable_budget_jpy(engine, "paper")
+        if _dep is not None and cash > _dep:
+            from trading_agent.utils.logger import get_logger
+
+            get_logger("paper_exec").info(
+                "paper_fill_cash_capped_by_unlock", requested=cash, deployable=_dep
+            )
+            cash = max(0.0, _dep)
     result = PaperResult(cash_after=cash)
 
     with Session(engine, expire_on_commit=False) as session:
@@ -502,10 +528,8 @@ def paper_fill_approved(
                     f"標準ペーパー fill: stance={stance_label}・stop -{stop*100:.0f}%・保有 {horizon}日"
                 )
             )
-            # v2.8: 現在の broker_mode を取得してレコードに記録
-            from trading_agent.utils.lot_size import get_broker_mode
-
-            current_mode = get_broker_mode()
+            # v2.8: broker_mode を記録（引数優先で解決済み・codex 指摘で明示化）
+            current_mode = fill_broker_mode
             # v2.10 Phase 1A-Step2 修正 (致命 2): ピラミッディング追加買付なら
             # 既存 active Portfolio を merge（qty 加算 + buy_price 加重平均）
             if (
@@ -586,6 +610,7 @@ def paper_fill_approved(
             stop_pct=stop, target_return=0.20,
             target_period_days=horizon, on_date=day,
             filled_via=filled_via, market_regime=market_regime,
+            broker_mode=fill_broker_mode,
         )
 
     result.cash_after = cash

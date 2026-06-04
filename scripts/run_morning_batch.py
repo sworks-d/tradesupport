@@ -56,7 +56,32 @@ async def main() -> None:
     print(f"\n決裁待ち decision: {len(decisions)} 件")
     for d in decisions:
         print(f"  {d.ticker}  status={d.status}  碇の構え={d.gendo_stance}")
-    print("\n→ 決裁は moomoo 画面で手動。承認後の発注リストは portfolio.build_order_list を使用。")
+
+    # 朝バッチ後の「実数字」をダッシュボード(UI)に反映：snapshot.json を再生成する。
+    # light=True ＝ 候補(MAGI/CASPER LLM)生成だけスキップ＝LLMコスト0。holdings/pending/
+    # account/zeele/topics/DS 等は post-batch の DB から作り直す。
+    # dry-run は永続化していないのでスキップ。
+    if not dry_run:
+        print("\n=== UI snapshot 再生成（実数字反映・LLMコスト0）===")
+        try:
+            sys.path.insert(0, str(Path(__file__).resolve().parent))
+            import json as _json
+
+            import build_snapshot as _bs
+
+            snap = await _bs.build(live=True, prefer_moomoo=False, light=True)
+            out = (
+                Path(__file__).resolve().parent.parent
+                / "ui" / "public" / "data" / "snapshot.json"
+            )
+            out.write_text(
+                _json.dumps(snap, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            print("✓ snapshot.json 更新 → ダッシュボードに実数字反映")
+        except Exception as exc:  # noqa: BLE001
+            print(f"✗ snapshot 再生成失敗: {type(exc).__name__}: {exc}")
+
+    print("\n→ 発注は楽天証券アプリで手動。約定後はダッシュボードの「✓約定」で記録。")
 
 
 if __name__ == "__main__":

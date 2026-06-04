@@ -8,12 +8,12 @@
 
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/a05/tradesupport/.venv/bin/python</string>
-    <string>/Users/a05/tradesupport/scripts/run_evaluation.py</string>
+    <string>/Users/shotaro/tradesupport/.venv/bin/python</string>
+    <string>/Users/shotaro/tradesupport/scripts/run_evaluation.py</string>
   </array>
 
   <key>WorkingDirectory</key>
-  <string>/Users/a05/tradesupport</string>
+  <string>/Users/shotaro/tradesupport</string>
 
   <key>StartCalendarInterval</key>
   <dict>
@@ -22,9 +22,9 @@
   </dict>
 
   <key>StandardOutPath</key>
-  <string>/Users/a05/tradesupport/data/logs/evaluation.out.log</string>
+  <string>/Users/shotaro/tradesupport/data/logs/evaluation.out.log</string>
   <key>StandardErrorPath</key>
-  <string>/Users/a05/tradesupport/data/logs/evaluation.err.log</string>
+  <string>/Users/shotaro/tradesupport/data/logs/evaluation.err.log</string>
 
   <key>RunAtLoad</key>
   <false/>

@@ -64,13 +64,25 @@ class GateResult:
     regimes_present: list[str] = field(default_factory=list)
     max_drawdown: float = 0.0
     notes: list[str] = field(default_factory=list)
+    # broker_mode 分離（paper=システム edge 検証 / live=実運用実績）。
+    broker_mode: str | None = None
+    # actionable=False は combined（paper+live 混在）の参考値。増額根拠にしてはいけない。
+    actionable: bool = True
 
     def summary(self) -> str:
-        head = "✅ 増額ゲート⑥ 通過" if self.passed else "⛔ 増額ゲート⑥ 未通過"
-        lines = [f"{head}（公式評価 n={self.n}）"]
+        scope = (
+            f"{self.broker_mode}" if self.broker_mode else "—"
+        )
+        if not self.actionable:
+            head = "📊 ゲート⑥ 参考(combined・増額不可)"
+        else:
+            head = "✅ 増額ゲート⑥ 通過" if self.passed else "⛔ 増額ゲート⑥ 未通過"
+        lines = [f"{head}（{scope} / 公式評価 n={self.n}）"]
         for c in self.criteria:
             mark = "✓" if c.passed else "✗"
             lines.append(f"  {mark} {c.name}: {c.value}（要件 {c.threshold}）")
+        if not self.actionable:
+            lines.append("  ⚠ combined は paper(edge検証)と live(実運用)の混在＝参考のみ。増額判断には使わない。")
         if self.notes:
             lines.append("  注記: " + " / ".join(self.notes))
         return "\n".join(lines)
@@ -96,13 +108,39 @@ def _max_drawdown(returns_in_order: list[float]) -> float:
     return max_dd
 
 
+def _query_official_rows(
+    engine: Engine, *, broker_mode: str | None
+) -> list[Decision]:
+    """公式集合の生クエリ。broker_mode を渡すと entry_broker_mode で絞る（None=combined）。
+
+    公式条件: hit/miss/neutral 確定 ∧ entry_market_regime あり ∧
+    filled_via in (ds_dispatch, manual)。broker_mode 分離で paper/live を別集計する。
+    """
+    with Session(engine) as session:
+        stmt = (
+            select(Decision)
+            .where(col(Decision.hit_or_miss).in_(("hit", "miss", "neutral")))
+            .where(col(Decision.entry_market_regime).is_not(None))
+            .where(col(Decision.filled_via).in_(_OFFICIAL_SOURCES))  # A7: DS 公式由来のみ
+        )
+        if broker_mode is not None:
+            stmt = stmt.where(col(Decision.entry_broker_mode) == broker_mode)
+        rows = list(session.exec(stmt.order_by(col(Decision.evaluated_at))).all())
+    return [d for d in rows if d.actual_return is not None and d.stop_pct]
+
+
 def official_gate_evaluation(
     engine: Engine,
     *,
+    broker_mode: str,
     params: RiskParams = DEFAULT_RISK,
     cost_pct: float = _DEFAULT_ROUND_TRIP_COST_PCT,
 ) -> GateResult:
     """勝ち定義をまとめて判定する単一関数（増額の可否はこれだけを見る）。
+
+    **broker_mode 必須**（codex 指摘）: paper（システム edge 検証）と live（実運用実績）を
+    必ず分離して判定する。filled_via=manual は live 専用ではない（paper/manual もある）ため、
+    filled_via だけでは混在汚染する。combined は combined_gate_reference（参考・増額不可）で。
 
     判定（全て満たして初めて passed=True）:
       1. n ≥ gate_min_decisions
@@ -112,18 +150,42 @@ def official_gate_evaluation(
       5. avg_net_excess（コスト後α）> 0
       6. 両局面通過（順境・逆境の両方で entry 実績がある）
     """
-    with Session(engine) as session:
-        rows = list(
-            session.exec(
-                select(Decision)
-                .where(col(Decision.hit_or_miss).in_(("hit", "miss", "neutral")))
-                .where(col(Decision.entry_market_regime).is_not(None))
-                .where(col(Decision.filled_via).in_(_OFFICIAL_SOURCES))  # A7: DS 公式由来のみ
-                .order_by(col(Decision.evaluated_at))
-            ).all()
-        )
+    if broker_mode not in ("paper", "live"):
+        raise ValueError(f"broker_mode must be 'paper' or 'live', got {broker_mode!r}")
+    official = _query_official_rows(engine, broker_mode=broker_mode)
+    return _evaluate_official(
+        official, params=params, cost_pct=cost_pct,
+        broker_mode=broker_mode, actionable=True,
+    )
 
-    official = [d for d in rows if d.actual_return is not None and d.stop_pct]
+
+def combined_gate_reference(
+    engine: Engine,
+    *,
+    params: RiskParams = DEFAULT_RISK,
+    cost_pct: float = _DEFAULT_ROUND_TRIP_COST_PCT,
+) -> GateResult:
+    """paper+live 混在の参考集計（actionable=False＝増額根拠にしない・codex 指摘）。
+
+    表示用途のみ。役割の違う paper(edge検証) と live(実運用) を混ぜているので、
+    この passed が True でも増額判断には使ってはいけない。
+    """
+    official = _query_official_rows(engine, broker_mode=None)
+    return _evaluate_official(
+        official, params=params, cost_pct=cost_pct,
+        broker_mode="combined", actionable=False,
+    )
+
+
+def _evaluate_official(
+    official: list[Decision],
+    *,
+    params: RiskParams,
+    cost_pct: float,
+    broker_mode: str,
+    actionable: bool,
+) -> GateResult:
+    """公式集合（既に broker_mode で絞り済み）から GateResult を計算する共通コア。"""
     results: list[EvalResult] = [
         EvalResult(
             actual_return=d.actual_return,
@@ -212,4 +274,6 @@ def official_gate_evaluation(
         regimes_present=regimes_present,
         max_drawdown=max_dd,
         notes=notes,
+        broker_mode=broker_mode,
+        actionable=actionable,
     )

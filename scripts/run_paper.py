@@ -87,7 +87,8 @@ async def _monitor(engine: Engine) -> None:
 def _fill(engine: Engine) -> None:
     price, is_jp = _live_lookups(engine)
     res = paper_fill_approved(
-        engine, price_lookup=price, is_jp_lookup=is_jp, cash_jpy=_cash(engine)
+        engine, price_lookup=price, is_jp_lookup=is_jp, cash_jpy=_cash(engine),
+        broker_mode="paper",  # codex: paper CLI なので明示（共通層 cap を確実に効かせる）
     )
     print(f"紙約定 {len(res.fills)} 件 / 残現金 ¥{res.cash_after:,.0f}")
     for f in res.fills:
@@ -184,6 +185,7 @@ def _fill_for_personality(engine: Engine, personality_name: str) -> None:
         is_jp_lookup=is_jp,
         cash_jpy=acct.cash,
         personality=personality,
+        broker_mode="paper",  # codex: paper CLI なので明示（共通層 cap を確実に効かせる）
     )
     print(
         f"[{personality.icon} {personality.label}] 紙約定 {len(res.fills)} 件 /"
