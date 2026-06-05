@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from trading_agent.screening.credibility import CredibilityResult, ScoreResult
 from trading_agent.screening.financials import Financials, PeriodFinancials
-from trading_agent.screening.turnaround import assess_turnaround
+from trading_agent.screening.turnaround import (
+    assess_turnaround,
+    derive_earnings_signal_tags,
+)
 
 
 def _pf(period: str, *, ebit=None, revenue=None, net_income=None) -> PeriodFinancials:
@@ -57,6 +60,34 @@ def test_earnings_acceleration_with_three_periods() -> None:
     )
     assert res.axes["ignition"] is True
     assert res.zone == "v_candidate"
+
+
+# === A prime: derive_earnings_signal_tags（J-Quants 由来 earnings_accel・record-only）===
+
+
+def test_derive_earnings_signal_tags_fires_on_ignition() -> None:
+    """純益成長が加速（ignition True）→ earnings_accel タグ + 証拠メタを返す。"""
+    cur = _pf("2026", ebit=20.0, revenue=1000.0, net_income=240.0)   # g=+100% vs 120
+    prior = _pf("2025", ebit=15.0, revenue=1000.0, net_income=120.0)  # g=+20% vs 100
+    prior2 = _pf("2024", ebit=10.0, revenue=1000.0, net_income=100.0)
+    tags, evidence = derive_earnings_signal_tags(_fin(cur, prior, prior2))
+    assert tags == ["earnings_accel"]
+    assert evidence["earnings_accel"]["net_income"] == 240.0
+    assert evidence["earnings_accel"]["asof"] == "2026"  # 期末で開示 recency 近似
+
+
+def test_derive_earnings_signal_tags_empty_on_deceleration() -> None:
+    """成長が減速（ignition False）→ タグなし（推測しない）。"""
+    cur = _pf("2026", ebit=20.0, revenue=1000.0, net_income=110.0)   # g=+10%
+    prior = _pf("2025", ebit=15.0, revenue=1000.0, net_income=100.0)  # g=+100%
+    prior2 = _pf("2024", ebit=10.0, revenue=1000.0, net_income=50.0)
+    tags, evidence = derive_earnings_signal_tags(_fin(cur, prior, prior2))
+    assert tags == [] and evidence == {}
+
+
+def test_derive_earnings_signal_tags_none_fin() -> None:
+    """fin 不在 → 空（H10 推測しない）。"""
+    assert derive_earnings_signal_tags(None) == ([], {})
 
 
 def test_bottom_ignition_but_no_price_turn_is_value_trap() -> None:

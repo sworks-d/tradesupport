@@ -27,7 +27,11 @@ from trading_agent.screening.relative_strength import (
     market_proxy,
     relative_strength_live,
 )
-from trading_agent.screening.turnaround import TurnaroundResult, assess_turnaround
+from trading_agent.screening.turnaround import (
+    TurnaroundResult,
+    assess_turnaround,
+    derive_earnings_signal_tags,
+)
 
 __all__ = [
     "CredibilityResult",
@@ -40,6 +44,7 @@ __all__ = [
     "assess_credibility",
     "assess_turnaround",
     "beneish_m_score",
+    "derive_earnings_signal_tags",
     "compute_relative_strength",
     "detect_disclosure_flags_from_xbrl",
     "edinet_csv_downloader",

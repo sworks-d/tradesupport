@@ -177,6 +177,53 @@ def _infer_preset(row: ScreeningResult) -> str:
     return "alpha"
 
 
+# ============================================================
+# PIPELINE v3 Track B: シグナルタグ導出（record-only・shadow 計測用）
+# ============================================================
+# **設計規律（codex レビュー反映）**:
+#   - タグは売買判断を変えない（地雷 #1：macro/signal で銘柄選定を上書きしない）。
+#   - 既存の screening 計算値を読むだけ（新規 fetch・LLM なし＝コスト 0・重複収集なし）。
+#   - tag 別 hit率/avgR/net_excess を feedback_transparency で測り、
+#     null 比較を継続的に上回ったものだけ将来 score 加点に昇格する（B4/B5）。
+#   - 同一シグナルの多重加点を避けるため、タグは preset/screening と直交する観測軸として保つ。
+#
+# 既知タグ（順次拡張）:
+#   - sector_rs        : 同セクター/対市場で相対的に強い（既存 sector_outperformance）★B2 実装
+#   - earnings_accel   : 業績の点火/加速。**J-Quants 由来（A prime・magi_verify 再利用）に一本化**。
+#     ※ かつて yfinance v_shape 由来の代理を zeele_curator でも付けていたが、JP 中小型で 0% 発火
+#       （dead）かつ J-Quants 由来と source が混ざり解釈が濁るため撤去（codex 指摘）。
+#   - macro_tailwind   : 地合い regime が追い風（Track A exposure）            … Track A
+#   - impact_peer      : ニュース波及の関連 peer（co-mention グラフ）          … 波及 MVP
+#   - pead_candidate / pead_confirmed : 真の PEAD（event_asof + 開示 surprise + 価格反応）… 後段
+_SECTOR_RS_OUTPERF_THRESHOLD = 0.05  # momentum 分類と同じ閾値（対セクター +5%pt）
+
+# whitelist：未知タグの混入を防ぐ（H2 同様の防壁）。新タグ追加時はここに足す。
+# ※ earnings_accel は magi_verify（J-Quants）が付与する。zeele_curator は付けない（source 一本化）。
+_VALID_SIGNAL_TAGS = frozenset(
+    {"sector_rs", "earnings_accel", "macro_tailwind", "impact_peer",
+     "pead_candidate", "pead_confirmed"}
+)
+
+
+def _derive_signal_tags(row: ScreeningResult) -> list[str]:
+    """screening_results 1行から signal_tags を導出する（record-only・B2）。
+
+    既存の theme_details を読むだけ。新規データ収集・LLM は呼ばない（¥0）。
+    返すタグは _VALID_SIGNAL_TAGS の whitelist 内に限定（未知タグ混入を防ぐ）。
+    ※ earnings_accel は J-Quants 由来で magi_verify が付与する（ここでは付けない・source 一本化）。
+    """
+    tags: list[str] = []
+    t_details = row.theme_details if isinstance(row.theme_details, dict) else {}
+
+    # B2: sector_rs — 同セクター/対市場で相対的に強い銘柄（既存 sector_outperformance を流用）。
+    sector_outperf = t_details.get("sector_outperformance")
+    if isinstance(sector_outperf, int | float) and sector_outperf > _SECTOR_RS_OUTPERF_THRESHOLD:
+        tags.append("sector_rs")
+
+    # whitelist 防壁（H2 同様）：未知タグは落とす。
+    return [t for t in tags if t in _VALID_SIGNAL_TAGS]
+
+
 def _thesis_from_row(row: ScreeningResult) -> str:
     """screening_results 1行から構造的根拠（narrative）を組み立てる（v2.2 TASK-Z5 拡張）。
 
@@ -276,6 +323,7 @@ class ZeeleCuratorAgent(Agent[ZeeleCuratorInput]):
                 if row is None:
                     continue
                 preset = _infer_preset(row)
+                tags = _derive_signal_tags(row)  # Track B: record-only signal_tags
                 thesis = _topic_narrative_for(ticker, topics) or _thesis_from_row(row)
 
                 state = existing_states.get(ticker)
@@ -287,6 +335,7 @@ class ZeeleCuratorAgent(Agent[ZeeleCuratorInput]):
                         consecutive_weeks=required,
                         last_screened_at=row.screened_at,
                         preset=preset,
+                        signal_tags=tags,
                         structural_thesis=thesis,
                         reference_score=row.composite_score,
                         is_active=True,
@@ -302,6 +351,7 @@ class ZeeleCuratorAgent(Agent[ZeeleCuratorInput]):
                     state.consecutive_weeks = required
                     state.last_screened_at = row.screened_at
                     state.preset = preset
+                    state.signal_tags = tags
                     state.structural_thesis = thesis
                     state.reference_score = row.composite_score
                     state.is_active = True
@@ -317,6 +367,7 @@ class ZeeleCuratorAgent(Agent[ZeeleCuratorInput]):
                         "ticker": ticker,
                         "name": universe_map.get(ticker, ""),
                         "preset": preset,
+                        "signal_tags": tags,
                         "structural_thesis": thesis,
                         "reference_score": row.composite_score,
                         "zeele_entered_at": state.entered_at.isoformat(),
@@ -334,6 +385,7 @@ class ZeeleCuratorAgent(Agent[ZeeleCuratorInput]):
                 if latest_row is None:
                     continue
                 state.reference_score = latest_row.composite_score
+                state.signal_tags = _derive_signal_tags(latest_row)  # Track B: 陳腐化防止
                 state.last_screened_at = latest_row.screened_at
                 state.updated_at = utcnow()
                 if not agent_input.dry_run:

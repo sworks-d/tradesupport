@@ -47,6 +47,36 @@ _DEFAULT_PERIOD_DAYS = 90
 _DEFAULT_ROUND_TRIP_COST_PCT = 0.0044
 
 
+def _merge_signal_tags(d: Decision, new_tags: list[str]) -> None:
+    """Decision.entry_signal_tags に new_tags を union merge（順序保持・重複なし・in-place）。
+
+    既存タグ（magi_verify が verify 時点で書いた earnings_accel 等）を消さずに足す。
+    SQLModel の JSON 変更検知のため新リストを代入する（in-place mutate では dirty にならない）。
+    """
+    if not new_tags:
+        return
+    existing = list(d.entry_signal_tags or [])
+    merged = existing + [t for t in new_tags if t not in existing]
+    if merged != existing:
+        d.entry_signal_tags = merged
+
+
+def _lookup_signal_tags(session: Session, ticker: str) -> list[str]:
+    """fill 時点の ZEELE signal_tags を引く（Track B・record-only スナップショット）。
+
+    エントリ時点で Decision.entry_signal_tags に固定するための lookup。評価時に live join
+    すると陳腐化/look-ahead するため、fill のタイミングで一度だけ刻む（codex 地雷 #2 回避）。
+    ZeeleState 不在（ZEELE 由来でない候補）や失敗時は空リスト（推測しない・H10）。
+    """
+    try:
+        from trading_agent.models.zeele import ZeeleState
+
+        state = session.get(ZeeleState, ticker)
+        return list(state.signal_tags or []) if state is not None else []
+    except Exception:
+        return []
+
+
 def stamp_evaluation_fields(
     d: Decision,
     *,
@@ -91,6 +121,15 @@ def stamp_evaluation_fields(
     # broker_mode 分離（gate⑥/昇格を paper/live で分けるため）。既存値は尊重。
     if d.entry_broker_mode is None and broker_mode is not None:
         d.entry_broker_mode = broker_mode
+    # Track B: fill 時点の ZEELE signal_tags をスナップショット（record-only）。
+    # d が attach された session を辿って lookup（呼び出し側の引数追加が不要）。
+    # **union merge**: magi_verify が verify 時点で書いた earnings_accel 等を消さず、sector_rs を足す
+    # （skip-if-nonempty だと先に付いたタグが ZEELE タグを排除する＝codex 地雷 #2）。
+    from sqlalchemy.orm import object_session
+
+    _sess = object_session(d)
+    if _sess is not None:
+        _merge_signal_tags(d, _lookup_signal_tags(_sess, d.ticker))
 
 
 def record_entry(
@@ -142,6 +181,9 @@ def record_entry(
             d.entry_market_regime = market_regime
         if d.entry_broker_mode is None and broker_mode is not None:
             d.entry_broker_mode = broker_mode
+        # Track B: fill 時点の ZEELE signal_tags をスナップショット（record-only・union merge）。
+        # magi_verify が先に書いた earnings_accel 等を消さず sector_rs を足す（codex 地雷 #2）。
+        _merge_signal_tags(d, _lookup_signal_tags(session, d.ticker))
         if d.status in ("approved", "order_listed"):
             d.status = "ordered"
         session.add(d)

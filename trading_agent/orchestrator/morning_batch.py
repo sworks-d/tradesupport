@@ -581,11 +581,17 @@ async def run_morning_batch(
     async def run_magi_verify() -> dict[str, int]:
         # 当日の未検証 decision に 3審判→防御→統合→碇 を回して保存（決定論・コスト0）
         # financials_fetcher があれば信用性フィルタ(S5)も効かせる（MELCHIOR反証＋credibility）
+        # A prime: 同じ J-Quants fin から earnings 系 signal_tags を sink に集め、Decision に
+        #          record-only でマージ（新規 fetch 0・売買は変えない・shadow 計測用）。
         ids = pending_decision_ids(engine)
+        earnings_sink: dict[str, tuple[list[str], dict]] = {}
         judge_fn = make_live_judge_fn(
-            ctx.call_tool, financials_fetcher=financials_fetcher, sector_lookup=sector_of
+            ctx.call_tool,
+            financials_fetcher=financials_fetcher,
+            sector_lookup=sector_of,
+            earnings_sink=earnings_sink,
         )
-        return await magi_verify(engine, ids, judge_fn)
+        return await magi_verify(engine, ids, judge_fn, earnings_sink=earnings_sink)
 
     async def run_katsuragi_dispatch() -> dict:
         """PIPELINE v3 Phase 1 M1.1 + M1.2 + N2: KATSURAGI 統合ノード。

@@ -56,6 +56,7 @@ from trading_agent.portfolio.misato import (
 )
 from trading_agent.reporting.feedback import (
     collect_feedback_records,
+    compare_signal_tags_vs_baseline,
     summarize_feedback,
 )
 
@@ -429,7 +430,10 @@ def build_phase_c_status(engine) -> dict[str, Any]:
     paper_official = collect_feedback_records(
         engine, broker_mode="paper", official_only=True
     )
-    perf = summarize_feedback(paper_records).get("by_personality", {})
+    _paper_summary = summarize_feedback(paper_records)
+    perf = _paper_summary.get("by_personality", {})
+    sig_tag_perf = _paper_summary.get("by_signal_tags", {})
+    sig_tag_vs_baseline = compare_signal_tags_vs_baseline(paper_records)  # codex #3: 正味エッジ
     proms = evaluate_promotions(engine, broker_mode="paper")
     # 配分の透明性（なぜこの機体に予算が寄るか）= pilot_multipliers の根拠（broker_mode=paper）
     pilot_mult = compute_pilot_multipliers(engine, broker_mode="paper")
@@ -457,6 +461,27 @@ def build_phase_c_status(engine) -> dict[str, Any]:
             }
             for name, d in perf.items()
         },
+        # Track B: signal_tag 別の shadow 成績（sector_rs/pead 等）。**売買は変えていない**＝
+        # record-only 観測。tag 別 n>=20 で null 比較を継続的に上回ったものだけ将来 score 加点に昇格。
+        "signal_tag_performance_paper": {
+            "tags": {
+                tag: {
+                    "n": int(d.get("n", 0)),
+                    "hit_rate": float(d.get("hit_rate", 0.0)),
+                    "avg_r": float(d.get("avg_r", 0.0)),
+                    "hit": int(d.get("hit", 0)),
+                    "miss": int(d.get("miss", 0)),
+                    "verdict": (
+                        "判定可" if int(d.get("n", 0)) >= 20 else "サンプル不足(n<20)"
+                    ),
+                }
+                for tag, d in sig_tag_perf.items()
+            },
+            "note": "record-only（売買未変更）。tag 別 n>=20 で残す/落とすを判断。空=タグ付き fill 未到達。",
+        },
+        # codex #3: tag 有無の対照成績（正味エッジ）。naive な hit_rate のバイアスを補正。
+        # with(タグあり) vs without(タグなし) の hit_rate/avg_r 差 = net。同 filled universe 内比較。
+        "signal_tag_vs_baseline_paper": sig_tag_vs_baseline,
         "fix_direction_paper": {
             "failing_criteria": [
                 {"name": c.name, "value": str(c.value), "threshold": c.threshold}

@@ -130,6 +130,24 @@ class TestMagiVerify:
             assert s.exec(select(Verification).where(col(Verification.decision_id) == did)).first()
             assert s.exec(select(CommanderRec).where(col(CommanderRec.decision_id) == did)).first()
 
+    async def test_earnings_sink_writes_signal_tags_record_only(self, engine) -> None:
+        """A prime: earnings_sink の earnings_accel が Decision に record-only マージ + 証拠記録。"""
+        ids = materialize_decisions(engine, ["NVDA"])
+        sink: dict = {}
+
+        async def judge_fn(ticker: str) -> JudgeBundle:
+            # judge が J-Quants fin 再利用で earnings タグを sink に積む挙動を模す
+            sink[ticker] = (["earnings_accel"], {"earnings_accel": {"source": "jquants", "asof": "2026"}})
+            return _bundle(default_hold=False)
+
+        await magi_verify(engine, ids, judge_fn, earnings_sink=sink)
+        with Session(engine) as s:
+            d = s.get(Decision, ids[0])
+            assert d.entry_signal_tags == ["earnings_accel"]
+            assert d.signal_tag_sources["earnings_accel"]["source"] == "jquants"
+            # record-only: 売買ステータスは通常の verify 通り（タグは売買を変えない）
+            assert d.status == "awaiting"
+
     async def test_counter_within_domain_persisted(self, engine) -> None:
         """B-1：審判の反証（counter_within_domain）が decision_id 付きで永続化される。"""
         ids = materialize_decisions(engine, ["NVDA"])

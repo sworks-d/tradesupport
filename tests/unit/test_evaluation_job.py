@@ -15,6 +15,7 @@ from trading_agent.evaluation.job import (
     stamp_evaluation_fields,
 )
 from trading_agent.models.decisions import Decision
+from trading_agent.models.zeele import ZeeleState
 
 
 @pytest.fixture()
@@ -33,6 +34,20 @@ def _seed(engine, ticker: str = "NVDA", status: str = "approved") -> int:
         return d.id
 
 
+def _seed_zeele(engine, ticker: str, tags: list[str]) -> None:
+    """ZeeleState を signal_tags 付きで seed（entry_signal_tags スナップショット検証用）。"""
+    with Session(engine) as s:
+        s.add(
+            ZeeleState(
+                ticker=ticker,
+                entered_at=dt.date(2026, 1, 1),
+                last_screened_at=dt.datetime(2026, 1, 1, 9, 0),
+                signal_tags=tags,
+            )
+        )
+        s.commit()
+
+
 class TestRecordEntry:
     def test_stamps_entry_and_eval_date(self, engine) -> None:
         did = _seed(engine)
@@ -47,6 +62,57 @@ class TestRecordEntry:
             assert d.stop_pct == 0.12
             assert d.evaluation_date == dt.date(2026, 4, 1)  # +90日
             assert d.status == "ordered"
+
+    def test_snapshots_signal_tags_from_zeele(self, engine) -> None:
+        """Track B: record_entry が fill 時点の ZeeleState.signal_tags を entry に固定する。"""
+        _seed_zeele(engine, "NVDA", ["sector_rs"])
+        did = _seed(engine, "NVDA")
+        record_entry(
+            engine, did, entry_price=100.0, stop_pct=0.1, target_return=0.2,
+            target_period_days=90, on_date=dt.date(2026, 1, 1),
+        )
+        with Session(engine) as s:
+            assert s.get(Decision, did).entry_signal_tags == ["sector_rs"]
+
+    def test_merges_signal_tags_preserving_existing(self, engine) -> None:
+        """A prime: verify 時点で付いた earnings_accel を fill 時の ZEELE sector_rs snapshot が消さない。"""
+        _seed_zeele(engine, "NVDA", ["sector_rs"])
+        did = _seed(engine, "NVDA")
+        # magi_verify 相当: verify 時点で earnings_accel を先に付与
+        with Session(engine, expire_on_commit=False) as s:
+            d = s.get(Decision, did)
+            d.entry_signal_tags = ["earnings_accel"]
+            s.add(d)
+            s.commit()
+        record_entry(
+            engine, did, entry_price=100.0, stop_pct=0.1, target_return=0.2,
+            target_period_days=90, on_date=dt.date(2026, 1, 1),
+        )
+        with Session(engine) as s:
+            # union merge: 両方残る（先の earnings_accel が消えない）
+            assert set(s.get(Decision, did).entry_signal_tags) == {"earnings_accel", "sector_rs"}
+
+    def test_no_zeele_leaves_signal_tags_empty(self, engine) -> None:
+        """ZEELE 由来でない候補（ZeeleState 不在）は entry_signal_tags が空のまま（推測しない・H10）。"""
+        did = _seed(engine, "ABCD")
+        record_entry(
+            engine, did, entry_price=50.0, stop_pct=0.1, target_return=0.2,
+            target_period_days=90, on_date=dt.date(2026, 1, 1),
+        )
+        with Session(engine) as s:
+            assert s.get(Decision, did).entry_signal_tags == []
+
+    def test_stamp_snapshots_signal_tags_via_object_session(self, engine) -> None:
+        """Track B: stamp_evaluation_fields は d の session を辿って tags を引く（引数追加不要）。"""
+        _seed_zeele(engine, "MELI", ["sector_rs"])
+        did = _seed(engine, "MELI", status="filled")
+        with Session(engine, expire_on_commit=False) as s:
+            d = s.get(Decision, did)
+            stamp_evaluation_fields(d, on_date=dt.date(2026, 1, 1))
+            s.add(d)
+            s.commit()
+        with Session(engine) as s:
+            assert s.get(Decision, did).entry_signal_tags == ["sector_rs"]
 
 
 class TestEvaluateDue:

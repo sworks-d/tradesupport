@@ -126,6 +126,7 @@ def collect_feedback_records(
                     "filled_via": d.filled_via,
                     "entry_date": d.entry_date.isoformat() if d.entry_date else None,
                     "entry_market_regime": d.entry_market_regime,
+                    "entry_signal_tags": list(d.entry_signal_tags or []),  # Track B: tag 別 shadow 計測
                     "benchmark_return": d.benchmark_return,
                     "target_period_days": d.target_period_days,
                     "thesis": (d.thesis_at_decision or "")[:120],
@@ -169,6 +170,10 @@ def summarize_feedback(records: list[dict[str, Any]]) -> dict[str, Any]:
     by_exit: dict[str, dict[str, Any]] = defaultdict(
         lambda: {"hit": 0, "miss": 0, "neutral": 0}
     )
+    # Track B: signal_tag 別の hit率/avgR（shadow 計測）。1 record が複数 tag を持てば各 tag に計上。
+    by_signal_tags: dict[str, dict[str, Any]] = defaultdict(
+        lambda: {"hit": 0, "miss": 0, "neutral": 0, "r_sum": 0.0, "n": 0}
+    )
     for r in records:
         outcome = r.get("hit_or_miss") or "neutral"
         p = r.get("personality") or "—"
@@ -180,6 +185,11 @@ def summarize_feedback(records: list[dict[str, Any]]) -> dict[str, Any]:
             by_personality[p]["r_sum"] += float(r["r_multiple"])
         by_stance[st][outcome] += 1
         by_exit[ex][outcome] += 1
+        for tag in (r.get("entry_signal_tags") or []):
+            by_signal_tags[tag][outcome] += 1
+            by_signal_tags[tag]["n"] += 1
+            if r.get("r_multiple") is not None:
+                by_signal_tags[tag]["r_sum"] += float(r["r_multiple"])
 
     # 命中率・平均 R を計算
     summary_personality = {}
@@ -193,9 +203,64 @@ def summarize_feedback(records: list[dict[str, Any]]) -> dict[str, Any]:
             "miss": d["miss"],
         }
 
+    # Track B: tag 別命中率・平均 R。判定の信頼性は n に依存（codex: tag 別 n>=20 で残す/落とす）。
+    summary_signal_tags = {}
+    for tag, d in by_signal_tags.items():
+        n = d["n"] or 1
+        summary_signal_tags[tag] = {
+            "n": d["n"],
+            "hit_rate": d["hit"] / n if n else 0.0,
+            "avg_r": d["r_sum"] / n if n else 0.0,
+            "hit": d["hit"],
+            "miss": d["miss"],
+        }
+
     return {
         "by_personality": summary_personality,
         "by_stance": dict(by_stance),
         "by_exit": dict(by_exit),
+        "by_signal_tags": summary_signal_tags,
         "total_records": len(records),
     }
+
+
+def _cohort_stats(recs: list[dict[str, Any]]) -> dict[str, Any]:
+    """cohort の n / hit_rate / avg_r を返す（r_multiple のある record のみ avg_r 母数）。"""
+    n = len(recs)
+    hits = sum(1 for r in recs if (r.get("hit_or_miss") == "hit"))
+    r_vals = [float(r["r_multiple"]) for r in recs if r.get("r_multiple") is not None]
+    return {
+        "n": n,
+        "hit_rate": (hits / n) if n else 0.0,
+        "avg_r": (sum(r_vals) / len(r_vals)) if r_vals else 0.0,
+    }
+
+
+def compare_signal_tags_vs_baseline(records: list[dict[str, Any]]) -> dict[str, Any]:
+    """codex #3: 同じ filled/evaluated universe 内で tag 有無の対照成績（正味エッジ）を測る。
+
+    naive な by_signal_tags は「タグ付き候補が DS/MISATO に買われた後の条件付き成績」であって
+    タグ単体の予測力ではない（fill 率バイアス＝gate を通った銘柄だけ見る生存者バイアス）。
+    ここでは tag を持つ cohort と持たない cohort(control) の hit_rate/avg_r を比較し net edge を出す。
+
+    ※ MVP は同一 records 集合（= 同 broker_mode の評価済 fill）内の単純 tag有無比較。
+      codex 推奨の sector/size_bucket/score帯/pilot マッチングは records に sector/size が無く
+      Universe join が要るため後段（現状は cohort n を見て信頼度を判断・n>=20 で「判定可」）。
+    """
+    all_tags: set[str] = set()
+    for r in records:
+        for t in (r.get("entry_signal_tags") or []):
+            all_tags.add(t)
+    out: dict[str, Any] = {}
+    for tag in sorted(all_tags):
+        with_tag = [r for r in records if tag in (r.get("entry_signal_tags") or [])]
+        without = [r for r in records if tag not in (r.get("entry_signal_tags") or [])]
+        w, wo = _cohort_stats(with_tag), _cohort_stats(without)
+        out[tag] = {
+            "with": w,
+            "without": wo,
+            "net_hit_rate": round(w["hit_rate"] - wo["hit_rate"], 4),
+            "net_avg_r": round(w["avg_r"] - wo["avg_r"], 4),
+            "verdict": "判定可" if w["n"] >= 20 else f"サンプル不足(n={w['n']}<20)",
+        }
+    return out

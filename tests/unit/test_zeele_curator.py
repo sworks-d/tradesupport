@@ -12,6 +12,7 @@ from trading_agent.agents.context import AgentContext
 from trading_agent.agents.zeele_curator import (
     ZeeleCuratorAgent,
     ZeeleCuratorInput,
+    _derive_signal_tags,
     _is_qualified,
     _weekly_buckets,
 )
@@ -50,7 +51,14 @@ def _add_universe(engine, tickers: list[tuple[str, str]]) -> None:
 
 
 def _screening(
-    ticker: str, days_ago: int, *, passed: bool = True, v: float = 60.0, theme: float = 30.0
+    ticker: str,
+    days_ago: int,
+    *,
+    passed: bool = True,
+    v: float = 60.0,
+    theme: float = 30.0,
+    theme_details: dict | None = None,
+    v_shape_details: dict | None = None,
 ) -> ScreeningResult:
     screened_at = dt.datetime.combine(AS_OF, dt.time(9, 0)) - dt.timedelta(days=days_ago)
     return ScreeningResult(
@@ -60,6 +68,8 @@ def _screening(
         theme_score=theme,
         composite_score=max(v, theme),
         screening_passed=passed,
+        theme_details=theme_details or {},
+        v_shape_details=v_shape_details or {},
     )
 
 
@@ -286,6 +296,76 @@ def test_preset_inferred_from_score_dominance(tmp_path: Path) -> None:
     by_ticker = {c["ticker"]: c["preset"] for c in out.candidates}
     assert by_ticker["AAA"] == "contrarian"  # V 字主軸 + details なし → contrarian
     assert by_ticker["BBB"] == "growth"  # テーマ主軸 + keyword<5 → growth
+
+
+# === Track B: signal_tags（record-only・shadow 計測用）===
+
+
+def test_derive_signal_tags_sector_rs() -> None:
+    """B2: theme_details.sector_outperformance > 0.05 で sector_rs タグが立つ。"""
+    # 閾値超え（+8%pt）→ sector_rs
+    assert _derive_signal_tags(
+        _screening("AAA", 2, theme_details={"sector_outperformance": 0.08})
+    ) == ["sector_rs"]
+    # 閾値ちょうど未満（+3%pt）→ タグなし
+    assert _derive_signal_tags(
+        _screening("AAA", 2, theme_details={"sector_outperformance": 0.03})
+    ) == []
+    # theme_details なし → タグなし（KeyError/None で落ちない）
+    assert _derive_signal_tags(_screening("AAA", 2, theme_details={})) == []
+    # 非数値 → タグなし（型ガード）
+    assert _derive_signal_tags(
+        _screening("AAA", 2, theme_details={"sector_outperformance": "strong"})
+    ) == []
+
+
+def test_derive_signal_tags_earnings_accel_not_from_zeele() -> None:
+    """earnings_accel は J-Quants 由来（magi_verify）に一本化。zeele_curator は v_shape から付けない。
+
+    ※ codex 指摘: yfinance 由来代理は 0% 発火（dead）かつ source が混ざるため撤去。
+    """
+    # 旧 yfinance ignition があっても zeele_curator は earnings_accel を付けない
+    assert _derive_signal_tags(
+        _screening("AAA", 2, v_shape_details={"earnings_turnaround": "赤字→黒字"})
+    ) == []
+    # sector_rs は引き続き付く
+    assert _derive_signal_tags(
+        _screening(
+            "AAA", 2,
+            theme_details={"sector_outperformance": 0.08},
+            v_shape_details={"earnings_turnaround": "赤字→黒字"},
+        )
+    ) == ["sector_rs"]
+
+
+def test_signal_tags_propagate_to_candidate_and_state(tmp_path: Path) -> None:
+    """B1: 3週連続入賞銘柄の signal_tags が candidate dict と ZeeleState に伝播・永続化する。"""
+    engine = _engine(tmp_path)
+    _add_universe(engine, [("AAA", "Aで強い"), ("BBB", "Bで普通")])
+    sec_strong = {"sector_outperformance": 0.09}
+    sec_weak = {"sector_outperformance": 0.01}
+    _insert_screening(
+        engine,
+        [
+            _screening("AAA", 2, theme=80, theme_details=sec_strong),
+            _screening("AAA", 9, theme=80, theme_details=sec_strong),
+            _screening("AAA", 16, theme=80, theme_details=sec_strong),
+            _screening("BBB", 2, theme=80, theme_details=sec_weak),
+            _screening("BBB", 9, theme=80, theme_details=sec_weak),
+            _screening("BBB", 16, theme=80, theme_details=sec_weak),
+        ],
+    )
+    out = _run(engine)
+    by_ticker = {c["ticker"]: c["signal_tags"] for c in out.candidates}
+    assert by_ticker["AAA"] == ["sector_rs"]  # 対セクター +9%pt → tag
+    assert by_ticker["BBB"] == []  # +1%pt → tag なし
+
+    # 永続化確認（ZeeleState に signal_tags が保存される）
+    with Session(engine) as s:
+        aaa = s.get(ZeeleState, "AAA")
+        bbb = s.get(ZeeleState, "BBB")
+        assert aaa is not None and aaa.signal_tags == ["sector_rs"]
+        assert bbb is not None and bbb.signal_tags == []
 
 
 def test_topic_narrative_joined_when_available(tmp_path: Path) -> None:

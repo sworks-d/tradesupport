@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import datetime as dt
 
+from sqlalchemy import JSON, Column
 from sqlmodel import Field, SQLModel
 
 from trading_agent.models._common import utcnow
@@ -36,6 +37,10 @@ class ZeeleState(SQLModel, table=True):
     consecutive_weeks: int = 0  # 直近の連続入賞カウント（3で entry 確定、0 でリセット）
     last_screened_at: dt.datetime
     preset: str = ""  # 最後の入賞 preset
+    # PIPELINE v3 Track B: シグナルタグ（pead / sector_rs / macro_tailwind 等）。
+    # **record-only**：候補のタグ付け・shadow 計測用。売買判断は変えない（codex 地雷 #1 回避）。
+    # tag 別 hit率/avgR を feedback_transparency で測り、null を継続的に上回ったものだけ将来加点する。
+    signal_tags: list[str] = Field(default_factory=list, sa_column=Column(JSON))
     structural_thesis: str = ""  # 入賞理由（narrative）
     reference_score: float = 0.0  # 最後の composite_score
     is_active: bool = Field(default=True, index=True)

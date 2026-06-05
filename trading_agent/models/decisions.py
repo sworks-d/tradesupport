@@ -88,6 +88,13 @@ class Decision(SQLModel, table=True):
     # gate⑥/昇格は filled_via だけでなく broker_mode で分離集計する必要がある（混在汚染防止）。
     # entry（fill）時点で刻む。既存値は尊重（上書きしない）。
     entry_broker_mode: str | None = None
+    # PIPELINE v3 Track B: fill 時点の ZEELE signal_tags スナップショット（sector_rs / pead 等）。
+    # **エントリ時点で固定**（評価時の ZeeleState を live join すると陳腐化/look-ahead＝codex 地雷 #2）。
+    # feedback_transparency で tag 別 hit率/avgR を測り、効いた tag だけ将来 score 加点に昇格する。
+    entry_signal_tags: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    # PIPELINE v3 A prime: signal_tags の証拠メタ（{tag: {source, asof, 値…}}）。監査用。
+    # 「なぜそのタグが付いたか」を後から検証できるよう、付与時点の根拠（J-Quants 期末・値等）を残す。
+    signal_tag_sources: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
 
     # 紐付いたトピックス
     supporting_topic_ids: list[int] = Field(default_factory=list, sa_column=Column(JSON))

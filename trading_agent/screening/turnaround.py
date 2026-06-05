@@ -105,3 +105,44 @@ def assess_turnaround(
         return TurnaroundResult("v_candidate", axes, "底＋反転の点火＋株価転換＝V字候補")
     miss = "株価未転換" if not price_turn else "生存性に難"
     return TurnaroundResult("value_trap", axes, f"底＋点火だが{miss}＝確度不足")
+
+
+# ============================================================
+# PIPELINE v3 Track B / A prime: J-Quants 由来 earnings signal_tags（record-only）
+# ============================================================
+
+
+def derive_earnings_signal_tags(
+    fin: Financials | None, asof: str | None = None
+) -> tuple[list[str], dict]:
+    """J-Quants 財務から earnings 系 signal_tags を導出する（record-only・A prime）。
+
+    `_ignition`（決算 net_income の二階微分>0＝成長加速、または営業マージン YoY 改善）が
+    立てば `earnings_accel`。yfinance 由来の dead な代理（zeele_curator）に対し、本番 magi_verify が
+    既に引いている J-Quants `fin` を再利用するため JP 中小型でも実発火が期待できる（¥0・新規fetch無し）。
+
+    ※ これは真の PEAD ではない（開示日時 + 発表時 surprise + post-announcement window が無い）。
+      開示 recency は fin.current の期末で近似。真 PEAD は pead_candidate/pead_confirmed で別実装。
+
+    返り値: (tags, evidence)。evidence は「なぜそのタグが付いたか」の監査用メタ（source/asof/値）。
+    取得失敗・データ欠損時は空（推測しない・H10）。
+    """
+    tags: list[str] = []
+    evidence: dict = {}
+    if fin is None:
+        return tags, evidence
+    try:
+        ignition = assess_turnaround(fin).axes.get("ignition")
+    except Exception:
+        return tags, evidence
+    if ignition is True:
+        tags.append("earnings_accel")
+        cur = fin.current
+        prior = fin.prior
+        evidence["earnings_accel"] = {
+            "source": getattr(fin, "source", "jquants"),
+            "asof": asof or getattr(cur, "period", None),  # 期末日（開示 recency の近似）
+            "net_income": getattr(cur, "net_income", None),
+            "prior_net_income": getattr(prior, "net_income", None) if prior else None,
+        }
+    return tags, evidence
