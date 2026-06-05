@@ -68,6 +68,24 @@ def _line(c: str = "─", n: int = 60) -> str:
 _OFFICIAL_SOURCES = ("ds_dispatch", "manual")
 
 
+def _latest_forward_diagnosis() -> dict[str, Any]:
+    """autoreport/forward/ の最新 forward 診断 JSON を **fetch せず** 読む（codex #4・read-only）。
+
+    scripts/forward_diagnosis.py が yfinance で生成・archive したものを参照する（phase_c は価格 fetch しない）。
+    未生成・読込失敗は空（推測しない）。
+    """
+    d = Path("autoreport/forward")
+    if not d.exists():
+        return {}
+    files = sorted(d.glob("*.json"))
+    if not files:
+        return {}
+    try:
+        return _json.loads(files[-1].read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
 def _realized_pnl(engine) -> dict[str, dict]:
     """closed Portfolio の確定損益を broker_mode 別 × official/legacy で集計（gross・コスト0）。
 
@@ -486,6 +504,10 @@ def build_phase_c_status(engine) -> dict[str, Any]:
         # Track A: exposure recommendation 別成績（record-only）。マクロ posture が結果と相関するか。
         # **sizing は未変更**＝今は記録のみ。null を超えたら将来 sizing/閾値の小幅調整へ昇格。
         "exposure_performance_paper": exposure_perf,
+        # codex #4: forward 早期診断（評価期日60日を待たず 5/20/40/60日 対TOPIX超過）。
+        # scripts/forward_diagnosis.py が autoreport/forward/ に archive したものを **fetch せず** 読む。
+        # gate を前倒しで通すためでなく、観測空白(6月約定→8月評価)の仮説棄却用。空=未生成。
+        "forward_diagnosis_paper": _latest_forward_diagnosis(),
         "fix_direction_paper": {
             "failing_criteria": [
                 {"name": c.name, "value": str(c.value), "threshold": c.threshold}
