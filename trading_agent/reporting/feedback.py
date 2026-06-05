@@ -126,6 +126,9 @@ def collect_feedback_records(
                     "filled_via": d.filled_via,
                     "entry_date": d.entry_date.isoformat() if d.entry_date else None,
                     "entry_market_regime": d.entry_market_regime,
+                    "entry_exposure_recommendation": d.entry_exposure_recommendation,  # Track A
+                    "entry_breadth_score": d.entry_breadth_score,
+                    "macro_adjustment": d.macro_adjustment,
                     "entry_signal_tags": list(d.entry_signal_tags or []),  # Track B: tag 別 shadow 計測
                     "benchmark_return": d.benchmark_return,
                     "target_period_days": d.target_period_days,
@@ -174,6 +177,10 @@ def summarize_feedback(records: list[dict[str, Any]]) -> dict[str, Any]:
     by_signal_tags: dict[str, dict[str, Any]] = defaultdict(
         lambda: {"hit": 0, "miss": 0, "neutral": 0, "r_sum": 0.0, "n": 0}
     )
+    # Track A: exposure recommendation 別の成績（マクロ posture が結果と相関するか・shadow 計測）。
+    by_exposure: dict[str, dict[str, Any]] = defaultdict(
+        lambda: {"hit": 0, "miss": 0, "neutral": 0, "r_sum": 0.0, "n": 0}
+    )
     for r in records:
         outcome = r.get("hit_or_miss") or "neutral"
         p = r.get("personality") or "—"
@@ -190,6 +197,12 @@ def summarize_feedback(records: list[dict[str, Any]]) -> dict[str, Any]:
             by_signal_tags[tag]["n"] += 1
             if r.get("r_multiple") is not None:
                 by_signal_tags[tag]["r_sum"] += float(r["r_multiple"])
+        exp = r.get("entry_exposure_recommendation")
+        if exp:
+            by_exposure[exp][outcome] += 1
+            by_exposure[exp]["n"] += 1
+            if r.get("r_multiple") is not None:
+                by_exposure[exp]["r_sum"] += float(r["r_multiple"])
 
     # 命中率・平均 R を計算
     summary_personality = {}
@@ -215,11 +228,24 @@ def summarize_feedback(records: list[dict[str, Any]]) -> dict[str, Any]:
             "miss": d["miss"],
         }
 
+    # Track A: exposure recommendation 別の命中率・平均 R（マクロ posture の有効性 shadow）。
+    summary_exposure = {}
+    for exp, d in by_exposure.items():
+        n = d["n"] or 1
+        summary_exposure[exp] = {
+            "n": d["n"],
+            "hit_rate": d["hit"] / n if n else 0.0,
+            "avg_r": d["r_sum"] / n if n else 0.0,
+            "hit": d["hit"],
+            "miss": d["miss"],
+        }
+
     return {
         "by_personality": summary_personality,
         "by_stance": dict(by_stance),
         "by_exit": dict(by_exit),
         "by_signal_tags": summary_signal_tags,
+        "by_exposure": summary_exposure,
         "total_records": len(records),
     }
 

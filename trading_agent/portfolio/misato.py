@@ -1373,6 +1373,30 @@ def dispatch(
     except Exception:
         _entry_cycle = "unknown"
 
+    # Track A（マクロ×ミクロ配線）: 市場 posture を 1 回集約（regime + breadth/uptrend）し、
+    # entry 時点で Decision に record-only で刻む（**sizing は変えない**・shadow 計測用）。
+    # 実 fill 時のみ（dry-run は上で return 済）＝breadth fetch は 1 dispatch 1 回。
+    _exposure_rec: str | None = None
+    _breadth_score: float | None = None
+    _macro_adj: float | None = None
+    try:
+        from trading_agent.discipline.market_posture import compute_market_posture
+
+        _posture, _posture_meta = compute_market_posture(engine, regime=_entry_cycle)
+        _exposure_rec = _posture.recommendation
+        _breadth_score = _posture_meta.get("breadth_score")
+        _macro_adj = _posture_meta.get("macro_adjustment")
+        _log.info(
+            "track_a_market_posture",
+            recommendation=_exposure_rec,
+            breadth=_breadth_score,
+            uptrend=_posture_meta.get("uptrend_score"),
+            regime=_entry_cycle,
+            sample_n=_posture_meta.get("sample_n"),
+        )
+    except Exception as exc:
+        _log.warning("track_a_posture_failed", error=str(exc))
+
     for pilot_name, proposals in proposals_by_pilot.items():
         if not proposals:
             continue
@@ -1485,6 +1509,10 @@ def dispatch(
                 # broker_mode 分離: dispatch が使う treasury と同じモードで fill を刻む
                 # （Decision.entry_broker_mode = paper/live。gate⑥/昇格の分離集計用）。
                 broker_mode=_resolve_broker_mode(None),
+                # Track A: entry 時点の市場 posture（record-only・sizing 不変）。
+                exposure_recommendation=_exposure_rec,
+                breadth_score=_breadth_score,
+                macro_adjustment=_macro_adj,
             )
             fills_summary = {
                 "pilot": pilot_name,

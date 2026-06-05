@@ -95,6 +95,12 @@ class Decision(SQLModel, table=True):
     # PIPELINE v3 A prime: signal_tags の証拠メタ（{tag: {source, asof, 値…}}）。監査用。
     # 「なぜそのタグが付いたか」を後から検証できるよう、付与時点の根拠（J-Quants 期末・値等）を残す。
     signal_tag_sources: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    # PIPELINE v3 Track A（マクロ×ミクロ配線）: entry 時点の市場 posture を **record-only** で固定。
+    # exposure_coach（breadth/regime → 新規エントリー許容ラベル）の出力を刻む。**sizing は変えない**。
+    # 「マクロが効いたか」を shadow 計測し、null を超えたら将来 sizing/閾値の小幅調整へ昇格する。
+    entry_breadth_score: float | None = None  # 市場 breadth（0-100・上昇銘柄比率）
+    entry_exposure_recommendation: str | None = None  # NEW_ENTRY_ALLOWED/REDUCE_ONLY/CASH_PRIORITY
+    macro_adjustment: float | None = None  # exposure 由来の想定サイジング係数（0=中立/負=縮小）。未適用
 
     # 紐付いたトピックス
     supporting_topic_ids: list[int] = Field(default_factory=list, sa_column=Column(JSON))

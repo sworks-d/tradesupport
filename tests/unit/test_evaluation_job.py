@@ -74,6 +74,20 @@ class TestRecordEntry:
         with Session(engine) as s:
             assert s.get(Decision, did).entry_signal_tags == ["sector_rs"]
 
+    def test_stamps_macro_posture_record_only(self, engine) -> None:
+        """Track A: record_entry が exposure posture（recommendation/breadth/macro_adj）を record-only で刻む。"""
+        did = _seed(engine, "NVDA")
+        record_entry(
+            engine, did, entry_price=100.0, stop_pct=0.1, target_return=0.2,
+            target_period_days=90, on_date=dt.date(2026, 1, 1),
+            exposure_recommendation="REDUCE_ONLY", breadth_score=42.0, macro_adjustment=-0.3,
+        )
+        with Session(engine) as s:
+            d = s.get(Decision, did)
+            assert d.entry_exposure_recommendation == "REDUCE_ONLY"
+            assert d.entry_breadth_score == 42.0
+            assert d.macro_adjustment == -0.3
+
     def test_merges_signal_tags_preserving_existing(self, engine) -> None:
         """A prime: verify 時点で付いた earnings_accel を fill 時の ZEELE sector_rs snapshot が消さない。"""
         _seed_zeele(engine, "NVDA", ["sector_rs"])

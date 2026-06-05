@@ -433,6 +433,7 @@ def build_phase_c_status(engine) -> dict[str, Any]:
     _paper_summary = summarize_feedback(paper_records)
     perf = _paper_summary.get("by_personality", {})
     sig_tag_perf = _paper_summary.get("by_signal_tags", {})
+    exposure_perf = _paper_summary.get("by_exposure", {})  # Track A: マクロ posture 別成績
     sig_tag_vs_baseline = compare_signal_tags_vs_baseline(paper_records)  # codex #3: 正味エッジ
     proms = evaluate_promotions(engine, broker_mode="paper")
     # 配分の透明性（なぜこの機体に予算が寄るか）= pilot_multipliers の根拠（broker_mode=paper）
@@ -482,6 +483,9 @@ def build_phase_c_status(engine) -> dict[str, Any]:
         # codex #3: tag 有無の対照成績（正味エッジ）。naive な hit_rate のバイアスを補正。
         # with(タグあり) vs without(タグなし) の hit_rate/avg_r 差 = net。同 filled universe 内比較。
         "signal_tag_vs_baseline_paper": sig_tag_vs_baseline,
+        # Track A: exposure recommendation 別成績（record-only）。マクロ posture が結果と相関するか。
+        # **sizing は未変更**＝今は記録のみ。null を超えたら将来 sizing/閾値の小幅調整へ昇格。
+        "exposure_performance_paper": exposure_perf,
         "fix_direction_paper": {
             "failing_criteria": [
                 {"name": c.name, "value": str(c.value), "threshold": c.threshold}

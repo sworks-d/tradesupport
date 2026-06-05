@@ -232,6 +232,9 @@ def paper_fill_approved(
     filled_via: str = "ds_dispatch",
     market_regime: str | None = None,
     broker_mode: str | None = None,
+    exposure_recommendation: str | None = None,
+    breadth_score: float | None = None,
+    macro_adjustment: float | None = None,
 ) -> PaperResult:
     """status=approved の decision を翌寄り価格で紙約定し、Portfolio(active)化＋record_entry する。
 
@@ -611,6 +614,10 @@ def paper_fill_approved(
             target_period_days=horizon, on_date=day,
             filled_via=filled_via, market_regime=market_regime,
             broker_mode=fill_broker_mode,
+            # Track A: entry 時点の市場 posture（record-only・sizing 不変）。
+            exposure_recommendation=exposure_recommendation,
+            breadth_score=breadth_score,
+            macro_adjustment=macro_adjustment,
         )
 
     result.cash_after = cash

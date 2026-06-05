@@ -145,6 +145,9 @@ def record_entry(
     filled_via: str | None = None,
     market_regime: str | None = None,
     broker_mode: str | None = None,
+    exposure_recommendation: str | None = None,
+    breadth_score: float | None = None,
+    macro_adjustment: float | None = None,
 ) -> bool:
     """発注時：entry/stop/target/評価期日を decision に刻む（評価の前提）。
 
@@ -152,6 +155,7 @@ def record_entry(
     最初の fill: そのまま記録 / 2 回目以降: (既存価格×既存株数 + 新価格×新株数) / 合計株数
     A7: filled_via（経路）/ entry_date（実約定日）/ market_regime も刻む（既存値は尊重）。
     broker_mode（paper/live）も刻む（gate⑥/昇格の分離集計用・既存値尊重）。
+    Track A: exposure posture（recommendation/breadth/macro_adjustment）を record-only で刻む。
     """
     base = on_date or today_jst()
     with Session(engine, expire_on_commit=False) as session:
@@ -181,6 +185,11 @@ def record_entry(
             d.entry_market_regime = market_regime
         if d.entry_broker_mode is None and broker_mode is not None:
             d.entry_broker_mode = broker_mode
+        # Track A: entry 時点の市場 posture を record-only で刻む（既存値尊重・sizing は変えない）。
+        if d.entry_exposure_recommendation is None and exposure_recommendation is not None:
+            d.entry_exposure_recommendation = exposure_recommendation
+            d.entry_breadth_score = breadth_score
+            d.macro_adjustment = macro_adjustment
         # Track B: fill 時点の ZEELE signal_tags をスナップショット（record-only・union merge）。
         # magi_verify が先に書いた earnings_accel 等を消さず sector_rs を足す（codex 地雷 #2）。
         _merge_signal_tags(d, _lookup_signal_tags(session, d.ticker))
