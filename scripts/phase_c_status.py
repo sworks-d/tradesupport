@@ -48,6 +48,7 @@ from trading_agent.evaluation.gate import (
 )
 from trading_agent.models.decisions import Decision
 from trading_agent.models.portfolio import Portfolio
+from trading_agent.models.universe import Universe
 from trading_agent.portfolio.misato import (
     auto_trade_view,
     check_halt,
@@ -84,6 +85,64 @@ def _latest_forward_diagnosis() -> dict[str, Any]:
         return _json.loads(files[-1].read_text(encoding="utf-8"))
     except Exception:
         return {}
+
+
+def _purchase_history(engine, *, broker_mode: str = "paper") -> dict[str, Any]:
+    """約定履歴（何を・いつ・いくらで・何株 買ったか）= トレード台帳（read-only・価格 fetch なし）。
+
+    official（紐付く Decision の filled_via∈ds_dispatch/manual）の paper 約定を時系列（新しい順）で返す。
+    closed は売値/理由/損益も併記。legacy（cleanup/reset/分割/上場廃止由来）は件数のみ別掲（codex の
+    official/legacy 分離指摘）。含み損益はダッシュボード側（価格 fetch が要るためここでは出さない）。
+    """
+    _OFFICIAL = ("ds_dispatch", "manual")
+    with Session(engine) as s:
+        ports = s.exec(
+            select(Portfolio).where(col(Portfolio.broker_mode) == broker_mode)
+        ).all()
+        decs = {d.id: d for d in s.exec(select(Decision)).all()}
+        names = {u.ticker: u.name for u in s.exec(select(Universe)).all()}
+
+    official: list[dict[str, Any]] = []
+    legacy_n = 0
+    for p in ports:
+        d = decs.get(getattr(p, "decision_id", None))
+        is_official = d is not None and d.filled_via in _OFFICIAL
+        if not is_official:
+            legacy_n += 1
+            continue
+        qty = float(p.qty or 0)
+        buy = float(p.buy_price or 0)
+        closed = p.status == "closed"
+        sell = float(p.closed_price or 0) if closed else None
+        pnl = round((sell - buy) * qty) if (closed and sell) else None
+        official.append({
+            "ticker": p.ticker,
+            "name": names.get(p.ticker, ""),
+            "buy_date": p.buy_date.isoformat() if p.buy_date else None,
+            "buy_price": round(buy, 2),
+            "qty": qty,
+            "cost_jpy": round(buy * qty),          # 取得原価（何をいくらで×何株）
+            "status": p.status,                     # active / closed
+            "sell_price": round(sell, 2) if sell else None,
+            "closed_reason": p.closed_reason if closed else None,
+            "realized_pnl_jpy": pnl,                # closed のみ（active は含み=ダッシュボード）
+            "personality": p.personality,
+            "filled_via": d.filled_via,
+            "entry_signal_tags": list(d.entry_signal_tags or []),
+            "entry_exposure_recommendation": d.entry_exposure_recommendation,
+        })
+    # 新しい買い順（buy_date 降順・None は末尾）
+    official.sort(key=lambda r: (r["buy_date"] or ""), reverse=True)
+    return {
+        "broker_mode": broker_mode,
+        "purchases": official,
+        "official_n": len(official),
+        "legacy_excluded_n": legacy_n,
+        "note": (
+            "official(ds_dispatch/manual)の約定のみ。legacy(cleanup/reset/分割/上場廃止由来)は件数のみ別掲。"
+            "active の含み損益は価格 fetch が要るためダッシュボード側で表示。"
+        ),
+    }
 
 
 def _realized_pnl(engine) -> dict[str, dict]:
@@ -508,6 +567,8 @@ def build_phase_c_status(engine) -> dict[str, Any]:
         # scripts/forward_diagnosis.py が autoreport/forward/ に archive したものを **fetch せず** 読む。
         # gate を前倒しで通すためでなく、観測空白(6月約定→8月評価)の仮説棄却用。空=未生成。
         "forward_diagnosis_paper": _latest_forward_diagnosis(),
+        # 約定履歴（何を・いつ・いくらで・何株 買ったか）= トレード台帳（read-only・fetch なし）。
+        "purchase_history_paper": _purchase_history(engine, broker_mode="paper"),
         "fix_direction_paper": {
             "failing_criteria": [
                 {"name": c.name, "value": str(c.value), "threshold": c.threshold}
