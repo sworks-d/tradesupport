@@ -60,6 +60,9 @@ def _active_jp_universe_sample(engine: Engine, cap: int = _SAMPLE_CAP) -> list[s
                 select(Universe)
                 .where(col(Universe.is_active))
                 .where(col(Universe.market) == "JP")
+                # codex P2: 投入順（market_cap/sector 偏り）バイアスを潰し再現性を固定。
+                # （より良くは size/sector stratified だが MVP は ticker 順で安定化）。
+                .order_by(col(Universe.ticker))
             )
         )
     tickers = [r.ticker for r in rows]
@@ -99,7 +102,16 @@ def compute_market_posture(
         returns_fetcher = _fetch_30d_returns_bulk
 
     tickers = _active_jp_universe_sample(engine)
-    returns = returns_fetcher(tickers) if tickers else {}
+    # codex P2: fetch 例外は **ここで** 握る（returns={} → breadth/uptrend=None）。
+    # こうすると breadth 取得に失敗しても regime-only posture は記録され続ける（欠損を減らす）。
+    returns: dict[str, float] = {}
+    breadth_failed = False
+    if tickers:
+        try:
+            returns = returns_fetcher(tickers) or {}
+        except Exception:
+            returns = {}
+            breadth_failed = True
 
     breadth_score: float | None = None
     uptrend_score: float | None = None
@@ -120,6 +132,8 @@ def compute_market_posture(
     meta = {
         "regime": reg,
         "sample_n": len(returns),
+        "requested_n": len(tickers),
+        "breadth_failed": breadth_failed,  # codex E: 取得失敗の可視化
         "breadth_score": breadth_score,
         "uptrend_score": uptrend_score,
         "macro_adjustment": macro_adjustment_for(decision.recommendation),

@@ -89,6 +89,21 @@ def test_breadth_fetch_failure_degrades_gracefully(tmp_path: Path) -> None:
     assert decision.recommendation in ("NEW_ENTRY_ALLOWED", "REDUCE_ONLY", "CASH_PRIORITY")
 
 
+def test_breadth_fetch_exception_recorded_as_regime_only(tmp_path: Path) -> None:
+    """codex P2: fetcher が例外を投げても compute 内で握り、regime-only posture を記録する。"""
+    _eng = _engine(tmp_path)
+    _seed_jp_universe(_eng, n=5)
+
+    def _boom(_tickers):
+        raise RuntimeError("yfinance down")
+
+    decision, meta = compute_market_posture(_eng, returns_fetcher=_boom, regime="bull")
+    assert meta["breadth_failed"] is True
+    assert meta["breadth_score"] is None
+    # regime-only でも posture（recommendation）は記録され続ける（欠損を減らす）
+    assert decision.recommendation in ("NEW_ENTRY_ALLOWED", "REDUCE_ONLY", "CASH_PRIORITY")
+
+
 def test_macro_adjustment_mapping() -> None:
     assert macro_adjustment_for("NEW_ENTRY_ALLOWED") == 0.0
     assert macro_adjustment_for("REDUCE_ONLY") == -0.3

@@ -287,6 +287,21 @@ def compare_signal_tags_vs_baseline(records: list[dict[str, Any]]) -> dict[str, 
             "without": wo,
             "net_hit_rate": round(w["hit_rate"] - wo["hit_rate"], 4),
             "net_avg_r": round(w["avg_r"] - wo["avg_r"], 4),
-            "verdict": "判定可" if w["n"] >= 20 else f"サンプル不足(n={w['n']}<20)",
+            # codex P1: control(without) が薄いと net = with - 0 で誤読する。
+            # judging には with/without 両方 n>=20 を要件にする（control 不足を明示）。
+            "verdict": _baseline_verdict(w["n"], wo["n"]),
         }
     return out
+
+
+# codex P1: net edge 判定は control 標本も要る。両側 n>=20、control が薄ければ「control不足」。
+_BASELINE_MIN_N = 20
+_BASELINE_MIN_CONTROL_N = 5
+
+
+def _baseline_verdict(with_n: int, without_n: int) -> str:
+    if without_n < _BASELINE_MIN_CONTROL_N:
+        return f"control不足(without_n={without_n})"
+    if with_n >= _BASELINE_MIN_N and without_n >= _BASELINE_MIN_N:
+        return "判定可"
+    return f"サンプル不足(with_n={with_n}/without_n={without_n}・両側>=20 要)"

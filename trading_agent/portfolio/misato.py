@@ -1393,6 +1393,8 @@ def dispatch(
             uptrend=_posture_meta.get("uptrend_score"),
             regime=_entry_cycle,
             sample_n=_posture_meta.get("sample_n"),
+            requested_n=_posture_meta.get("requested_n"),
+            breadth_failed=_posture_meta.get("breadth_failed"),  # codex E: 取得失敗の可視化
         )
     except Exception as exc:
         _log.warning("track_a_posture_failed", error=str(exc))

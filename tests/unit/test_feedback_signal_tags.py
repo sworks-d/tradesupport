@@ -77,7 +77,20 @@ def test_compare_signal_tags_vs_baseline_net_edge() -> None:
     assert out["sector_rs"]["without"]["hit_rate"] == 0.0
     assert out["sector_rs"]["net_hit_rate"] == 1.0   # 1.0 - 0.0
     assert out["sector_rs"]["net_avg_r"] == 2.5      # 1.5 - (-1.0)
-    assert "サンプル不足" in out["sector_rs"]["verdict"]  # n=2 < 20
+    assert "control不足" in out["sector_rs"]["verdict"]  # without_n=2 < 5
+
+
+def test_compare_verdict_requires_both_cohorts_n20() -> None:
+    """codex P1: 判定可は with/without 両側 n>=20。control 薄いと control不足。"""
+    # with 25 (全 hit) / without 2 → control不足（net=with-0 の誤読防止）
+    recs = [_rec(["t"], "hit", 1.0) for _ in range(25)] + [_rec([], "miss", -1.0) for _ in range(2)]
+    assert "control不足" in compare_signal_tags_vs_baseline(recs)["t"]["verdict"]
+    # with 25 / without 25 → 判定可
+    recs2 = [_rec(["t"], "hit", 1.0) for _ in range(25)] + [_rec([], "miss", -1.0) for _ in range(25)]
+    assert compare_signal_tags_vs_baseline(recs2)["t"]["verdict"] == "判定可"
+    # with 5 / without 25 → サンプル不足（with 側 <20）
+    recs3 = [_rec(["t"], "hit", 1.0) for _ in range(5)] + [_rec([], "miss", -1.0) for _ in range(25)]
+    assert "サンプル不足" in compare_signal_tags_vs_baseline(recs3)["t"]["verdict"]
 
 
 def test_compare_signal_tags_vs_baseline_empty_when_no_tags() -> None:
