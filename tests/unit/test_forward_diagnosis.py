@@ -82,6 +82,44 @@ def test_only_official_paper_included(tmp_path: Path) -> None:
     assert res["overall"]["2"]["n"] == 1
 
 
+def test_current_mtm_for_young_position(tmp_path: Path) -> None:
+    """codex P2: 固定 horizon 未到達でも entry→今日の暫定超過(current_mtm)は出る。"""
+    eng = _engine(tmp_path)
+    _seed_filled(eng, "AAA", entry_price=100.0, tags=["sector_rs"])
+
+    def fetcher(_tickers, _start):
+        # 3 本(entry + 2日) → horizon 5 未到達だが current は出せる
+        return {"AAA": [100.0, 105.0, 110.0], "1306.T": [200.0, 202.0, 204.0]}
+
+    res = compute_forward_diagnosis(eng, series_fetcher=fetcher, horizons=(5,))
+    assert res["overall"]["5"]["n"] == 0  # 固定 horizon は未到達
+    cm = res["current_mtm"]
+    assert cm["n"] == 1
+    assert abs(cm["avg_excess"] - 0.08) < 1e-6  # 0.10 - 0.02
+    assert cm["avg_bars_held"] == 2.0
+
+
+def test_tag_vs_control_net_excess(tmp_path: Path) -> None:
+    """codex P2/#3: tag with/without の超過差(forward 正味エッジ)を horizon 別に出す。"""
+    eng = _engine(tmp_path)
+    _seed_filled(eng, "AAA", entry_price=100.0, tags=["sector_rs"])  # tag あり
+    _seed_filled(eng, "BBB", entry_price=100.0, tags=[])             # tag なし(control)
+
+    def fetcher(_tickers, _start):
+        return {
+            "AAA": [100.0, 100.0, 110.0],   # +10% → 超過 +8%
+            "BBB": [100.0, 100.0, 95.0],    # -5%  → 超過 -7%
+            "1306.T": [200.0, 200.0, 204.0],  # +2%
+        }
+
+    res = compute_forward_diagnosis(eng, series_fetcher=fetcher, horizons=(2,))
+    c = res["tag_vs_control"]["sector_rs"]["2"]
+    assert c["with_n"] == 1 and c["without_n"] == 1
+    assert abs(c["with_avg_excess"] - 0.08) < 1e-6
+    assert abs(c["without_avg_excess"] - (-0.07)) < 1e-6
+    assert abs(c["net_avg_excess"] - 0.15) < 1e-6  # 0.08 - (-0.07)
+
+
 def test_negative_excess_counts_as_loss(tmp_path: Path) -> None:
     """銘柄が TOPIX に負ければ超過 < 0 で勝率に入らない。"""
     eng = _engine(tmp_path)
