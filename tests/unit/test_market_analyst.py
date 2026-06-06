@@ -180,6 +180,28 @@ class TestAgent:
         assert sig.ai_confidence == 50.0  # LLM 無し → 既定
         assert sig.scenarios == []
 
+    async def test_llm_disabled_skips_sonnet_keeps_deterministic_score(
+        self, tmp_path: Path
+    ) -> None:
+        """B-4（監査）: llm_enabled=False なら LLM 登録済でも呼ばず決定論スコアのみ。
+
+        BuySignal は生成され score（候補順序の根拠）は残るが、ai_confidence は中立 50・
+        scenarios は空（＝Sonnet を呼んでいない＝課金 0）。
+        """
+        ctx = _ctx(tmp_path, with_llm=True)  # LLM は登録されているが…
+        out = await MarketAnalystAgent(ctx).execute(
+            MarketAnalystInput(invocation_id="inv", tickers=["AAPL"], llm_enabled=False)
+        )
+        assert out.success is True
+        with Session(ctx.engine) as s:
+            sig = s.exec(select(BuySignal).where(col(BuySignal.is_active))).one()
+        assert sig.ticker == "AAPL"
+        # LLM を呼んでいない証拠（呼んでいれば ai_confidence=80 / scenarios=3）
+        assert sig.ai_confidence == 50.0
+        assert sig.scenarios == []
+        # 決定論スコアは生成されている（候補順序が維持される）
+        assert sig.score > 0
+
     async def test_missing_price_skips(self, tmp_path: Path) -> None:
         engine = _engine(tmp_path)
         host = MCPHost()

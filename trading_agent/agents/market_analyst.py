@@ -9,6 +9,9 @@ screening 候補を個別に深掘りし、5軸スコア + 3シナリオ + thesi
   LLM ブレンドは将来拡張（§2.8 ニュース無し=50 と整合）。
 - ai_confidence / scenarios / thesis_checklist / reasons / risks：llm_call（Hot）の JSON。
   LLM 未登録/失敗時は graceful default（確信度 50・空シナリオ）。
+  B-4（監査）: llm_enabled=False（朝バッチ既定）なら Hot を呼ばず決定論のみ。BuySignal の
+  詳細分析は実 fill pool（MAGI+ZeeleState）で未使用なため、候補順序を決める score だけ
+  残して Sonnet 課金を止める。Setting market_analyst_llm_enabled=true で有効化。
 - 推奨数量・指値：§2.7 のルール。
 """
 
@@ -52,6 +55,11 @@ class MarketAnalystInput(AgentInput):
     tickers: list[str]
     parallel: bool = True
     deep_dive: bool = False
+    # B-4（監査）: Hot(Sonnet) の深掘り判断（ai_confidence/scenarios）を呼ぶか。
+    # False なら LLM を呼ばず決定論スコアのみで BuySignal を組む（候補順序は score で維持・
+    # 課金 0）。下流の実 fill pool は MAGI+ZeeleState で再構築され BuySignal の詳細分析は
+    # 使われないため、朝バッチでは既定 OFF にして無駄な Sonnet 課金を止める。
+    llm_enabled: bool = True
 
 
 class MarketAnalystOutput(AgentOutput):
@@ -260,7 +268,14 @@ class MarketAnalystAgent(Agent[MarketAnalystInput]):
         strategy_fit = screen.get("composite_score", 0.0)
         is_v_shape = screen.get("v_shape_score", 0.0) >= screen.get("theme_score", 0.0)
 
-        judgment = await self._llm_judgment(ticker, agent_input.deep_dive)
+        # B-4: llm_enabled=False なら Sonnet 深掘りを呼ばず決定論（ai_confidence=中立50・
+        # scenarios 空）。score の ai_confidence 寄与は weight 0.10 のみ、scenarios は下流
+        # 未使用なので順序付けはほぼ不変のまま課金を 0 にできる。
+        judgment = (
+            await self._llm_judgment(ticker, agent_input.deep_dive)
+            if agent_input.llm_enabled
+            else {}
+        )
         ai_confidence = float(judgment.get("ai_confidence", 50.0))
 
         score = overall_score(

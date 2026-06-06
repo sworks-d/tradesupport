@@ -402,10 +402,31 @@ async def run_morning_batch(
         )
 
     async def run_market_analyst() -> object:
+        # B-4（監査）: 既定で Hot(Sonnet) 深掘りを止め決定論スコアのみ（候補順序は score で
+        # 維持）。詳細分析（scenarios 等）は実 fill pool で未使用な高コスト経路のため。
+        # Setting `market_analyst_llm_enabled=true` を明示設定したときだけ Sonnet を呼ぶ。
+        import json as _json
+
+        from trading_agent.models.settings import Setting
+
+        with Session(engine) as _s:
+            _row = _s.get(Setting, "market_analyst_llm_enabled")
+        _llm_enabled = False
+        if _row is not None:
+            try:
+                _llm_enabled = bool(_json.loads(_row.value))
+            except Exception:
+                _llm_enabled = False
+
         candidates = _candidate_tickers(engine)
         return await execute_agent(
             MarketAnalystAgent(ctx),
-            MarketAnalystInput(invocation_id=invocation_id, tickers=candidates, dry_run=dry_run),
+            MarketAnalystInput(
+                invocation_id=invocation_id,
+                tickers=candidates,
+                dry_run=dry_run,
+                llm_enabled=_llm_enabled,
+            ),
             engine,
         )
 
