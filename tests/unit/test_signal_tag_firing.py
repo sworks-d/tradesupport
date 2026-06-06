@@ -11,11 +11,10 @@ from pathlib import Path
 
 from sqlmodel import Session
 
+from scripts.phase_c_status import _signal_tag_firing
 from trading_agent.db import create_all, get_engine
 from trading_agent.models.decisions import Decision
 from trading_agent.utils.time_utils import utcnow
-
-from scripts.phase_c_status import _signal_tag_firing
 
 
 def _engine(tmp_path: Path):

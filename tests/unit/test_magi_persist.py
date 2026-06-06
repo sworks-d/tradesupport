@@ -187,6 +187,64 @@ class TestMagiVerify:
             assert d.signal_tag_sources["earnings_accel"]["source"] == "jquants"
             assert d.signal_tag_sources["news_negative"]["source"] == "news+disclosure"
 
+    async def test_real_judge_populates_news_event_sink(self, engine) -> None:
+        """A 実経路: make_live_judge_fn が取得済 news を分類して news_event_sink に積む。
+
+        derive_news_event_tags 単体と sink 適用単体は別テストで確認済だが、両者を繋ぐ
+        「実 judge が news を取得→分類→sink に積む」経路がここまで未カバーだった（再検証で発見）。
+        """
+        from trading_agent.magi.persist import make_live_judge_fn
+        from trading_agent.mcp_tools.disclosure import DisclosureOutput
+        from trading_agent.mcp_tools.fundamentals import FundamentalsOutput
+        from trading_agent.mcp_tools.news import NewsOutput
+        from trading_agent.mcp_tools.technicals import TechnicalsOutput
+
+        async def call_tool(name: str, _inp):
+            if name == "fundamentals":
+                return FundamentalsOutput(success=True, data={})
+            if name == "technicals":
+                return TechnicalsOutput(success=True, data={"rsi": 50.0}, signals=[])
+            if name == "news":
+                return NewsOutput(
+                    success=True, articles=[{"title": "通期業績を上方修正 増配も発表"}]
+                )
+            return DisclosureOutput(success=True, disclosures=[])
+
+        sink: dict = {}
+        judge = make_live_judge_fn(call_tool, news_event_sink=sink)
+        await judge("3697")
+        assert sink["3697"][0] == ["news_positive"]
+        assert sink["3697"][1]["news_positive"]["pos"] == 1
+
+    async def test_news_event_tags_end_to_end_via_real_judge(self, engine) -> None:
+        """A 全経路: make_live_judge_fn → news_event_sink → magi_verify → Decision.entry_signal_tags。"""
+        from trading_agent.magi.persist import make_live_judge_fn
+        from trading_agent.mcp_tools.disclosure import DisclosureOutput
+        from trading_agent.mcp_tools.fundamentals import FundamentalsOutput
+        from trading_agent.mcp_tools.news import NewsOutput
+        from trading_agent.mcp_tools.technicals import TechnicalsOutput
+
+        ids = materialize_decisions(engine, ["3697"])
+
+        async def call_tool(name: str, _inp):
+            if name == "fundamentals":
+                return FundamentalsOutput(success=True, data={})
+            if name == "technicals":
+                return TechnicalsOutput(success=True, data={"rsi": 50.0}, signals=[])
+            if name == "news":
+                return NewsOutput(success=True, articles=[{"title": "リコール実施のお知らせ"}])
+            return DisclosureOutput(success=True, disclosures=[])
+
+        sink: dict = {}
+        judge = make_live_judge_fn(call_tool, news_event_sink=sink)
+        # 2回回しても冪等（news タグが重複しない）
+        await magi_verify(engine, ids, judge, news_event_sink=sink)
+        await magi_verify(engine, ids, judge, news_event_sink=sink)
+        with Session(engine) as s:
+            d = s.get(Decision, ids[0])
+            assert d.entry_signal_tags == ["news_negative"]  # 重複しない
+            assert d.status == "awaiting"  # record-only: 売買は通常の verify 通り
+
     async def test_counter_within_domain_persisted(self, engine) -> None:
         """B-1：審判の反証（counter_within_domain）が decision_id 付きで永続化される。"""
         ids = materialize_decisions(engine, ["NVDA"])

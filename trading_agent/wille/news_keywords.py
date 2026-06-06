@@ -176,12 +176,12 @@ def derive_news_event_tags(
     （TDnet/EDINET）の見出しを ``classify_headline`` で +/−/0 分類し、銘柄単位の純インパクトで
     ``news_positive`` / ``news_negative`` を立てる（¥0・LLM 不使用・新規 fetch 無し）。
 
-    小サンプル現実（評価済 n が小さい）に配慮し、タグは粗く 2 値に留める（細分はタグ分裂で n を
-    割り、compare_signal_tags_vs_baseline の検出力を殺すため）。カテゴリ等の細部は evidence に保持し、
-    後で n が溜まってから細分する。純中立・同点・材料なしは **無タグ**（推測しない・H10）。
+    小サンプル現実（評価済 n が小さい）に配慮し、タグは粗く 2 値に留める（細分はタグ分裂で
+    n を割り、compare_signal_tags_vs_baseline の検出力を殺すため）。カテゴリ等の細部は evidence
+    に保持し、後で n が溜まってから細分する。純中立・同点・材料なしは **無タグ**（推測しない）。
 
-    返り値: (tags, evidence)。evidence[tag] = 監査メタ（source/asof/pos/neg/categories/見出しサンプル）。
-    取得失敗・データ欠損時は ([], {})。
+    返り値: (tags, evidence)。evidence[tag] = 監査メタ
+    （source/asof/pos/neg/categories/見出しサンプル）。取得失敗・データ欠損時は ([], {})。
     """
     headlines: list[str] = []
     for item in (articles or []):
