@@ -261,7 +261,9 @@ def build_sell_items(
             qty = int(sum(int(p.qty or 0) for p in ports))
             if qty <= 0:
                 continue
-            buy_price = float(ports[0].buy_price or 0) or None
+            # P2（codex）: 複数機/ピラミッド保有は加重平均取得単価で損益表示（先頭 buy_price は誤り）
+            cost_basis = sum(float(p.buy_price or 0) * int(p.qty or 0) for p in ports)
+            buy_price = (cost_basis / qty) if qty > 0 and cost_basis > 0 else None
             u = s.get(Universe, d.ticker)
             name = u.name if u else d.ticker
             price = _fetch_price(d.ticker)
@@ -644,6 +646,17 @@ function markFilled(decisionId, ticker, btn) {{
     alert('発注完了マーク用 CLI コマンドをコピーしました。PC で実行してください:\\n' + cmd);
   }});
 }}
+function markSold(decisionId, ticker, price, btn) {{
+  const actual = prompt(ticker + ' の実売却価格（円/株）を入力してください', price || '');
+  if (actual === null) return;
+  const cmd = '.venv/bin/python scripts/mark_sold.py --decision-id ' + decisionId + ' --price ' + actual;
+  navigator.clipboard.writeText(cmd).then(() => {{
+    btn.textContent = '✓ 売却済';
+    btn.classList.add('completed');
+    btn.closest('.order-card').classList.add('filled');
+    alert('売却完了マーク用 CLI コマンドをコピーしました。PC で実行してください:\\n' + cmd);
+  }});
+}}
 </script>
 </body>
 </html>
@@ -771,7 +784,7 @@ _SELL_CARD_TEMPLATE = """  <div class="order-card stance-{stance_class}" id="sel
       <div class="ro-sub">{pnl_detail}</div>
     </div>
     <div class="actions">
-      <button class="btn btn-done" onclick="copyShares({qty})">📋 株数コピー → 楽天で売却</button>
+      <button class="btn btn-done" onclick="markSold({decision_id}, '{ticker}', {price_cmd}, this)">✓ 楽天で売却した</button>
     </div>
   </div>
 """
@@ -863,6 +876,8 @@ def _render_sell_card(item: SellOrderItem) -> str:
         pnl_label = "損益不明"
         pnl_detail = "現在値取得不可（推測しない）"
     reason = html.escape(item.reason) if item.reason else f"{action_label}ライン到達"
+    # markSold の price 引数（現在値を初期値に。取得不可なら空文字で prompt 入力を促す）
+    price_cmd = f"{int(item.current_price)}" if item.current_price else "''"
     return _SELL_CARD_TEMPLATE.format(
         decision_id=item.decision_id,
         ticker=html.escape(item.ticker),
@@ -877,6 +892,7 @@ def _render_sell_card(item: SellOrderItem) -> str:
         price_str=price_str,
         buy_str=buy_str,
         pnl_detail=pnl_detail,
+        price_cmd=price_cmd,
     )
 
 

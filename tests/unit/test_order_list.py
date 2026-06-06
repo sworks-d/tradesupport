@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-from sqlmodel import Session
+from sqlmodel import Session, col, select
 
 from trading_agent.db import create_all, get_engine
 from trading_agent.models.decisions import Decision
@@ -237,6 +237,93 @@ class TestSellItems:
         assert items[0].ticker == "3697"
         assert items[0].qty == 30
         assert items[0].action == "sell_loss"
+
+
+class TestSellCompletion:
+    """A-2b: 手動売却の DB 反映（close_sold_decision）。"""
+
+    def test_close_sold_decision_closes_and_records(self, engine):
+        from trading_agent.models.portfolio import Portfolio
+        from trading_agent.portfolio.paper_exec import close_sold_decision
+
+        _add_portfolio(engine, "3697", qty=50, buy_price=1000.0, broker_mode="live")
+        with Session(engine) as s:
+            d = Decision(
+                date=dt.date(2026, 5, 31), ticker="3697", action="sell_loss",
+                status="approved", gendo_stance="撤退", stop_pct=0.10, entry_price=1000.0,
+            )
+            s.add(d)
+            s.commit()
+            s.refresh(d)
+            dec_id = d.id
+
+        res = close_sold_decision(engine, dec_id, closed_price=850.0, broker_mode="live")
+        assert "error" not in res
+        assert res["qty"] == 50
+        assert res["pnl_jpy"] == (850.0 - 1000.0) * 50
+        assert abs(res["actual_return"] - (-0.15)) < 1e-9
+        with Session(engine) as s:
+            d2 = s.get(Decision, dec_id)
+            assert d2.status == "ordered"  # 評価対象へ
+            assert d2.actual_return is not None
+            ports = list(s.exec(select(Portfolio).where(col(Portfolio.ticker) == "3697")))
+            assert all(p.status == "closed" for p in ports)
+            assert all(p.closed_reason == "sell_loss" for p in ports)
+
+    def test_close_sold_no_holding_errors(self, engine):
+        from trading_agent.portfolio.paper_exec import close_sold_decision
+
+        with Session(engine) as s:
+            d = Decision(
+                date=dt.date(2026, 5, 31), ticker="3697", action="sell_loss",
+                status="approved", gendo_stance="撤退", stop_pct=0.10,
+            )
+            s.add(d)
+            s.commit()
+            s.refresh(d)
+            dec_id = d.id
+        res = close_sold_decision(engine, dec_id, closed_price=850.0, broker_mode="live")
+        assert res.get("error") == "no_active_holding"
+
+    def test_close_sold_rejects_buy_decision(self, engine):
+        from trading_agent.portfolio.paper_exec import close_sold_decision
+
+        with Session(engine) as s:
+            d = Decision(
+                date=dt.date(2026, 5, 31), ticker="3697", action="buy",
+                status="awaiting", gendo_stance="要検討", stop_pct=0.10,
+            )
+            s.add(d)
+            s.commit()
+            s.refresh(d)
+            dec_id = d.id
+        res = close_sold_decision(engine, dec_id, closed_price=850.0, broker_mode="live")
+        assert res.get("error") == "not_a_sell"
+
+    def test_build_sell_items_weighted_avg_buy_price(self, engine):
+        """P2（codex）: 複数保有は加重平均取得単価で損益表示。"""
+        from trading_agent.reporting.order_list import build_sell_items
+
+        # 100 株 @1000 + 100 株 @1200 → 加重平均 1100
+        _add_portfolio(engine, "3697", qty=100, buy_price=1000.0, broker_mode="live")
+        _add_portfolio(engine, "3697", qty=100, buy_price=1200.0, broker_mode="live")
+        with Session(engine) as s:
+            s.add(
+                Decision(
+                    date=dt.date(2026, 5, 31), ticker="3697", action="sell_profit",
+                    status="approved", gendo_stance="利確", stop_pct=0.10,
+                )
+            )
+            s.commit()
+        with patch(
+            "trading_agent.reporting.order_list._fetch_price", return_value=1300.0
+        ):
+            items = build_sell_items(engine, broker_mode="live")
+        assert len(items) == 1
+        it = items[0]
+        assert it.qty == 200
+        assert it.buy_price == 1100.0  # 加重平均（先頭 1000 ではない）
+        assert abs(it.pnl_pct - (1300.0 - 1100.0) / 1100.0) < 1e-9
 
 
 class TestGenerateOrderList:

@@ -730,3 +730,94 @@ def paper_close_approved(
         "skipped_no_holding": skipped_no_holding,
         "details": closed_details,
     }
+
+
+def close_sold_decision(
+    engine: Engine,
+    decision_id: int,
+    *,
+    closed_price: float,
+    closed_date: dt.date | None = None,
+    broker_mode: str = "live",
+) -> dict[str, Any]:
+    """手動売却の DB 反映（A-2b）。
+
+    発注リストの「売り」ブロックでユーザーが楽天で売却した後、この経路で DB に反映する。
+    対応する sell Decision の active Portfolio(broker_mode) を closed にし、Decision を
+    ordered（評価対象）へ遷移、actual_return を記録、Treasury に売却代金を加算する。
+    paper_close_approved（paper 自動執行）と意味を揃える（closed_reason=action・
+    status="ordered"・evaluated_at 記録）。
+
+    Returns:
+        実行サマリ dict（error キーがあれば失敗）。
+    """
+    if closed_date is None:
+        closed_date = today_jst()
+    if closed_price <= 0:
+        return {"error": "invalid_price", "closed_price": closed_price}
+
+    with Session(engine, expire_on_commit=False) as session:
+        d = session.get(Decision, decision_id)
+        if d is None:
+            return {"error": "decision_not_found", "decision_id": decision_id}
+        if d.action not in ("sell_loss", "sell_profit"):
+            return {"error": "not_a_sell", "action": d.action}
+        if d.status not in ("approved", "awaiting", "verifying"):
+            return {"error": "already_processed", "status": d.status}
+
+        ports = list(
+            session.exec(
+                select(Portfolio)
+                .where(col(Portfolio.ticker) == d.ticker)
+                .where(col(Portfolio.status) == "active")
+                .where(col(Portfolio.broker_mode) == broker_mode)
+            ).all()
+        )
+        if not ports:
+            return {"error": "no_active_holding", "ticker": d.ticker}
+
+        total_qty = 0
+        proceeds = 0.0
+        cost_basis = 0.0
+        for p in ports:
+            entry = float(p.buy_price or 0)
+            qty = int(p.qty or 0)
+            total_qty += qty
+            proceeds += closed_price * qty
+            cost_basis += entry * qty
+            p.status = "closed"
+            p.closed_at = utcnow()
+            p.closed_price = closed_price
+            p.closed_reason = d.action
+            p.updated_at = utcnow()
+            session.add(p)
+
+        if cost_basis > 0:
+            d.actual_return = (proceeds - cost_basis) / cost_basis
+        d.evaluated_at = utcnow()
+        d.status = "ordered"  # paper_close_approved と同じ評価対象 status
+        session.add(d)
+        session.commit()
+
+    # Treasury に売却代金を加算（mark_filled の buy 減算と対称）
+    treasury_error: str | None = None
+    try:
+        from trading_agent.portfolio.misato import deposit as _deposit
+
+        _deposit(engine, float(proceeds), broker_mode=broker_mode)
+    except Exception as exc:  # noqa: BLE001
+        treasury_error = f"{type(exc).__name__}: {exc}"
+
+    return {
+        "status": "closed",
+        "decision_id": decision_id,
+        "ticker": d.ticker,
+        "action": d.action,
+        "qty": total_qty,
+        "closed_price": closed_price,
+        "proceeds_jpy": round(proceeds, 0),
+        "pnl_jpy": round(proceeds - cost_basis, 0),
+        "actual_return": d.actual_return,
+        "broker_mode": broker_mode,
+        "treasury_error": treasury_error,
+    }
