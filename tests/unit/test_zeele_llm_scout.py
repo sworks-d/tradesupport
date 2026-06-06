@@ -31,8 +31,10 @@ from trading_agent.agents.zeele_llm_scout import (
 )
 from trading_agent.db import create_all, get_engine
 from trading_agent.mcp_tools.base import MCPHost
+from trading_agent.models.analytics import CostLog
 from trading_agent.models.universe import Universe
 from trading_agent.models.zeele import ZeeleState
+from trading_agent.utils.time_utils import today_jst
 
 
 # ============================================================
@@ -197,6 +199,51 @@ class TestAgentExecution:
                 assert st.preset == "growth"
                 assert st.reference_score == 80.0  # confidence 0.8 × 100
                 assert "LLM 探索" in st.structural_thesis
+
+    async def test_daily_budget_caps_calls(self, engine, ctx) -> None:
+        """A-3 回帰: daily_budget_jpy が実際に効く（旧実装では dead param だった）。
+
+        当日の zeele_llm_scout 既消費を上限直下まで seed しておくと、新規 LLM 呼び出しは
+        予算超過で打ち切られる（llm_call_count==0）。
+        """
+        _add_universe(engine, [("T500", "Tech"), ("T501", "Tech"), ("T502", "Tech")])
+        # 当日すでに ¥9.95 消費済（日次上限 ¥10 直下）
+        with Session(engine) as s:
+            s.add(
+                CostLog(
+                    date=today_jst(),
+                    model="haiku",
+                    agent="zeele_llm_scout",
+                    purpose="zeele_preset_scout",
+                    tokens_in=1,
+                    tokens_out=1,
+                    cost_usd=9.95 / 150.0,
+                    cost_jpy=9.95,
+                )
+            )
+            s.commit()
+
+        mock_result = {
+            "preset": "growth",
+            "confidence": 0.8,
+            "reason": "should not be called",
+            "tokens_in": 100,
+            "tokens_out": 30,
+        }
+        agent = ZeeleLLMScoutAgent(ctx)
+        with patch(
+            "trading_agent.agents.zeele_llm_scout.call_haiku_preset",
+            return_value=mock_result,
+        ) as mock_call:
+            out = await agent.execute(
+                ZeeleLLMScoutInput(invocation_id="t", max_calls=3, daily_budget_jpy=10.0)
+            )
+        assert out.success is True
+        assert out.llm_call_count == 0  # 予算上限で打ち切り
+        assert mock_call.call_count == 0
+        with Session(engine) as s:
+            states = list(s.exec(select(ZeeleState).where(col(ZeeleState.is_active))))
+        assert states == []
 
     async def test_llm_failure_skips_without_crash(self, engine, ctx) -> None:
         _add_universe(engine, [("T200", "Tech")])

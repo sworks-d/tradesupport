@@ -358,9 +358,32 @@ async def run_morning_batch(
         """PIPELINE v3 Phase 4-B: ZEELE LLM 探索（zeele_curator 後段）。
 
         universe.is_active=True で ZEELE プール外の銘柄を Haiku で preset 判定し
-        upsert する。BudgetGuard で日次上限 ¥10 / 月次 ¥200。
-        実 LLM 呼出が発生するため、構築完了前は実バッチで動かさない。
+        upsert する。per-agent 予算（日次 ¥10 / 月次 ¥200・cost_logs で実集計）+
+        全体 BudgetGuard で二重ガード。
+
+        A-3（監査反映）: 実 LLM 呼出が発生し構築完了前は動かさない方針なので、
+        Setting `zeele_llm_scout_enabled=true` を明示設定したときだけ稼働する
+        （既定 OFF）。構築期間中の無断自動課金を防ぐ。
         """
+        import json as _json
+
+        from trading_agent.models.settings import Setting
+
+        with Session(engine) as _s:
+            _row = _s.get(Setting, "zeele_llm_scout_enabled")
+        _enabled = False
+        if _row is not None:
+            try:
+                _enabled = bool(_json.loads(_row.value))
+            except Exception:
+                _enabled = False
+        if not _enabled:
+            return {
+                "status": "skipped",
+                "reason": "zeele_llm_scout_disabled",
+                "hint": "Setting zeele_llm_scout_enabled=true で有効化",
+            }
+
         from trading_agent.agents.zeele_llm_scout import (
             ZeeleLLMScoutAgent,
             ZeeleLLMScoutInput,
@@ -373,6 +396,7 @@ async def run_morning_batch(
                 dry_run=dry_run,
                 max_calls=30,
                 daily_budget_jpy=10.0,
+                monthly_budget_jpy=200.0,
             ),
             engine,
         )
@@ -583,15 +607,22 @@ async def run_morning_batch(
         # financials_fetcher があれば信用性フィルタ(S5)も効かせる（MELCHIOR反証＋credibility）
         # A prime: 同じ J-Quants fin から earnings 系 signal_tags を sink に集め、Decision に
         #          record-only でマージ（新規 fetch 0・売買は変えない・shadow 計測用）。
+        # A: judge が既に引く per-ticker news/開示から news 系イベントタグを集め、同様に record-only マージ。
         ids = pending_decision_ids(engine)
         earnings_sink: dict[str, tuple[list[str], dict]] = {}
+        news_event_sink: dict[str, tuple[list[str], dict]] = {}
         judge_fn = make_live_judge_fn(
             ctx.call_tool,
             financials_fetcher=financials_fetcher,
             sector_lookup=sector_of,
             earnings_sink=earnings_sink,
+            news_event_sink=news_event_sink,
         )
-        return await magi_verify(engine, ids, judge_fn, earnings_sink=earnings_sink)
+        return await magi_verify(
+            engine, ids, judge_fn,
+            earnings_sink=earnings_sink,
+            news_event_sink=news_event_sink,
+        )
 
     async def run_katsuragi_dispatch() -> dict:
         """PIPELINE v3 Phase 1 M1.1 + M1.2 + N2: KATSURAGI 統合ノード。

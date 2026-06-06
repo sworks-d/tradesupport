@@ -25,8 +25,12 @@ LLM 探索:
   - プロンプト: 「universe 以外の銘柄を返さない / 推測でデータ作らない」
 
 安全装置:
+  - 構築期間中は既定で無効（Setting zeele_llm_scout_enabled=true で明示有効化）。
+    朝バッチからの無断自動課金を防ぐ（A-3）。
   - 1 バッチ最大 _MAX_LLM_CALLS_PER_BATCH 件まで（既定 30）
-  - BudgetGuard で日次 ¥10 / 月次 ¥200 上限（デフォルト Setting）
+  - per-agent 予算: daily_budget_jpy / monthly_budget_jpy（既定 ¥10 / ¥200）を
+    cost_logs(agent=zeele_llm_scout) で実集計して上限適用（A-3：旧 dead param を実装）。
+    併せて全体 BudgetGuard（共有 ¥500/¥5000）でも二重ガード。
   - LLM 失敗時は zeele_curator の決定論結果のみで進む（後方互換）
 """
 
@@ -40,6 +44,8 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from pydantic import Field
+from sqlalchemy import func
+from sqlalchemy.engine import Engine
 from sqlmodel import Session, col, select
 
 from trading_agent.agents.base import Agent, AgentInput, AgentOutput
@@ -97,8 +103,9 @@ class ZeeleLLMScoutInput(AgentInput):
     target_tickers: list[str] = Field(default_factory=list)
     # 1 バッチ上限（テスト時に絞る用）
     max_calls: int = _MAX_LLM_CALLS_PER_BATCH
-    # 日次予算上限（円）
+    # per-agent 予算上限（円）。cost_logs(agent=zeele_llm_scout) を集計して実際に効かせる（A-3）。
     daily_budget_jpy: float = 10.0
+    monthly_budget_jpy: float = 200.0
 
 
 class ZeeleLLMScoutOutput(AgentOutput):
@@ -142,6 +149,17 @@ def _normalize_preset(raw: Any) -> str:
         if s in _VALID_PRESETS:
             return s
     return "alpha"
+
+
+def _agent_cost_jpy(engine: Engine, agent: str, since_date: dt.date) -> float:
+    """cost_logs から指定 agent の since_date 以降の累計コスト（円）。per-agent 予算用（A-3）。"""
+    with Session(engine) as s:
+        stmt = (
+            select(func.coalesce(func.sum(CostLog.cost_jpy), 0.0))
+            .where(col(CostLog.agent) == agent)
+            .where(col(CostLog.date) >= since_date)
+        )
+        return float(s.exec(stmt).one())
 
 
 def _normalize_confidence(raw: Any) -> float:
@@ -272,6 +290,11 @@ class ZeeleLLMScoutAgent(Agent[ZeeleLLMScoutInput]):
         cache_hit_count = 0
         cost_jpy = 0.0
         today = today_jst()
+        # A-3: per-agent 予算（旧 dead param を実装）。当日/当月の自エージェント既消費を集計し、
+        # このバッチの累積 cost_jpy と合わせて daily/monthly 上限を超えたら打ち切る。
+        month_start = today.replace(day=1)
+        agent_day_spent = _agent_cost_jpy(engine, self.name, today)
+        agent_month_spent = _agent_cost_jpy(engine, self.name, month_start)
 
         for ticker, sector, brief_text in targets:
             cache_key = _ticker_cache_key(ticker, today)
@@ -284,6 +307,22 @@ class ZeeleLLMScoutAgent(Agent[ZeeleLLMScoutInput]):
 
             # コスト試算: in 500 / out 100 想定で ¥0.15
             estimated = 0.15
+            # A-3: per-agent 日次/月次予算（旧 dead param daily/monthly_budget_jpy を実装）
+            if agent_day_spent + cost_jpy + estimated > agent_input.daily_budget_jpy:
+                self._log.info(
+                    "zeele_scout_daily_budget_reached",
+                    spent=round(agent_day_spent + cost_jpy, 4),
+                    cap=agent_input.daily_budget_jpy,
+                )
+                break
+            if agent_month_spent + cost_jpy + estimated > agent_input.monthly_budget_jpy:
+                self._log.info(
+                    "zeele_scout_monthly_budget_reached",
+                    spent=round(agent_month_spent + cost_jpy, 4),
+                    cap=agent_input.monthly_budget_jpy,
+                )
+                break
+            # 全体 BudgetGuard（共有 ¥500/¥5000）でも二重ガード
             ok, msg = guard.can_proceed(estimated, routing_hint=None)
             if not ok:
                 self._log.info("zeele_scout_budget_skip", ticker=ticker, msg=msg)
