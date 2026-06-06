@@ -16,7 +16,10 @@ from trading_agent.screening.financials import (
     PeriodFinancials,
     _build_forecast_history,
 )
-from trading_agent.screening.turnaround import derive_structured_event_tags
+from trading_agent.screening.turnaround import (
+    derive_structured_event_tags,
+    evaluate_structured_events,
+)
 
 
 def _fin(history: list[ForecastPoint]) -> Financials:
@@ -162,3 +165,63 @@ def test_build_forecast_history_excludes_no_disc_date() -> None:
     """開示日が取れない開示は除外（PIT 比較の土台が無い・silent look-ahead を出さない）。"""
     stmts = [{"CurFYEn": "2026-03-31", "FNP": "130"}]  # DiscDate 無し
     assert _build_forecast_history(stmts) == []
+
+
+# === M1 観測 hardening: evaluate_structured_events の no-fire 理由(diag) ===
+
+def test_diag_fin_not_fetched() -> None:
+    """fin=None（rate-limit/取得失敗）→ 両 family fin_not_fetched（発火しない理由を観測）。"""
+    tags, _, diag = evaluate_structured_events(None)
+    assert tags == []
+    assert diag == {"forecast": "fin_not_fetched", "dividend": "fin_not_fetched"}
+
+
+def test_diag_no_forecast_data_when_history_empty() -> None:
+    tags, _, diag = evaluate_structured_events(_fin([]))
+    assert tags == []
+    assert diag == {"forecast": "no_forecast_data", "dividend": "no_forecast_data"}
+
+
+def test_diag_forecast_reasons() -> None:
+    # fired_upward
+    _, _, d = evaluate_structured_events(
+        _fin([_fp("2025-08-01", "2026-03-31", fnp=100), _fp("2025-11-01", "2026-03-31", fnp=130)])
+    )
+    assert d["forecast"] == "fired_upward"
+    # no_change
+    _, _, d = evaluate_structured_events(
+        _fin([_fp("2025-08-01", "2026-03-31", fnp=100), _fp("2025-11-01", "2026-03-31", fnp=100)])
+    )
+    assert d["forecast"] == "no_change"
+    # single_fy_point（同一 FY の開示1点のみ）
+    _, _, d = evaluate_structured_events(_fin([_fp("2025-11-01", "2026-03-31", fnp=100)]))
+    assert d["forecast"] == "single_fy_point"
+
+
+def test_diag_dividend_reasons() -> None:
+    # missing_shares
+    _, _, d = evaluate_structured_events(
+        _fin([_fp("2024-11-01", "2025-03-31", rdiv=20, sh=None),
+              _fp("2025-11-01", "2026-03-31", fdiv=30, sh=None)])
+    )
+    assert d["dividend"] == "missing_shares"
+    # split_suspected
+    _, _, d = evaluate_structured_events(
+        _fin([_fp("2024-11-01", "2025-03-31", rdiv=20, sh=1000),
+              _fp("2025-11-01", "2026-03-31", fdiv=11, sh=2000)])
+    )
+    assert d["dividend"] == "split_suspected"
+    # fired_hike
+    _, _, d = evaluate_structured_events(
+        _fin([_fp("2024-11-01", "2025-03-31", rdiv=20, sh=1000),
+              _fp("2025-11-01", "2026-03-31", fdiv=30, sh=1000)])
+    )
+    assert d["dividend"] == "fired_hike"
+
+
+def test_derive_wrapper_matches_evaluate() -> None:
+    """derive_structured_event_tags は evaluate の (tags, evidence) と一致（公開契約不変）。"""
+    h = [_fp("2025-08-01", "2026-03-31", fnp=100), _fp("2025-11-01", "2026-03-31", fnp=130)]
+    tags, ev = derive_structured_event_tags(_fin(h))
+    e_tags, e_ev, _ = evaluate_structured_events(_fin(h))
+    assert tags == e_tags and ev == e_ev

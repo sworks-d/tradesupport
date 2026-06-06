@@ -32,6 +32,7 @@ from trading_agent.screening.turnaround import (
     assess_turnaround,
     derive_earnings_signal_tags,
     derive_structured_event_tags,
+    evaluate_structured_events,
 )
 
 __all__ = [
@@ -47,6 +48,7 @@ __all__ = [
     "beneish_m_score",
     "derive_earnings_signal_tags",
     "derive_structured_event_tags",
+    "evaluate_structured_events",
     "compute_relative_strength",
     "detect_disclosure_flags_from_xbrl",
     "edinet_csv_downloader",

@@ -641,17 +641,21 @@ async def run_morning_batch(
         ids = pending_decision_ids(engine)
         earnings_sink: dict[str, tuple[list[str], dict]] = {}
         news_event_sink: dict[str, tuple[list[str], dict]] = {}
+        # M1 観測 hardening: 構造化イベントの no-fire 理由（rate-limit/データ欠損/抑止）を集める。
+        event_diag_sink: dict[str, dict] = {}
         judge_fn = make_live_judge_fn(
             ctx.call_tool,
             financials_fetcher=financials_fetcher,
             sector_lookup=sector_of,
             earnings_sink=earnings_sink,
             news_event_sink=news_event_sink,
+            event_diag_sink=event_diag_sink,
         )
         return await magi_verify(
             engine, ids, judge_fn,
             earnings_sink=earnings_sink,
             news_event_sink=news_event_sink,
+            event_diag_sink=event_diag_sink,
         )
 
     async def run_katsuragi_dispatch() -> dict:

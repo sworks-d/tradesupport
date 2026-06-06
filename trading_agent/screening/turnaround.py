@@ -164,6 +164,36 @@ def _latest_point_with(history: list[ForecastPoint], attr: str) -> ForecastPoint
     return max(cands, key=lambda p: p.disc_date) if cands else None  # type: ignore[arg-type,return-value]
 
 
+def evaluate_structured_events(fin: Financials | None) -> tuple[list[str], dict, dict]:
+    """構造化イベントの (tags, evidence) + **no-fire 理由 diag**（M1 観測 hardening・record-only）。
+
+    diag = {"forecast": reason, "dividend": reason}。『なぜ発火/未発火か』を一目で観測し、
+    永遠に空の罠（rate-limit/データ欠損/抑止）を可視化する。reason:
+      forecast: fired_upward / fired_downward / no_change / single_fy_point / no_forecast_data /
+                fin_not_fetched
+      dividend: fired_hike / fired_cut / no_change / missing_shares / split_suspected /
+                no_prior_fy_data / no_forecast_data / fin_not_fetched
+    **発火挙動は derive_structured_event_tags と完全に同一**（理由を併記するだけ）。
+    """
+    tags: list[str] = []
+    evidence: dict = {}
+    if fin is None:
+        # fin 取得失敗（rate-limit 等）＝そもそも判定材料が無い
+        return tags, evidence, {"forecast": "fin_not_fetched", "dividend": "fin_not_fetched"}
+    if not getattr(fin, "forecast_history", None):
+        return tags, evidence, {"forecast": "no_forecast_data", "dividend": "no_forecast_data"}
+    history = sorted(
+        (p for p in fin.forecast_history if p.disc_date is not None),
+        key=lambda p: p.disc_date,  # type: ignore[arg-type,return-value]
+    )
+    src = getattr(fin, "source", "jquants")
+    diag = {
+        "forecast": _eval_forecast_revision(history, src, tags, evidence),
+        "dividend": _eval_dividend_change(history, src, tags, evidence),
+    }
+    return tags, evidence, diag
+
+
 def derive_structured_event_tags(fin: Financials | None) -> tuple[list[str], dict]:
     """J-Quants 予想/配当の**開示間比較**から構造化イベントタグを導出（record-only・(b) MVP）。
 
@@ -177,85 +207,79 @@ def derive_structured_event_tags(fin: Financials | None) -> tuple[list[str], dic
 
     buyback/dilution は share-count が split/消却と交絡=false-data risk のため defer（不実装）。
     PIT: `DiscDate` 基準。期末日(`CurFYEn`)を開示日扱いしない。値欠損・比較不能は無タグ（H10）。
-    返り値 (tags, evidence)。evidence に source / disc_date(before→after) / field /
-    値(before→after) / parser_version を残す（監査・再現）。
+    返り値 (tags, evidence)。no-fire 理由は evaluate_structured_events を使う（公開契約は不変）。
     """
-    tags: list[str] = []
-    evidence: dict = {}
-    if fin is None or not getattr(fin, "forecast_history", None):
-        return tags, evidence
-    history = sorted(
-        (p for p in fin.forecast_history if p.disc_date is not None),
-        key=lambda p: p.disc_date,  # type: ignore[arg-type,return-value]
-    )
-    src = getattr(fin, "source", "jquants")
-
-    # --- forecast revision: 同一 CurFYEn の最新2開示で FNP を比較 ---
-    latest_f = _latest_point_with(history, "forecast_profit")
-    if latest_f is not None and latest_f.cur_fy_end is not None:
-        same_fy = [
-            p for p in history
-            if p.cur_fy_end == latest_f.cur_fy_end and p.forecast_profit is not None
-        ]
-        if len(same_fy) >= 2:
-            prev_f, cur_f = same_fy[-2], same_fy[-1]
-            before, after = prev_f.forecast_profit, cur_f.forecast_profit
-            if before is not None and after is not None and after != before:
-                tag = "event_upward_revision" if after > before else "event_downward_revision"
-                tags.append(tag)
-                evidence[tag] = {
-                    "source": src,
-                    "field": "FNP",
-                    "cur_fy_end": cur_f.cur_fy_end,
-                    "disc_date_before": prev_f.disc_date.isoformat() if prev_f.disc_date else None,
-                    "disc_date_after": cur_f.disc_date.isoformat() if cur_f.disc_date else None,
-                    "before": before,
-                    "after": after,
-                    "parser_version": STRUCTURED_EVENTS_PARSER_VERSION,
-                }
-
-    # --- dividend change: 最新 FDivAnn vs 前 FY の DivAnn（split ガード） ---
-    latest_fdiv = _latest_point_with(history, "forecast_div_annual")
-    if latest_fdiv is not None and latest_fdiv.cur_fy_end is not None:
-        prior_pts = [
-            p for p in history
-            if p.result_div_annual is not None
-            and p.cur_fy_end is not None
-            and p.cur_fy_end < latest_fdiv.cur_fy_end  # 前 FY（同一 FY を除外）
-        ]
-        if prior_pts:
-            prior_div = prior_pts[-1]
-            after, before = latest_fdiv.forecast_div_annual, prior_div.result_div_annual
-            sh_after, sh_before = latest_fdiv.shares_outstanding, prior_div.shares_outstanding
-            # codex P1: per-share 配当は split/併合で機械的に変動する。株数が両期とも取れない限り
-            # split を否定できない＝タグを出さない（欠損は無タグ H10）。株数既知時のみ split 判定。
-            shares_known = sh_after is not None and sh_before is not None and sh_before > 0
-            split_suspected = (
-                shares_known and abs(sh_after / sh_before - 1.0) > _SPLIT_SHARE_TOLERANCE
-            )
-            if (
-                before is not None
-                and after is not None
-                and after != before
-                and shares_known
-                and not split_suspected
-            ):
-                tag = "event_dividend_hike" if after > before else "event_dividend_cut"
-                tags.append(tag)
-                evidence[tag] = {
-                    "source": src,
-                    "field": "FDivAnn_vs_DivAnn",
-                    "fy_before": prior_div.cur_fy_end,
-                    "fy_after": latest_fdiv.cur_fy_end,
-                    "disc_date_before": (
-                        prior_div.disc_date.isoformat() if prior_div.disc_date else None
-                    ),
-                    "disc_date_after": (
-                        latest_fdiv.disc_date.isoformat() if latest_fdiv.disc_date else None
-                    ),
-                    "before": before,
-                    "after": after,
-                    "split_guarded": False,
-                    "parser_version": STRUCTURED_EVENTS_PARSER_VERSION,
-                }
+    tags, evidence, _diag = evaluate_structured_events(fin)
     return tags, evidence
+
+
+def _eval_forecast_revision(
+    history: list[ForecastPoint], src: str, tags: list[str], ev: dict
+) -> str:
+    """forecast revision を評価し tags/ev を更新、no-fire 理由を返す（発火時は fired_*）。"""
+    latest_f = _latest_point_with(history, "forecast_profit")
+    if latest_f is None or latest_f.cur_fy_end is None:
+        return "no_forecast_data"
+    same_fy = [
+        p for p in history
+        if p.cur_fy_end == latest_f.cur_fy_end and p.forecast_profit is not None
+    ]
+    if len(same_fy) < 2:
+        return "single_fy_point"  # 同一 FY の開示が1点のみ＝開示間比較できない
+    prev_f, cur_f = same_fy[-2], same_fy[-1]
+    before, after = prev_f.forecast_profit, cur_f.forecast_profit
+    if before is None or after is None or after == before:
+        return "no_change"
+    tag = "event_upward_revision" if after > before else "event_downward_revision"
+    tags.append(tag)
+    ev[tag] = {
+        "source": src,
+        "field": "FNP",
+        "cur_fy_end": cur_f.cur_fy_end,
+        "disc_date_before": prev_f.disc_date.isoformat() if prev_f.disc_date else None,
+        "disc_date_after": cur_f.disc_date.isoformat() if cur_f.disc_date else None,
+        "before": before,
+        "after": after,
+        "parser_version": STRUCTURED_EVENTS_PARSER_VERSION,
+    }
+    return "fired_upward" if after > before else "fired_downward"
+
+
+def _eval_dividend_change(history: list[ForecastPoint], src: str, tags: list[str], ev: dict) -> str:
+    """dividend change を評価し tags/ev を更新、no-fire 理由を返す（発火時は fired_*）。"""
+    latest_fdiv = _latest_point_with(history, "forecast_div_annual")
+    if latest_fdiv is None or latest_fdiv.cur_fy_end is None:
+        return "no_forecast_data"
+    prior_pts = [
+        p for p in history
+        if p.result_div_annual is not None
+        and p.cur_fy_end is not None
+        and p.cur_fy_end < latest_fdiv.cur_fy_end  # 前 FY（同一 FY を除外）
+    ]
+    if not prior_pts:
+        return "no_prior_fy_data"
+    prior_div = prior_pts[-1]
+    after, before = latest_fdiv.forecast_div_annual, prior_div.result_div_annual
+    sh_after, sh_before = latest_fdiv.shares_outstanding, prior_div.shares_outstanding
+    # codex P1: per-share 配当は split/併合で機械的に変動。株数が両期取れない限り split 否定不可。
+    if not (sh_after is not None and sh_before is not None and sh_before > 0):
+        return "missing_shares"
+    if abs(sh_after / sh_before - 1.0) > _SPLIT_SHARE_TOLERANCE:
+        return "split_suspected"
+    if before is None or after is None or after == before:
+        return "no_change"
+    tag = "event_dividend_hike" if after > before else "event_dividend_cut"
+    tags.append(tag)
+    ev[tag] = {
+        "source": src,
+        "field": "FDivAnn_vs_DivAnn",
+        "fy_before": prior_div.cur_fy_end,
+        "fy_after": latest_fdiv.cur_fy_end,
+        "disc_date_before": prior_div.disc_date.isoformat() if prior_div.disc_date else None,
+        "disc_date_after": latest_fdiv.disc_date.isoformat() if latest_fdiv.disc_date else None,
+        "before": before,
+        "after": after,
+        "split_guarded": False,
+        "parser_version": STRUCTURED_EVENTS_PARSER_VERSION,
+    }
+    return "fired_hike" if after > before else "fired_cut"

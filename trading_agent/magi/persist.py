@@ -38,7 +38,7 @@ from trading_agent.screening import (
     Financials,
     assess_credibility,
     derive_earnings_signal_tags,
-    derive_structured_event_tags,
+    evaluate_structured_events,
     melchior_accrual_counter,
     melchior_credibility_counter,
 )
@@ -188,12 +188,15 @@ async def magi_verify(
     *,
     earnings_sink: dict[str, tuple[list[str], dict]] | None = None,
     news_event_sink: dict[str, tuple[list[str], dict]] | None = None,
+    event_diag_sink: dict[str, dict] | None = None,
 ) -> dict[str, int]:
     """各 decision で MAGI を回し、結果を永続化する。1件の失敗で全体を止めない。
 
     A prime / A: earnings_sink（J-Quants `fin` 由来の earnings 系タグ）と news_event_sink
     （取得済 news/開示由来の news 系タグ）があれば、その decision の entry_signal_tags に
     record-only でマージし、証拠を signal_tag_sources に残す。
+    M1 観測 hardening: event_diag_sink（構造化イベントの no-fire 理由）があれば signal_tag_sources
+    の `_event_diag` に record-only で残す（発火有無に関わらず・なぜ発火しないかを観測）。
     **verify 時点（fill 前・PIT 正）に刻む。過去 decision への backfill はしない**（codex 条件 #1）。
     """
     counts = {"verified": 0, "held": 0, "failed": 0}
@@ -215,6 +218,8 @@ async def magi_verify(
             _apply_record_only_tags(engine, decision_id, earnings_sink[ticker])
         if news_event_sink is not None and ticker in news_event_sink:
             _apply_record_only_tags(engine, decision_id, news_event_sink[ticker])
+        if event_diag_sink is not None and ticker in event_diag_sink:
+            _apply_event_diag(engine, decision_id, event_diag_sink[ticker])
         # (c): 最終 entry_signal_tags から fundamental_event_score を算出し記録（record-only・売買不変）。
         # タグ適用の **後** に実行（earnings/news 両タグ反映済の最終集合で採点する）。
         _apply_event_score(engine, decision_id)
@@ -243,6 +248,24 @@ def _apply_event_score(engine: Engine, decision_id: int) -> None:
     except OperationalError as exc:
         # カラム未追加（migration 未適用）の保険。安全保証ではない（上記・migration は code と同時適用）。
         _log.warning("event_score_skipped_no_column", decision_id=decision_id, error=str(exc))
+
+
+def _apply_event_diag(engine: Engine, decision_id: int, diag: dict) -> None:
+    """M1 観測 hardening: 構造化イベントの no-fire 理由を signal_tag_sources['_event_diag'] に記録。
+
+    **発火有無に関わらず**（むしろ未発火時こそ）記録し、なぜ発火しないか（rate-limit/データ欠損/
+    抑止）を観測可能にする。record-only・売買不変。観測値なので再 verify では最新 diag で上書きする
+    （タグ証拠の setdefault=PIT固定 とは別ポリシー＝理由はデータ状態で変わりうる）。
+    """
+    with Session(engine, expire_on_commit=False) as session:
+        d = session.get(Decision, decision_id)
+        if d is None:
+            return
+        sources = dict(d.signal_tag_sources or {})
+        sources["_event_diag"] = diag
+        d.signal_tag_sources = sources
+        session.add(d)
+        session.commit()
 
 
 def _apply_record_only_tags(
@@ -288,6 +311,7 @@ def make_live_judge_fn(
     sector_lookup: Callable[[str], str | None] | None = None,
     earnings_sink: dict[str, tuple[list[str], dict]] | None = None,
     news_event_sink: dict[str, tuple[list[str], dict]] | None = None,
+    event_diag_sink: dict[str, dict] | None = None,
 ) -> JudgeFn:
     """MCP（call_tool）で素材を集め、3審判→防御→統合→碇を回す judge_fn を作る。
 
@@ -328,12 +352,15 @@ def make_live_judge_fn(
         disclosures: list[dict] | None = None
         if financials_fetcher is not None:
             disclosures = await _fetch_disclosures(call_tool, ticker)  # S4b：開示レッドフラグ
-            credibility_flag, e_tags, e_evidence = _apply_credibility(
+            credibility_flag, e_tags, e_evidence, s_diag = _apply_credibility(
                 ticker, verdicts, financials_fetcher, sector, disclosures
             )
             # A prime: earnings 系 signal_tags を sink に積む（magi_verify が Decision に record-only 付与）。
             if earnings_sink is not None and e_tags:
                 earnings_sink[ticker] = (e_tags, e_evidence)
+            # M1 観測 hardening: 構造化イベントの no-fire 理由を sink に積む（発火有無に関わらず記録）。
+            if event_diag_sink is not None:
+                event_diag_sink[ticker] = s_diag
 
         # A: 取得済 news/開示の見出しから news 系イベントタグを導出し sink に積む。
         # ¥0・新規 fetch 無し（line 上で引いた news / disclosures を再利用）・PIT 正（verify=fill 前）。
@@ -364,26 +391,31 @@ async def _fetch_disclosures(call_tool: CallTool, ticker: str) -> list[dict] | N
     return getattr(out, "disclosures", None)
 
 
+# M1 観測 hardening: fin が取れなかった（rate-limit/例外）時の no-fire 理由。
+_FIN_NOT_FETCHED_DIAG = {"forecast": "fin_not_fetched", "dividend": "fin_not_fetched"}
+
+
 def _apply_credibility(
     ticker: str,
     verdicts: list[JudgeVerdict],
     fetcher: FinancialsFetcher,
     sector: str | None,
     disclosures: list[dict] | None = None,
-) -> tuple[str, list[str], dict]:
+) -> tuple[str, list[str], dict, dict]:
     """2期財務＋開示→信用性。MELCHIOR の counter_within_domain を更新する。
 
-    Returns: (credibility_flag, earnings_tags, earnings_evidence)。
-    A prime: 既に引いている J-Quants `fin` を再利用して earnings 系 signal_tags を導出（¥0・新規fetch無し）。
-    取得失敗時は ("ok", [], {})。
+    Returns: (credibility_flag, signal_tags, evidence, structured_diag)。
+    A prime/(b): 既に引いた J-Quants `fin` を再利用して earnings/構造化イベント系 signal_tags を導出
+    （¥0・新規fetch無し）。structured_diag は no-fire 理由（M1 観測 hardening）。
+    取得失敗（rate-limit/例外）時は ("ok", [], {}, fin_not_fetched diag)。
     """
     try:
         fin = fetcher(ticker)
     except Exception as exc:  # 取得失敗は信用性スキップ（ok・graceful）
         _log.warning("credibility_fetch_failed", ticker=ticker, error=str(exc))
-        return "ok", [], {}
+        return "ok", [], {}, dict(_FIN_NOT_FETCHED_DIAG)
     if fin is None:
-        return "ok", [], {}
+        return "ok", [], {}, dict(_FIN_NOT_FETCHED_DIAG)
     cred = assess_credibility(fin, sector=sector, disclosures=disclosures)
     # 信用性ゾーン由来＋利益の質(accrual)由来の反証を MELCHIOR に併記（S6）
     counter = [*melchior_credibility_counter(cred), *melchior_accrual_counter(fin)]
@@ -393,9 +425,9 @@ def _apply_credibility(
                 v.counter_within_domain = [*v.counter_within_domain, *counter]
     # A prime: 同じ fin から earnings 系 signal_tags を導出（record-only・売買は変えない）。
     e_tags, e_evidence = derive_earnings_signal_tags(fin)
-    # (b): 同じ fin の forecast_history から構造化イベントタグ（上方/下方修正・増配/減配）を導出し
-    # 合流。既存 earnings_sink レールに乗せる（新規 fetch 無し・record-only・PIT 正・売買不変）。
-    s_tags, s_evidence = derive_structured_event_tags(fin)
+    # (b): 同じ fin の forecast_history から構造化イベントタグ + no-fire 理由(diag)を導出し合流。
+    # 既存 earnings_sink レールに乗せる（新規 fetch 無し・record-only・PIT 正・売買不変）。
+    s_tags, s_evidence, s_diag = evaluate_structured_events(fin)
     merged_tags = e_tags + [t for t in s_tags if t not in e_tags]
     merged_evidence = {**e_evidence, **s_evidence}
-    return cred.credibility_flag, merged_tags, merged_evidence
+    return cred.credibility_flag, merged_tags, merged_evidence, s_diag

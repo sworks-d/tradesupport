@@ -333,6 +333,83 @@ class TestMagiVerify:
             assert d.fundamental_event_score == 50.0
             assert d.event_score_version == EVENT_SCORE_VERSION
 
+    async def test_event_diag_recorded_via_real_judge(self, engine) -> None:
+        """M1 観測 hardening: 構造化イベントの no-fire 理由が _event_diag に記録される。"""
+        import datetime as dt
+
+        from trading_agent.magi.persist import make_live_judge_fn
+        from trading_agent.mcp_tools.disclosure import DisclosureOutput
+        from trading_agent.mcp_tools.fundamentals import FundamentalsOutput
+        from trading_agent.mcp_tools.news import NewsOutput
+        from trading_agent.mcp_tools.technicals import TechnicalsOutput
+        from trading_agent.screening.financials import (
+            Financials,
+            ForecastPoint,
+            PeriodFinancials,
+        )
+
+        ids = materialize_decisions(engine, ["3697"])
+
+        async def call_tool(name: str, _inp):
+            if name == "fundamentals":
+                return FundamentalsOutput(success=True, data={})
+            if name == "technicals":
+                return TechnicalsOutput(success=True, data={"rsi": 50.0}, signals=[])
+            if name == "news":
+                return NewsOutput(success=True, articles=[])
+            return DisclosureOutput(success=True, disclosures=[])
+
+        def fin_fetcher(_ticker: str) -> Financials:
+            # 同一 FY で FNP 横ばい → forecast 理由 = no_change
+            history = [
+                ForecastPoint(dt.date(2025, 8, 1), "2026-03-31", "x", 100, None, None, None, 1000),
+                ForecastPoint(dt.date(2025, 11, 1), "2026-03-31", "x", 100, None, None, None, 1000),
+            ]
+            return Financials(
+                ticker="3697", current=PeriodFinancials(period="2026-03-31"), prior=None,
+                market_cap=1e9, source="jquants", forecast_history=history,
+            )
+
+        diag_sink: dict = {}
+        judge = make_live_judge_fn(
+            call_tool, financials_fetcher=fin_fetcher,
+            sector_lookup=lambda _t: "Tech", event_diag_sink=diag_sink,
+        )
+        await magi_verify(engine, ids, judge, event_diag_sink=diag_sink)
+        with Session(engine) as s:
+            d = s.get(Decision, ids[0])
+            assert d.signal_tag_sources["_event_diag"]["forecast"] == "no_change"
+            assert d.status == "awaiting"  # record-only: 売買不変
+
+    async def test_event_diag_fin_not_fetched_on_none(self, engine) -> None:
+        """fin=None（rate-limit 相当）→ _event_diag = fin_not_fetched で観測可能に。"""
+        from trading_agent.magi.persist import make_live_judge_fn
+        from trading_agent.mcp_tools.disclosure import DisclosureOutput
+        from trading_agent.mcp_tools.fundamentals import FundamentalsOutput
+        from trading_agent.mcp_tools.news import NewsOutput
+        from trading_agent.mcp_tools.technicals import TechnicalsOutput
+
+        ids = materialize_decisions(engine, ["3697"])
+
+        async def call_tool(name: str, _inp):
+            if name == "fundamentals":
+                return FundamentalsOutput(success=True, data={})
+            if name == "technicals":
+                return TechnicalsOutput(success=True, data={"rsi": 50.0}, signals=[])
+            if name == "news":
+                return NewsOutput(success=True, articles=[])
+            return DisclosureOutput(success=True, disclosures=[])
+
+        diag_sink: dict = {}
+        judge = make_live_judge_fn(
+            call_tool, financials_fetcher=lambda _t: None,  # rate-limit 相当
+            sector_lookup=lambda _t: "Tech", event_diag_sink=diag_sink,
+        )
+        await magi_verify(engine, ids, judge, event_diag_sink=diag_sink)
+        with Session(engine) as s:
+            d = s.get(Decision, ids[0])
+            assert d.signal_tag_sources["_event_diag"]["forecast"] == "fin_not_fetched"
+
     async def test_counter_within_domain_persisted(self, engine) -> None:
         """B-1：審判の反証（counter_within_domain）が decision_id 付きで永続化される。"""
         ids = materialize_decisions(engine, ["NVDA"])

@@ -221,39 +221,70 @@ def _signal_tag_firing(engine) -> dict[str, Any]:
     verified = [d for d in decs if d.verified_at is not None]
     n = len(verified)
 
-    def _has(d: Decision, tag: str) -> bool:
-        return tag in (d.entry_signal_tags or [])
-
     def _rate(hits: int) -> float:
         return round(100.0 * hits / n, 1) if n else 0.0
 
-    news_pos = sum(1 for d in verified if _has(d, "news_positive"))
-    news_neg = sum(1 for d in verified if _has(d, "news_negative"))
+    def _count(tag: str) -> int:
+        return sum(1 for d in verified if tag in (d.entry_signal_tags or []))
+
+    # 1) tag 種別ごとの発火数（一括でなく種別分解・M1 観測 hardening）
+    struct_tags = [
+        "event_upward_revision", "event_downward_revision",
+        "event_dividend_hike", "event_dividend_cut", "earnings_accel",
+    ]
+    news_tags = ["news_positive", "news_negative"]
+    by_tag = {t: _count(t) for t in (struct_tags + news_tags)}
+
     any_news = sum(
         1 for d in verified
         if any(str(t).startswith("news_") for t in (d.entry_signal_tags or []))
     )
-    earnings = sum(1 for d in verified if _has(d, "earnings_accel"))
     any_struct = sum(
         1 for d in verified
         if any(str(t).startswith(("earnings_", "event_")) for t in (d.entry_signal_tags or []))
     )
+
+    # 2) no-fire 理由 breakdown（signal_tag_sources["_event_diag"] 集計）。
+    # 『なぜ構造化イベントが発火しないか』(fin_not_fetched=rate-limit / no_change /
+    # single_fy_point / missing_shares / split_suspected / no_prior_fy_data 等)を理由別カウント。
+    forecast_reasons: Counter = Counter()
+    dividend_reasons: Counter = Counter()
+    diag_present = 0
+    for d in verified:
+        src = d.signal_tag_sources or {}
+        diag = src.get("_event_diag") if isinstance(src, dict) else None
+        if isinstance(diag, dict):
+            diag_present += 1
+            forecast_reasons[str(diag.get("forecast", "unknown"))] += 1
+            dividend_reasons[str(diag.get("dividend", "unknown"))] += 1
+
     return {
         "verified_decisions": n,
+        "by_tag": by_tag,  # tag 種別ごとの発火数
         "news": {
-            "positive": news_pos,
-            "negative": news_neg,
+            "positive": by_tag["news_positive"],
+            "negative": by_tag["news_negative"],
             "no_tag": n - any_news,
             "fire_rate_pct": _rate(any_news),
         },
         "structured": {
-            "earnings_accel": earnings,
+            "upward_revision": by_tag["event_upward_revision"],
+            "downward_revision": by_tag["event_downward_revision"],
+            "dividend_hike": by_tag["event_dividend_hike"],
+            "dividend_cut": by_tag["event_dividend_cut"],
+            "earnings_accel": by_tag["earnings_accel"],
             "fire_rate_pct": _rate(any_struct),
         },
+        # M1 観測 hardening: 構造化イベントの no-fire 理由（なぜ発火しないかを一目で・空の罠可視化）
+        "no_fire_reasons": {
+            "diag_recorded": diag_present,        # _event_diag が記録された verified 数
+            "forecast": dict(forecast_reasons),   # fin_not_fetched / no_change / single_fy_point …
+            "dividend": dict(dividend_reasons),   # missing_shares / split_suspected / no_prior_fy_data …
+        },
         "note": (
-            "発火率0が続く=辞書/開示接続が機能していない（空シグナル検知・欺瞞防止）。"
-            "news(headline辞書)は補助、構造化イベント(J-Quants由来)が主。"
-            "無タグ理由(no_headline/no_keyword/tie)の内訳は verify 時 diag が要るため次段。"
+            "発火率0が続く=接続/データが機能していない（空シグナル検知・欺瞞防止）。news(辞書)は補助、"
+            "構造化イベント(J-Quants由来)が主。no_fire_reasons で『なぜ発火しないか』(rate-limit=fin_not_fetched"
+            "/データ欠損/抑止)を観測する。"
         ),
     }
 
@@ -363,12 +394,19 @@ def _print_data(engine) -> None:
 
     f = _signal_tag_firing(engine)
     nws, st = f["news"], f["structured"]
-    fire_flag = "🔴 空シグナル疑い" if f["verified_decisions"] and nws["fire_rate_pct"] == 0 else "🟢"
+    _empty = f["verified_decisions"] and st["fire_rate_pct"] == 0
+    fire_flag = "🔴 空シグナル疑い" if _empty else "🟢"
     print()
-    print(f"signal_tag 発火率（verified {f['verified_decisions']}件中）{fire_flag}")
+    print(f"signal_tag 発火（verified {f['verified_decisions']}件中）{fire_flag}")
     print(f"  news（補助/辞書）: +{nws['positive']} / -{nws['negative']} / 無タグ{nws['no_tag']}"
           f"（発火 {nws['fire_rate_pct']}%）")
-    print(f"  構造化（主/J-Quants）: earnings_accel {st['earnings_accel']}（発火 {st['fire_rate_pct']}%）")
+    print(f"  構造化（主/J-Quants）: 上方修正{st['upward_revision']} / 下方修正"
+          f"{st['downward_revision']} / 増配{st['dividend_hike']} / 減配{st['dividend_cut']}"
+          f" / earnings_accel{st['earnings_accel']}（発火 {st['fire_rate_pct']}%）")
+    nfr = f["no_fire_reasons"]
+    if nfr["diag_recorded"]:
+        print(f"  no-fire 理由（diag {nfr['diag_recorded']}件）forecast={nfr['forecast']} / "
+              f"dividend={nfr['dividend']}")
 
 
 def _print_v2(engine) -> None:

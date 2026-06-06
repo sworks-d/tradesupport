@@ -23,14 +23,48 @@ def _engine(tmp_path: Path):
     return eng
 
 
-def _add(engine, *, tags, verified=True):
+def _add(engine, *, tags, verified=True, event_diag=None):
     with Session(engine, expire_on_commit=False) as s:
         d = Decision(date=dt.date(2026, 6, 6), ticker="3697", action="buy", status="awaiting")
         d.entry_signal_tags = tags
+        if event_diag is not None:
+            d.signal_tag_sources = {"_event_diag": event_diag}
         if verified:
             d.verified_at = utcnow()
         s.add(d)
         s.commit()
+
+
+def test_by_tag_breakdown(tmp_path: Path) -> None:
+    """tag 種別ごとの発火数が一括でなく分解集計される（M1 観測 hardening）。"""
+    engine = _engine(tmp_path)
+    _add(engine, tags=["event_upward_revision"])
+    _add(engine, tags=["event_dividend_hike", "earnings_accel"])
+    _add(engine, tags=["news_positive"])
+    f = _signal_tag_firing(engine)
+    bt = f["by_tag"]
+    assert bt["event_upward_revision"] == 1
+    assert bt["event_dividend_hike"] == 1
+    assert bt["earnings_accel"] == 1
+    assert bt["news_positive"] == 1
+    assert bt["event_downward_revision"] == 0
+    assert f["structured"]["upward_revision"] == 1
+
+
+def test_no_fire_reasons_aggregated(tmp_path: Path) -> None:
+    """_event_diag の no-fire 理由が forecast/dividend 別に集計される（なぜ発火しないか可視化）。"""
+    engine = _engine(tmp_path)
+    _add(engine, tags=[], event_diag={"forecast": "fin_not_fetched", "dividend": "fin_not_fetched"})
+    _add(engine, tags=[], event_diag={"forecast": "no_change", "dividend": "missing_shares"})
+    _add(engine, tags=[], event_diag={"forecast": "fin_not_fetched", "dividend": "split_suspected"})
+    _add(engine, tags=[])  # diag 無し（旧 decision）
+
+    nfr = _signal_tag_firing(engine)["no_fire_reasons"]
+    assert nfr["diag_recorded"] == 3  # diag を持つ verified のみ
+    assert nfr["forecast"]["fin_not_fetched"] == 2  # rate-limit を理由別に観測
+    assert nfr["forecast"]["no_change"] == 1
+    assert nfr["dividend"]["missing_shares"] == 1
+    assert nfr["dividend"]["split_suspected"] == 1
 
 
 def test_counts_news_and_structured_firing(tmp_path: Path) -> None:
