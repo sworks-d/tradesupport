@@ -23,13 +23,15 @@ from typing import Any
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, col, select
 
+from trading_agent.evaluation.official_sources import OFFICIAL_FILL_SOURCES
 from trading_agent.models.decisions import Decision
 from trading_agent.utils.time_utils import today_jst
 
 # series_fetcher(tickers, start_date) -> {ticker: [close, ...]}（index 0 = start日以降の最初の営業日）
 SeriesFetcher = Callable[[list[str], dt.date], dict[str, list[float]]]
 
-_OFFICIAL_SOURCES = ("ds_dispatch", "manual")
+# L3: 公式約定ソースは evaluation/official_sources に集約（paper_auto 除外理由もそこに明記）
+_OFFICIAL_SOURCES = OFFICIAL_FILL_SOURCES
 _DEFAULT_HORIZONS = (5, 20, 40, 60)  # 営業日
 _BENCHMARK_TICKER = "1306.T"  # TOPIX 連動 ETF（対市場超過の基準）
 

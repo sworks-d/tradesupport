@@ -46,6 +46,7 @@ from trading_agent.evaluation.gate import (
     combined_gate_reference,
     official_gate_evaluation,
 )
+from trading_agent.evaluation.official_sources import OFFICIAL_FILL_SOURCES
 from trading_agent.models.decisions import Decision
 from trading_agent.models.portfolio import Portfolio
 from trading_agent.models.universe import Universe
@@ -66,7 +67,8 @@ def _line(c: str = "─", n: int = 60) -> str:
     return c * n
 
 
-_OFFICIAL_SOURCES = ("ds_dispatch", "manual")
+# L3: 公式約定ソースは evaluation/official_sources に集約（paper_auto 除外理由もそこに明記）
+_OFFICIAL_SOURCES = OFFICIAL_FILL_SOURCES
 
 
 def _latest_forward_diagnosis() -> dict[str, Any]:
@@ -94,7 +96,6 @@ def _purchase_history(engine, *, broker_mode: str = "paper") -> dict[str, Any]:
     closed は売値/理由/損益も併記。legacy（cleanup/reset/分割/上場廃止由来）は件数のみ別掲（codex の
     official/legacy 分離指摘）。含み損益はダッシュボード側（価格 fetch が要るためここでは出さない）。
     """
-    _OFFICIAL = ("ds_dispatch", "manual")
     with Session(engine) as s:
         ports = s.exec(
             select(Portfolio).where(col(Portfolio.broker_mode) == broker_mode)
@@ -106,7 +107,7 @@ def _purchase_history(engine, *, broker_mode: str = "paper") -> dict[str, Any]:
     legacy_n = 0
     for p in ports:
         d = decs.get(getattr(p, "decision_id", None))
-        is_official = d is not None and d.filled_via in _OFFICIAL
+        is_official = d is not None and d.filled_via in _OFFICIAL_SOURCES
         if not is_official:
             legacy_n += 1
             continue

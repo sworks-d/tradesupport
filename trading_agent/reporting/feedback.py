@@ -20,11 +20,13 @@ from typing import Any
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, col, select
 
+from trading_agent.evaluation.official_sources import OFFICIAL_FILL_SOURCES
 from trading_agent.models.decisions import Decision
 from trading_agent.models.portfolio import Portfolio
 
 
-_OFFICIAL_SOURCES = ("ds_dispatch", "manual")
+# L3: 公式約定ソースは evaluation/official_sources に集約（paper_auto 除外理由もそこに明記）
+_OFFICIAL_SOURCES = OFFICIAL_FILL_SOURCES
 
 
 def collect_feedback_records(

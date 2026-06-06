@@ -34,6 +34,7 @@ from sqlmodel import Session, col, select
 
 from trading_agent.evaluation.metrics import EvalResult, build_track_record
 from trading_agent.evaluation.job import _DEFAULT_ROUND_TRIP_COST_PCT
+from trading_agent.evaluation.official_sources import OFFICIAL_FILL_SOURCES
 from trading_agent.models.decisions import Decision
 from trading_agent.risk.params import DEFAULT_RISK, RiskParams
 
@@ -43,9 +44,10 @@ from trading_agent.risk.params import DEFAULT_RISK, RiskParams
 _ADVERSE_REGIMES = {"bear", "risk_off"}
 _FAVORABLE_REGIMES = {"bull", "risk_on"}
 
-# A7: 公式実績に数える約定経路。DS 公式 dispatch（paper）と実弾代行（live）のみ。
-# notify の paper_auto sim は二重計上になるため公式集合から除外（codex 条件③をコードで担保）。
-_OFFICIAL_SOURCES = ("ds_dispatch", "manual")
+# A7/L3: 公式実績に数える約定経路は evaluation/official_sources に集約。
+# DS 公式 dispatch（paper）と実弾代行（live）のみ。notify の paper_auto sim は二重計上に
+# なるため公式集合から除外（codex 条件③）。除外理由の詳細は official_sources.py の docstring。
+_OFFICIAL_SOURCES = OFFICIAL_FILL_SOURCES
 
 
 @dataclass
