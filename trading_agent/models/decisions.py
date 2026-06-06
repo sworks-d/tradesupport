@@ -101,6 +101,11 @@ class Decision(SQLModel, table=True):
     entry_breadth_score: float | None = None  # 市場 breadth（0-100・上昇銘柄比率）
     entry_exposure_recommendation: str | None = None  # NEW_ENTRY_ALLOWED/REDUCE_ONLY/CASH_PRIORITY
     macro_adjustment: float | None = None  # exposure 由来の想定サイジング係数（0=中立/負=縮小）。未適用
+    # (c) fundamental_event_score: entry_signal_tags から算出した 0-100 連続スコア（50=中立）。
+    # **record-only**（売買は変えない）。(d)=forward_diagnosis が bucket 別に成績を相関測定する。
+    # version は式・cut point とセット（変えたら bump=p-hacking 防止）。None=(c)未処理(legacy)。
+    fundamental_event_score: float | None = None
+    event_score_version: str | None = None
 
     # 紐付いたトピックス
     supporting_topic_ids: list[int] = Field(default_factory=list, sa_column=Column(JSON))

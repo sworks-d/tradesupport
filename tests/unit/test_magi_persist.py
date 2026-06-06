@@ -299,6 +299,40 @@ class TestMagiVerify:
             assert d.signal_tag_sources["event_upward_revision"]["after"] == 130
             assert d.status == "awaiting"  # record-only: 売買不変
 
+    async def test_event_score_recorded_on_decision(self, engine) -> None:
+        """(c): magi_verify が最終 entry_signal_tags から fundamental_event_score を記録（record-only）。"""
+        from trading_agent.screening.event_score import EVENT_SCORE_VERSION
+
+        ids = materialize_decisions(engine, ["3697"])
+
+        async def judge_fn(ticker: str) -> JudgeBundle:
+            # news_positive タグ1つを sink で付与 → score 50+8=58（mid）
+            sink_ref["sink"][ticker] = (["news_positive"], {"news_positive": {"source": "n"}})
+            return _bundle(default_hold=False)
+
+        sink_ref: dict = {"sink": {}}
+        await magi_verify(engine, ids, judge_fn, news_event_sink=sink_ref["sink"])
+        with Session(engine) as s:
+            d = s.get(Decision, ids[0])
+            assert d.fundamental_event_score == 58.0
+            assert d.event_score_version == EVENT_SCORE_VERSION
+            assert d.status == "awaiting"  # record-only: 売買不変
+
+    async def test_event_score_neutral_when_no_tags(self, engine) -> None:
+        """タグ無し decision も 50（中立）で必ず採点される（全サンプルが (d) 相関に使える）。"""
+        from trading_agent.screening.event_score import EVENT_SCORE_VERSION
+
+        ids = materialize_decisions(engine, ["NVDA"])
+
+        async def judge_fn(_ticker: str) -> JudgeBundle:
+            return _bundle()
+
+        await magi_verify(engine, ids, judge_fn)
+        with Session(engine) as s:
+            d = s.get(Decision, ids[0])
+            assert d.fundamental_event_score == 50.0
+            assert d.event_score_version == EVENT_SCORE_VERSION
+
     async def test_counter_within_domain_persisted(self, engine) -> None:
         """B-1：審判の反証（counter_within_domain）が decision_id 付きで永続化される。"""
         ids = materialize_decisions(engine, ["NVDA"])

@@ -17,6 +17,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import OperationalError
 from sqlmodel import Session, col, delete, select
 
 from trading_agent.magi import classify_split, command, run_judges, verify
@@ -40,6 +41,10 @@ from trading_agent.screening import (
     derive_structured_event_tags,
     melchior_accrual_counter,
     melchior_credibility_counter,
+)
+from trading_agent.screening.event_score import (
+    EVENT_SCORE_VERSION,
+    compute_fundamental_event_score,
 )
 from trading_agent.utils.logger import get_logger
 from trading_agent.utils.time_utils import today_jst, utcnow
@@ -210,8 +215,34 @@ async def magi_verify(
             _apply_record_only_tags(engine, decision_id, earnings_sink[ticker])
         if news_event_sink is not None and ticker in news_event_sink:
             _apply_record_only_tags(engine, decision_id, news_event_sink[ticker])
+        # (c): 最終 entry_signal_tags から fundamental_event_score を算出し記録（record-only・売買不変）。
+        # タグ適用の **後** に実行（earnings/news 両タグ反映済の最終集合で採点する）。
+        _apply_event_score(engine, decision_id)
         counts["held" if default_hold else "verified"] += 1
     return counts
+
+
+def _apply_event_score(engine: Engine, decision_id: int) -> None:
+    """(c): decision の最終 entry_signal_tags から fundamental_event_score を算出し記録（record-only）。
+
+    全 verified decision に数値を与える（イベント無し=50）→ (d) が全サンプルで相関測定できる土台。売買不変。
+    ※ この try/except は **多層防御であって安全保証ではない**（codex P1）。Decision モデルが当該カラムを
+      宣言した時点で、未適用 DB では _apply_event_score 以前の session.get(Decision,...) が
+      OperationalError で落ちる。よって **migration は code commit と同時適用が前提**（後回し不可）。
+      ここで catch するのは「ここまで来た稀ケース」の保険にすぎない。
+    """
+    try:
+        with Session(engine, expire_on_commit=False) as session:
+            d = session.get(Decision, decision_id)
+            if d is None:
+                return
+            d.fundamental_event_score = compute_fundamental_event_score(d.entry_signal_tags or [])
+            d.event_score_version = EVENT_SCORE_VERSION
+            session.add(d)
+            session.commit()
+    except OperationalError as exc:
+        # カラム未追加（migration 未適用）の保険。安全保証ではない（上記・migration は code と同時適用）。
+        _log.warning("event_score_skipped_no_column", decision_id=decision_id, error=str(exc))
 
 
 def _apply_record_only_tags(
