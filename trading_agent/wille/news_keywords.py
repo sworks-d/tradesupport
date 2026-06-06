@@ -147,3 +147,90 @@ def classify_headline(headline: str) -> dict[str, object]:
         "matched_keywords": [kw for _, kw in (pos_hits + neg_hits)],
         "needs_llm": True,
     }
+
+
+# ============================================================
+# news 系 signal_tags 導出（record-only・A）
+# ============================================================
+
+# 1 銘柄あたり走査する見出しの上限（病的入力でのコスト暴走を防ぐ）。
+_MAX_HEADLINES = 30
+
+
+def _headline_of(item: object) -> str:
+    """news article / disclosure dict から分類対象の見出し文字列を取り出す。"""
+    if not isinstance(item, dict):
+        return ""
+    return str(item.get("title") or item.get("summary") or item.get("headline") or "")
+
+
+def derive_news_event_tags(
+    articles: list[dict] | None,
+    disclosures: list[dict] | None = None,
+    *,
+    asof: str | None = None,
+) -> tuple[list[str], dict]:
+    """取得済の銘柄別 news / 開示見出しから news 系 signal_tags を導出する（record-only・A）。
+
+    magi_verify の judge が **既に引いている** per-ticker news（NewsOutput.articles）と開示
+    （TDnet/EDINET）の見出しを ``classify_headline`` で +/−/0 分類し、銘柄単位の純インパクトで
+    ``news_positive`` / ``news_negative`` を立てる（¥0・LLM 不使用・新規 fetch 無し）。
+
+    小サンプル現実（評価済 n が小さい）に配慮し、タグは粗く 2 値に留める（細分はタグ分裂で n を
+    割り、compare_signal_tags_vs_baseline の検出力を殺すため）。カテゴリ等の細部は evidence に保持し、
+    後で n が溜まってから細分する。純中立・同点・材料なしは **無タグ**（推測しない・H10）。
+
+    返り値: (tags, evidence)。evidence[tag] = 監査メタ（source/asof/pos/neg/categories/見出しサンプル）。
+    取得失敗・データ欠損時は ([], {})。
+    """
+    headlines: list[str] = []
+    for item in (articles or []):
+        h = _headline_of(item)
+        if h:
+            headlines.append(h)
+    for item in (disclosures or []):
+        h = _headline_of(item)
+        if h:
+            headlines.append(h)
+    if not headlines:
+        return [], {}
+
+    pos = neg = 0
+    categories: list[str] = []
+    pos_samples: list[str] = []
+    neg_samples: list[str] = []
+    for headline in headlines[:_MAX_HEADLINES]:
+        result = classify_headline(headline)
+        impact = result.get("impact")
+        cat = str(result.get("category") or "")
+        if impact == "+":
+            pos += 1
+            if cat:
+                categories.append(cat)
+            if len(pos_samples) < 3:
+                pos_samples.append(headline[:80])
+        elif impact == "-":
+            neg += 1
+            if cat:
+                categories.append(cat)
+            if len(neg_samples) < 3:
+                neg_samples.append(headline[:80])
+
+    net = pos - neg
+    if net == 0:
+        # 材料なし（pos=neg=0）or 同点（pos==neg>0）＝方向性不明 → 推測しない
+        return [], {}
+
+    tag = "news_positive" if net > 0 else "news_negative"
+    evidence = {
+        tag: {
+            "source": "news+disclosure",
+            "asof": asof,
+            "pos": pos,
+            "neg": neg,
+            "scanned": min(len(headlines), _MAX_HEADLINES),
+            "categories": sorted(set(categories)),
+            "sample_headlines": pos_samples if net > 0 else neg_samples,
+        }
+    }
+    return [tag], evidence

@@ -205,6 +205,58 @@ def _decision_breakdown(engine) -> dict:
     }
 
 
+def _signal_tag_firing(engine) -> dict[str, Any]:
+    """発火率の可視化（codex・欺瞞防止）: verified 済 decision に signal_tag が何件立ったか。
+
+    edge器(signal_tag_vs_baseline)は「タグ付き decision の成績」を測るが、その手前の
+    「そもそもタグが何件立っているか（＝発火率）」が見えないと、空シグナルが silently empty になる。
+    news 系（headline 辞書由来・補助）と構造化 earnings 系（J-Quants 由来・主）の発火率を、
+    verified decision 母数に対して出す。DB のみ・コスト0・売買不変（record-only タグの観測）。
+
+    発火率が 0 のまま続く＝辞書/開示接続が機能していない兆候（「動いてる風」を防ぐ）。
+    """
+    with Session(engine) as s:
+        decs = s.exec(select(Decision)).all()
+    verified = [d for d in decs if d.verified_at is not None]
+    n = len(verified)
+
+    def _has(d: Decision, tag: str) -> bool:
+        return tag in (d.entry_signal_tags or [])
+
+    def _rate(hits: int) -> float:
+        return round(100.0 * hits / n, 1) if n else 0.0
+
+    news_pos = sum(1 for d in verified if _has(d, "news_positive"))
+    news_neg = sum(1 for d in verified if _has(d, "news_negative"))
+    any_news = sum(
+        1 for d in verified
+        if any(str(t).startswith("news_") for t in (d.entry_signal_tags or []))
+    )
+    earnings = sum(1 for d in verified if _has(d, "earnings_accel"))
+    any_struct = sum(
+        1 for d in verified
+        if any(str(t).startswith(("earnings_", "event_")) for t in (d.entry_signal_tags or []))
+    )
+    return {
+        "verified_decisions": n,
+        "news": {
+            "positive": news_pos,
+            "negative": news_neg,
+            "no_tag": n - any_news,
+            "fire_rate_pct": _rate(any_news),
+        },
+        "structured": {
+            "earnings_accel": earnings,
+            "fire_rate_pct": _rate(any_struct),
+        },
+        "note": (
+            "発火率0が続く=辞書/開示接続が機能していない（空シグナル検知・欺瞞防止）。"
+            "news(headline辞書)は補助、構造化イベント(J-Quants由来)が主。"
+            "無タグ理由(no_headline/no_keyword/tie)の内訳は verify 時 diag が要るため次段。"
+        ),
+    }
+
+
 def _print_intent(engine) -> None:
     print(_line("="))
     print("① 実行意図（いま何を回しているか）")
@@ -307,6 +359,15 @@ def _print_data(engine) -> None:
     print(f"  filled_via:  {_relabel(b['by_filled_via'])}")
     print(f"  broker_mode: {_relabel(b['by_broker_mode'])}")
     print("※ 公式集合（ゲート⑥対象）= filled_via∈(ds_dispatch,manual) ∧ entry_market_regime 有 ∧ broker_mode 一致")
+
+    f = _signal_tag_firing(engine)
+    nws, st = f["news"], f["structured"]
+    fire_flag = "🔴 空シグナル疑い" if f["verified_decisions"] and nws["fire_rate_pct"] == 0 else "🟢"
+    print()
+    print(f"signal_tag 発火率（verified {f['verified_decisions']}件中）{fire_flag}")
+    print(f"  news（補助/辞書）: +{nws['positive']} / -{nws['negative']} / 無タグ{nws['no_tag']}"
+          f"（発火 {nws['fire_rate_pct']}%）")
+    print(f"  構造化（主/J-Quants）: earnings_accel {st['earnings_accel']}（発火 {st['fire_rate_pct']}%）")
 
 
 def _print_v2(engine) -> None:
@@ -584,6 +645,10 @@ def build_phase_c_status(engine) -> dict[str, Any]:
             k: (dict(v) if isinstance(v, Counter) else v)
             for k, v in _decision_breakdown(engine).items()
         },
+        # 発火率の可視化（codex・欺瞞防止）: signal_tag が verified decision に何件立っているか。
+        # edge器(下の signal_tag_vs_baseline)の手前で「そもそもタグが立っているか」を見せ、
+        # 空シグナルが silently empty になるのを防ぐ。news=補助 / 構造化イベント=主。
+        "signal_tag_firing": _signal_tag_firing(engine),
         # === Review Report v2（codex 仕様）===
         # 粒度の明示（codex P1/P2）: gate n は Decision 粒度、明細/breakdowns は fill record 粒度
         # （1 Decision を複数機体が fill すると record が増える）。UI は両者を区別して見せる。
