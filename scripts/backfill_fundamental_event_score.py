@@ -1,4 +1,4 @@
-"""(c) 既存 verified decision の fundamental_event_score を PIT 安全に backfill（一回限り）。
+"""(c) 既存の live status decision の fundamental_event_score を PIT 安全に backfill（一回限り）。
 
 実行（適用）: .venv/bin/python scripts/backfill_fundamental_event_score.py --apply
 ドライ（既定）: .venv/bin/python scripts/backfill_fundamental_event_score.py
@@ -17,6 +17,10 @@
   status in (awaiting, approved, ordered, filled) かつ fundamental_event_score IS NULL。
   cancelled はデッド（forward/edge 集計対象外）でノイズになるため**除外**。
   既に score 済（=(c) デプロイ後 verify）は触らない。
+  ※ codex 注: 条件は status ベースで `verified_at IS NOT NULL` は課していない（approved/ordered の
+    一部は verified_at NULL でも対象になる）。売買/gate は不変・record-only なので無害だが、
+    「verified only」ではなく「live status の確定済 entry_signal_tags から再採点」が正確な説明。
+    タグ未観測の旧データは式どおり 50（中立=mid）になり、高/低スコアの差は新規データ蓄積待ち。
 
 安全性:
   record-only（売買・gate・status を一切変えない・score 2カラムのみ）。reversible（NULL に戻せる）。
