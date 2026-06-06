@@ -57,6 +57,33 @@ class TestExecuteAgent:
         assert row.agent == "ok_agent"
         assert row.ended_at is not None
 
+    async def test_shared_invocation_id_logs_each_agent(self, tmp_path: Path) -> None:
+        """A-1 回帰: 朝バッチのように複数エージェントが同一 invocation_id を共有しても、
+        各エージェントの AnalysisLog 行が自分の terminal status で更新される。
+        旧実装は _log_end が first() で先頭1行のみ更新し、後続は永久 running に残った。
+        """
+        engine = _engine(tmp_path)
+        shared = "morning_2026-06-06"
+        out1 = await execute_agent(
+            _OkAgent(), _In(invocation_id=shared), engine, halt_file=tmp_path / "NOPE"
+        )
+        out2 = await execute_agent(
+            _BoomAgent(), _In(invocation_id=shared), engine, halt_file=tmp_path / "NOPE"
+        )
+        assert out1.success is True
+        assert out2.success is False
+        with Session(engine) as s:
+            rows = list(
+                s.exec(select(AnalysisLog).where(col(AnalysisLog.invocation_id) == shared))
+            )
+        # 2 エージェント = 2 行、どちらも running ではない（自分の行が更新されている）
+        assert len(rows) == 2
+        by_agent = {r.agent: r for r in rows}
+        assert by_agent["ok_agent"].status == "success"
+        assert by_agent["boom_agent"].status == "failure"
+        assert all(r.ended_at is not None for r in rows)
+        assert not any(r.status == "running" for r in rows)
+
     async def test_halt_aborts(self, tmp_path: Path) -> None:
         engine = _engine(tmp_path)
         halt = tmp_path / "HALT"

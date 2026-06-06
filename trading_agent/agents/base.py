@@ -16,7 +16,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 
 from sqlalchemy.engine import Engine
-from sqlmodel import Session, col, select
+from sqlmodel import Session
 
 from trading_agent.llm.budget import BudgetGuard
 from trading_agent.mcp_tools.base import MCPToolInput, MCPToolOutput
@@ -73,26 +73,34 @@ def _input_summary(agent_input: AgentInput) -> str:
     return str(agent_input.model_dump())[:500]
 
 
-def _log_start(engine: Engine, agent_name: str, invocation_id: str, input_summary: str) -> None:
+def _log_start(engine: Engine, agent_name: str, invocation_id: str, input_summary: str) -> int | None:
+    """開始ログを1行 insert し、その行 id を返す。
+
+    朝バッチでは複数エージェントが同一 invocation_id を共有するため、id を
+    引き回して _log_end が「自分の行」を確実に更新できるようにする（A-1 修正）。
+    旧実装は _log_end が invocation_id だけで first() を引き、先頭1行（DAG 先頭の
+    topics_collector）しか success にできず、他エージェントは永久 running に残った。
+    """
     with Session(engine) as session:
-        session.add(
-            AnalysisLog(
-                agent=agent_name,
-                invocation_id=invocation_id,
-                started_at=utcnow(),
-                input_summary=input_summary,
-                output_summary="",
-                status="running",
-            )
+        row = AnalysisLog(
+            agent=agent_name,
+            invocation_id=invocation_id,
+            started_at=utcnow(),
+            input_summary=input_summary,
+            output_summary="",
+            status="running",
         )
+        session.add(row)
         session.commit()
+        session.refresh(row)
+        return row.id
 
 
-def _log_end(engine: Engine, invocation_id: str, output: AgentOutput, status: str) -> None:
+def _log_end(engine: Engine, log_id: int | None, output: AgentOutput, status: str) -> None:
+    if log_id is None:
+        return
     with Session(engine) as session:
-        row = session.exec(
-            select(AnalysisLog).where(col(AnalysisLog.invocation_id) == invocation_id)
-        ).first()
+        row = session.get(AnalysisLog, log_id)
         if row is None:
             return
         row.ended_at = utcnow()
@@ -137,7 +145,7 @@ async def execute_agent[TIn: AgentInput](
             log.warning("agent_aborted_budget", reason=reason)
             return _abort(invocation_id, f"Budget exceeded: {reason}", "予算超過")
 
-    _log_start(engine, agent.name, invocation_id, _input_summary(agent_input))
+    log_id = _log_start(engine, agent.name, invocation_id, _input_summary(agent_input))
 
     try:
         output = await agent.execute(agent_input)
@@ -157,7 +165,7 @@ async def execute_agent[TIn: AgentInput](
             output.duration_ms = int((time.time() - start) * 1000)
             status = "failure"
 
-    _log_end(engine, invocation_id, output, status)
+    _log_end(engine, log_id, output, status)
     return output
 
 
