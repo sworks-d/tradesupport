@@ -10,7 +10,10 @@ from __future__ import annotations
 
 import datetime as dt
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+# (b) 構造化イベント parser のバージョン（evidence に残す・semantics 変更時に上げる）。
+STRUCTURED_EVENTS_PARSER_VERSION = "structured_events_v1"
 
 # 生の財務諸表：{"periods": [ISO日付, ...降順], "rows": {ラベル: [値, ...periods整列]}}
 RawStatements = dict[str, object]
@@ -65,6 +68,24 @@ class PeriodFinancials:
 
 
 @dataclass
+class ForecastPoint:
+    """1 開示時点の予想・配当スナップショット（J-Quants statements 短縮列由来・(b)用）。
+
+    forecast revision / dividend change の**開示間比較**に使う。欠損は None（推測しない・R4）。
+    列名は jquantsapi FIN_SUMMARY_COLUMNS_V2 準拠（FNP/FOP/FDivAnn/DivAnn/CurFYEn/DiscDate 等）。
+    """
+
+    disc_date: dt.date | None          # DiscDate（開示日＝PIT基準・期末日と混同しない）
+    cur_fy_end: str | None             # CurFYEn（当期 FY 末・同一 FY 照合キー）
+    doc_type: str | None               # DocType（開示種別）
+    forecast_profit: float | None      # FNP（当期予想純利益）
+    forecast_op: float | None          # FOP（当期予想営業利益）
+    forecast_div_annual: float | None  # FDivAnn（当期予想 年間1株配当）
+    result_div_annual: float | None    # DivAnn（当期実績 年間1株配当）
+    shares_outstanding: float | None   # ShOutFY（期末発行済株式数・split ガード用）
+
+
+@dataclass
 class Financials:
     ticker: str
     current: PeriodFinancials
@@ -72,6 +93,8 @@ class Financials:
     prior2: PeriodFinancials | None = None  # 3期目（earnings acceleration＝成長率の加速に必要）
     market_cap: float | None = None
     source: str = "yfinance"
+    # (b) 構造化イベント用: 開示時系列の予想/配当スナップショット（J-Quants 由来時のみ・他は空）。
+    forecast_history: list[ForecastPoint] = field(default_factory=list)
 
     def has_two_periods(self) -> bool:
         return self.prior is not None
@@ -101,8 +124,8 @@ def _num(rows: dict[str, list], labels: tuple[str, ...], idx: int) -> float | No
 
 def _period(rows: dict[str, list], periods: list[str], idx: int) -> PeriodFinancials:
     pf = PeriodFinancials(period=periods[idx] if idx < len(periods) else "")
-    for field, labels in _LABELS.items():
-        setattr(pf, field, _num(rows, labels, idx))
+    for field_name, labels in _LABELS.items():
+        setattr(pf, field_name, _num(rows, labels, idx))
     # working_capital 欠損なら 流動資産−流動負債 で補完（コード計算）
     if pf.working_capital is None and pf.current_assets is not None:
         if pf.current_liabilities is not None:
@@ -210,6 +233,8 @@ def _fetch_jquants_financials(
         prior2=periods[2] if len(periods) >= 3 else None,
         market_cap=market_cap,
         source="jquants",
+        # (b): 既に引いた statements を再利用して予想/配当の開示時系列を構築（新規 fetch 無し）。
+        forecast_history=_build_forecast_history(statements),
     )
 
 
@@ -241,6 +266,59 @@ def _parse_disclosed_date(stmt: dict) -> dt.date | None:
             except ValueError:
                 pass
     return None
+
+
+def _stmt_float(stmt: dict, key: str) -> float | None:
+    """statements の 1 列を float へ。空/欠損/NaN/非数は None（推測しない・R4）。"""
+    v = stmt.get(key)
+    if v is None or v == "":
+        return None
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return None if f != f else f  # NaN 除外
+
+
+def _norm_fy_end(stmt: dict) -> str | None:
+    """CurFYEn（当期 FY 末）を同一 FY 照合用に ISO 文字列(先頭10)へ正規化。取れなければ None。"""
+    raw = stmt.get("CurFYEn")
+    if raw is None or raw == "":
+        return None
+    if hasattr(raw, "isoformat"):
+        return raw.isoformat()[:10]
+    return str(raw)[:10]
+
+
+def _jquants_stmt_to_forecast_point(stmt: dict) -> ForecastPoint:
+    """J-Quants statements の 1 開示 → ForecastPoint（短縮列 FIN_SUMMARY_COLUMNS_V2 準拠）。
+
+    DiscDate=開示日(PIT) / CurFYEn=当期FY末 / DocType=開示種別 /
+    FNP=当期予想純利益 / FOP=当期予想営業利益 / FDivAnn=当期予想年配 /
+    DivAnn=当期実績年配 / ShOutFY=期末発行済株式数。欠損は None（推測しない）。
+    """
+    doc_type = stmt.get("DocType")
+    return ForecastPoint(
+        disc_date=_parse_disclosed_date(stmt),
+        cur_fy_end=_norm_fy_end(stmt),
+        doc_type=str(doc_type) if doc_type not in (None, "") else None,
+        forecast_profit=_stmt_float(stmt, "FNP"),
+        forecast_op=_stmt_float(stmt, "FOP"),
+        forecast_div_annual=_stmt_float(stmt, "FDivAnn"),
+        result_div_annual=_stmt_float(stmt, "DivAnn"),
+        shares_outstanding=_stmt_float(stmt, "ShOutFY"),
+    )
+
+
+def _build_forecast_history(statements: list[dict], *, limit: int = 8) -> list[ForecastPoint]:
+    """直近 `limit` 開示の ForecastPoint 列を構築（開示日昇順・forecast/dividend 比較用）。
+
+    開示日が取れない開示は除外（PIT 比較の土台が無い・silent look-ahead を出さない）。
+    """
+    pts = [_jquants_stmt_to_forecast_point(s) for s in statements[:limit]]
+    pts = [p for p in pts if p.disc_date is not None]
+    pts.sort(key=lambda p: p.disc_date)  # type: ignore[arg-type,return-value]
+    return pts
 
 
 def fetch_financials_asof(

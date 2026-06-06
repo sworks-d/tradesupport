@@ -245,6 +245,60 @@ class TestMagiVerify:
             assert d.entry_signal_tags == ["news_negative"]  # 重複しない
             assert d.status == "awaiting"  # record-only: 売買は通常の verify 通り
 
+    async def test_structured_event_tags_end_to_end_via_earnings_sink(self, engine) -> None:
+        """(b) 全経路: forecast_history 付き fin → _apply_credibility → earnings_sink →
+        magi_verify → Decision.entry_signal_tags に event_upward_revision（record-only）。"""
+        import datetime as dt
+
+        from trading_agent.magi.persist import make_live_judge_fn
+        from trading_agent.mcp_tools.disclosure import DisclosureOutput
+        from trading_agent.mcp_tools.fundamentals import FundamentalsOutput
+        from trading_agent.mcp_tools.news import NewsOutput
+        from trading_agent.mcp_tools.technicals import TechnicalsOutput
+        from trading_agent.screening.financials import (
+            Financials,
+            ForecastPoint,
+            PeriodFinancials,
+        )
+
+        ids = materialize_decisions(engine, ["3697"])
+
+        async def call_tool(name: str, _inp):
+            if name == "fundamentals":
+                return FundamentalsOutput(success=True, data={})
+            if name == "technicals":
+                return TechnicalsOutput(success=True, data={"rsi": 50.0}, signals=[])
+            if name == "news":
+                return NewsOutput(success=True, articles=[])
+            return DisclosureOutput(success=True, disclosures=[])
+
+        def fin_fetcher(_ticker: str) -> Financials:
+            # 同一 FY(2026-03-31) で FNP 100→130 = 上方修正
+            history = [
+                ForecastPoint(dt.date(2025, 8, 1), "2026-03-31", "x", 100, None, None, None, 1000),
+                ForecastPoint(dt.date(2025, 11, 1), "2026-03-31", "x", 130, None, None, None, 1000),
+            ]
+            return Financials(
+                ticker="3697",
+                current=PeriodFinancials(period="2026-03-31"),
+                prior=None,
+                market_cap=1e9,
+                source="jquants",
+                forecast_history=history,
+            )
+
+        e_sink: dict = {}
+        judge = make_live_judge_fn(
+            call_tool, financials_fetcher=fin_fetcher,
+            sector_lookup=lambda _t: "Tech", earnings_sink=e_sink,
+        )
+        await magi_verify(engine, ids, judge, earnings_sink=e_sink)
+        with Session(engine) as s:
+            d = s.get(Decision, ids[0])
+            assert "event_upward_revision" in (d.entry_signal_tags or [])
+            assert d.signal_tag_sources["event_upward_revision"]["after"] == 130
+            assert d.status == "awaiting"  # record-only: 売買不変
+
     async def test_counter_within_domain_persisted(self, engine) -> None:
         """B-1：審判の反証（counter_within_domain）が decision_id 付きで永続化される。"""
         ids = materialize_decisions(engine, ["NVDA"])

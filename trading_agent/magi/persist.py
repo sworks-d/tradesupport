@@ -37,6 +37,7 @@ from trading_agent.screening import (
     Financials,
     assess_credibility,
     derive_earnings_signal_tags,
+    derive_structured_event_tags,
     melchior_accrual_counter,
     melchior_credibility_counter,
 )
@@ -361,4 +362,9 @@ def _apply_credibility(
                 v.counter_within_domain = [*v.counter_within_domain, *counter]
     # A prime: 同じ fin から earnings 系 signal_tags を導出（record-only・売買は変えない）。
     e_tags, e_evidence = derive_earnings_signal_tags(fin)
-    return cred.credibility_flag, e_tags, e_evidence
+    # (b): 同じ fin の forecast_history から構造化イベントタグ（上方/下方修正・増配/減配）を導出し
+    # 合流。既存 earnings_sink レールに乗せる（新規 fetch 無し・record-only・PIT 正・売買不変）。
+    s_tags, s_evidence = derive_structured_event_tags(fin)
+    merged_tags = e_tags + [t for t in s_tags if t not in e_tags]
+    merged_evidence = {**e_evidence, **s_evidence}
+    return cred.credibility_flag, merged_tags, merged_evidence
