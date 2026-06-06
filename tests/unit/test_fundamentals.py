@@ -13,8 +13,31 @@ from trading_agent.mcp_tools.fundamentals import (
     _default_fields,
     eps_metrics_from_series,
     is_jp_ticker,
+    is_permanent_fetch_error,
     primary_source_url,
 )
+
+
+class TestPermanentFetchError:
+    """T4（監査）: 新規上場/未収録の恒久失敗を一時障害と区別し retry storm を止める。"""
+
+    def test_attribute_error_is_permanent(self) -> None:
+        # yfinance 内部クラッシュ（新規上場 XXXA の _dividends 属性）
+        assert is_permanent_fetch_error(AttributeError("'PriceHistory' object has no attribute '_dividends'")) is True
+
+    def test_keyerror_is_permanent(self) -> None:
+        assert is_permanent_fetch_error(KeyError("Close")) is True
+
+    def test_404_message_is_permanent(self) -> None:
+        assert is_permanent_fetch_error(Exception("336A.T: 404 Client Error: Not Found")) is True
+
+    def test_delisted_message_is_permanent(self) -> None:
+        assert is_permanent_fetch_error(Exception("153A.T: possibly delisted; no price data found")) is True
+
+    def test_transient_network_is_not_permanent(self) -> None:
+        # rate-limit / 接続断は一時 → retry 対象（NetworkError 側）
+        assert is_permanent_fetch_error(Exception("Connection timed out")) is False
+        assert is_permanent_fetch_error(Exception("Too Many Requests rate limit")) is False
 
 _VALUES = {
     "eps": 6.1,

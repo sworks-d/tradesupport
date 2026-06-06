@@ -216,6 +216,34 @@ def _fetch_quarterly_eps_series(symbol: str) -> list[float]:
     return series
 
 
+# T4（監査）: 取得失敗の恒久/一時 分類。恒久（新規上場で yfinance 未収録・404・上場廃止・
+# yfinance 内部 AttributeError(_dividends 等)）は DataNotFoundError に寄せ MCP base の retry を
+# 止める。一時（rate-limit/接続）だけ NetworkError で retry する。新規上場 XXXA(336A 等)の
+# 3 回 retry storm が rate budget を食う問題（所見4）への対処。
+_PERMANENT_FETCH_MARKERS = (
+    "404",
+    "no data found",
+    "no price data",
+    "delisted",
+    "possibly delisted",
+    "not found",
+    "no timezone found",
+)
+
+
+def is_permanent_fetch_error(exc: Exception) -> bool:
+    """その銘柄では再試行しても解決しない失敗か（=retry しない方がよい）。
+
+    yfinance は未収録/新規上場/上場廃止で 404・空・内部 AttributeError(_dividends)/KeyError を
+    出す。これらは当該銘柄では恒久なので retry storm を避ける。rate-limit/接続断は一時として
+    呼び出し側が NetworkError 扱い（retry 対象）にする。
+    """
+    if isinstance(exc, AttributeError | KeyError):
+        return True
+    msg = str(exc).lower()
+    return any(m in msg for m in _PERMANENT_FETCH_MARKERS)
+
+
 def _fetch_from_yfinance(ticker: str) -> tuple[dict[str, float], str]:
     """yfinance から財務サマリ指標を取得し、共通フォーマットに正規化する。"""
     import yfinance as yf
@@ -224,6 +252,9 @@ def _fetch_from_yfinance(ticker: str) -> tuple[dict[str, float], str]:
     try:
         info = yf.Ticker(symbol).info
     except Exception as exc:
+        # T4: 新規上場/未収録の恒久失敗は DataNotFoundError（非 retry）、一時のみ NetworkError。
+        if is_permanent_fetch_error(exc):
+            raise DataNotFoundError(f"fundamentals unavailable for {ticker}: {exc}") from exc
         raise NetworkError(f"yfinance fundamentals fetch failed: {exc}") from exc
 
     if not info:

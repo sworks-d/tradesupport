@@ -30,8 +30,10 @@ from trading_agent.utils.time_utils import utcnow
 
 # 終値系列の取得関数の型：(ticker, period_days) → 終値リスト（古い→新しい）
 HistoryProvider = Callable[[str, int], list[float]]
-# 出来高系列の取得関数の型：(ticker, period_days) → 出来高リスト（古い→新しい）
-VolumeProvider = Callable[[str, int], list[float]]
+# OHLCV 一括取得の型：(ticker, period_days) → {"close": [...], "volume": [...]}（古い→新しい）
+# T1（監査）: 出来高が要るときは close と volume を 1 回の .history() で同時取得する
+# （B-3b の 2 回叩きを 1 回に統合し screening の yfinance 呼を半減）。
+OHLCVProvider = Callable[[str, int], dict[str, list[float]]]
 
 # B-3b（監査）: 出来高サージ判定用の指標名。screening が opt-in で要求する。
 # 既定 indicators には入れない（magi 等の他 caller に余計な出来高取得を増やさないため）。
@@ -148,13 +150,22 @@ class TechnicalsTool(MCPTool[TechnicalsInput]):
         self,
         *,
         history_provider: HistoryProvider | None = None,
-        volume_provider: VolumeProvider | None = None,
+        ohlcv_provider: OHLCVProvider | None = None,
     ) -> None:
         self._history: HistoryProvider = history_provider or _fetch_history_yfinance
-        self._volume: VolumeProvider = volume_provider or _fetch_volume_yfinance
+        self._ohlcv: OHLCVProvider = ohlcv_provider or _fetch_ohlcv_yfinance
 
     async def _execute(self, tool_input: TechnicalsInput) -> MCPToolOutput:
-        closes = self._history(tool_input.ticker, tool_input.period_days)
+        # T1: 出来高指標が要求されたら close+volume を 1 回の取得で同時に得る（2→1）。
+        # 要求が無ければ従来どおり終値のみ取得（magi 等 closes-only の負荷は増やさない）。
+        want_volume = any(ind in _VOLUME_INDICATORS for ind in tool_input.indicators)
+        volumes: list[float] = []
+        if want_volume:
+            bundle = self._ohlcv(tool_input.ticker, tool_input.period_days)
+            closes = bundle.get("close") or []
+            volumes = bundle.get("volume") or []
+        else:
+            closes = self._history(tool_input.ticker, tool_input.period_days)
         if not closes:
             raise DataNotFoundError(f"no price history for {tool_input.ticker}")
 
@@ -164,14 +175,12 @@ class TechnicalsTool(MCPTool[TechnicalsInput]):
             if value is not None:
                 data[indicator] = value
 
-        # B-3b: 出来高指標が要求されたときだけ出来高系列を取得し平均を計算（opt-in）。
-        if any(ind in _VOLUME_INDICATORS for ind in tool_input.indicators):
-            volumes = self._volume(tool_input.ticker, tool_input.period_days)
-            if volumes:
-                if "volume_5d_avg" in tool_input.indicators and len(volumes) >= 5:
-                    data["volume_5d_avg"] = sum(volumes[-5:]) / 5.0
-                if "volume_30d_avg" in tool_input.indicators and len(volumes) >= 30:
-                    data["volume_30d_avg"] = sum(volumes[-30:]) / 30.0
+        # B-3b/T1: 出来高平均（close と同一取得の volumes から算出）。取得不可は None（推測しない）。
+        if want_volume and volumes:
+            if "volume_5d_avg" in tool_input.indicators and len(volumes) >= 5:
+                data["volume_5d_avg"] = sum(volumes[-5:]) / 5.0
+            if "volume_30d_avg" in tool_input.indicators and len(volumes) >= 30:
+                data["volume_30d_avg"] = sum(volumes[-30:]) / 30.0
 
         signals = self._signals(tool_input.indicators, closes, data)
         now = utcnow()
@@ -240,27 +249,46 @@ class TechnicalsTool(MCPTool[TechnicalsInput]):
 def _fetch_history_yfinance(ticker: str, period_days: int) -> list[float]:
     import yfinance as yf
 
-    from trading_agent.mcp_tools.fundamentals import to_yfinance_symbol
+    from trading_agent.mcp_tools.fundamentals import (
+        is_permanent_fetch_error,
+        to_yfinance_symbol,
+    )
 
     try:
         hist = yf.Ticker(to_yfinance_symbol(ticker)).history(period=f"{period_days}d")
     except Exception as exc:
+        # T4: 新規上場/未収録の恒久失敗は DataNotFoundError（非 retry）で storm を止める。
+        if is_permanent_fetch_error(exc):
+            raise DataNotFoundError(f"no price history for {ticker}: {exc}") from exc
         raise NetworkError(f"yfinance history failed: {exc}") from exc
     if hist.empty:
         return []
     return [float(x) for x in hist["Close"].tolist()]
 
 
-def _fetch_volume_yfinance(ticker: str, period_days: int) -> list[float]:
-    """日次出来高系列（古い→新しい）。取得不可は空（推測しない）。B-3b。"""
+def _fetch_ohlcv_yfinance(ticker: str, period_days: int) -> dict[str, list[float]]:
+    """終値＋出来高を 1 回の .history() で同時取得（古い→新しい）。T1: B-3b の 2 回叩きを統合。
+
+    取得不可・列欠落は空（推測しない）。close が空なら volume も返さない。
+    """
     import yfinance as yf
 
-    from trading_agent.mcp_tools.fundamentals import to_yfinance_symbol
+    from trading_agent.mcp_tools.fundamentals import (
+        is_permanent_fetch_error,
+        to_yfinance_symbol,
+    )
 
     try:
         hist = yf.Ticker(to_yfinance_symbol(ticker)).history(period=f"{period_days}d")
     except Exception as exc:
-        raise NetworkError(f"yfinance volume failed: {exc}") from exc
-    if hist.empty or "Volume" not in hist.columns:
-        return []
-    return [float(x) for x in hist["Volume"].tolist()]
+        # T4: 新規上場/未収録の恒久失敗は DataNotFoundError（非 retry）で storm を止める。
+        if is_permanent_fetch_error(exc):
+            raise DataNotFoundError(f"no price history for {ticker}: {exc}") from exc
+        raise NetworkError(f"yfinance ohlcv failed: {exc}") from exc
+    if hist.empty or "Close" not in hist.columns:
+        return {"close": [], "volume": []}
+    closes = [float(x) for x in hist["Close"].tolist()]
+    volumes = (
+        [float(x) for x in hist["Volume"].tolist()] if "Volume" in hist.columns else []
+    )
+    return {"close": closes, "volume": volumes}
