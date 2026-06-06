@@ -750,10 +750,11 @@ def close_sold_decision(
     """手動売却の DB 反映（A-2b）。
 
     発注リストの「売り」ブロックでユーザーが楽天で売却した後、この経路で DB に反映する。
-    対応する sell Decision の active Portfolio(broker_mode) を closed にし、Decision を
-    ordered（評価対象）へ遷移、actual_return を記録、Treasury に売却代金を加算する。
-    paper_close_approved（paper 自動執行）と意味を揃える（closed_reason=action・
-    status="ordered"・evaluated_at 記録）。
+    対応する sell Decision の active Portfolio(broker_mode) を closed にし、各 closed Portfolio の
+    実退出を `_record_exit_on_decision` で **元 buy Decision** に還元（hit_or_miss/actual_return/
+    evaluated_at を確定＝track_record/gate⑥ に乗る）し、Treasury に売却代金を加算する。
+    sell Decision 自体は `status="filled"` + `hit_or_miss="skipped"`（評価ジョブ対象外・二重計上回避）に
+    寄せる。paper_close_approved（paper 自動執行）/ paper_close_due と同じ正規出口に揃える。
 
     Returns:
         実行サマリ dict（error キーがあれば失敗）。
