@@ -16,9 +16,33 @@ import json
 import sys
 from pathlib import Path
 
+from sqlalchemy.engine import Engine
+
 from trading_agent.db import get_engine
 from trading_agent.reporting.forward_diagnosis import compute_forward_diagnosis
 from trading_agent.utils.time_utils import today_jst
+
+
+def forward_diagnosis_enabled(engine: Engine) -> bool:
+    """定期化ゲート（A+C 監査）。Setting forward_diagnosis_enabled=true のときだけ True。
+
+    既定 OFF。構築期間中の自動ネット実行（yfinance）を防ぐ。ユーザーが構築完了を宣言して
+    Setting を true にするまで runner は no-op（--force で手動 bypass 可）。
+    """
+    import json as _json
+
+    from sqlmodel import Session
+
+    from trading_agent.models.settings import Setting
+
+    with Session(engine) as s:
+        row = s.get(Setting, "forward_diagnosis_enabled")
+    if row is None:
+        return False
+    try:
+        return bool(_json.loads(row.value))
+    except Exception:
+        return False
 
 
 def _yfinance_series_fetcher(tickers: list[str], start: dt.date) -> dict[str, list[float]]:
@@ -57,6 +81,14 @@ def _yfinance_series_fetcher(tickers: list[str], start: dt.date) -> dict[str, li
 def main() -> None:
     as_of = today_jst()
     engine = get_engine("data/trading.sqlite")
+    # A+C（監査）: 定期化は既定 OFF。Setting forward_diagnosis_enabled=true で明示 activate
+    # するまで no-op（構築期間中の自動 yfinance 実行を防ぐ）。手動実行は --force で bypass。
+    if "--force" not in sys.argv and not forward_diagnosis_enabled(engine):
+        print(
+            "forward_diagnosis: disabled。Setting forward_diagnosis_enabled=true で定期 activate、"
+            "または --force で手動実行。"
+        )
+        return
     result = compute_forward_diagnosis(
         engine, series_fetcher=_yfinance_series_fetcher, today=as_of
     )

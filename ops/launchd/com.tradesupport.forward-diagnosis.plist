@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Forward 早期診断ハーネスを毎日実行（read-only・売買非干渉）。設置手順は docs/OPERATIONS_SCHEDULING.md
+     既定 OFF: scripts/forward_diagnosis.py は Setting forward_diagnosis_enabled=true まで no-op。
+     activate（cp + launchctl bootstrap）はユーザーの構築完了宣言後に行う。
+     実行時刻 16:30 は JP 引け(15:00)後で当日終値の current_mtm を取れる推奨値（変更可）。 -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.tradesupport.forward-diagnosis</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/shotaro/tradesupport/.venv/bin/python</string>
+    <string>/Users/shotaro/tradesupport/scripts/forward_diagnosis.py</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/shotaro/tradesupport</string>
+
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key><integer>16</integer>
+    <key>Minute</key><integer>30</integer>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/Users/shotaro/tradesupport/data/logs/forward-diagnosis.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/shotaro/tradesupport/data/logs/forward-diagnosis.err.log</string>
+
+  <key>RunAtLoad</key>
+  <false/>
+</dict>
+</plist>
