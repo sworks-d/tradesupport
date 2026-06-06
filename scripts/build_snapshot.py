@@ -112,6 +112,8 @@ def _live_primary(tickers: list[str]) -> dict[str, dict[str, float]]:
 def _live_secondary(tickers: list[str]) -> dict[str, dict[str, float]]:
     import httpx
 
+    from trading_agent.mcp_tools.market_data import looks_like_anti_bot_response
+
     out: dict[str, dict[str, float]] = {}
     for t in tickers:
         suffix = ".jp" if _is_jp(t) else ".us"
@@ -119,13 +121,26 @@ def _live_secondary(tickers: list[str]) -> dict[str, dict[str, float]]:
         try:
             r = httpx.get(f"https://stooq.com/q/l/?s={sym}&f=sd2t2ohlcv&h&e=csv", timeout=10.0)
             r.raise_for_status()
+            # anti-bot 検知: stooq が /__verify や challenge HTML を返したら価格化しない。
+            # 誤った値を reconcile に混入させず、明示的に skip（float 例外で誤魔化さない）。
+            if looks_like_anti_bot_response(r.text, r.headers.get("content-type")):
+                _log.warning("secondary_anti_bot_skipped", ticker=t)
+                continue
             rows = r.text.strip().splitlines()
             if len(rows) < 2:
                 continue
-            close = rows[1].split(",")[6]
-            if close in ("N/D", ""):
+            cells = rows[1].split(",")
+            if len(cells) <= 6:
                 continue
-            out[t] = _quote(float(close), float(close))
+            close = cells[6].strip()
+            # 数値でない（N/D・空・想定外文字列）は価格化しない（推測しない）
+            try:
+                price = float(close)
+            except ValueError:
+                continue
+            if price <= 0:
+                continue
+            out[t] = _quote(price, price)
         except Exception as exc:
             _log.warning("secondary_fetch_failed", ticker=t, error=str(exc))
     return out

@@ -13,8 +13,41 @@ from sqlmodel import Session
 
 from trading_agent.db import create_all, get_engine
 from trading_agent.mcp_tools.base import MCPErrorType, NetworkError
-from trading_agent.mcp_tools.market_data import MarketDataInput, MarketDataTool
+from trading_agent.mcp_tools.market_data import (
+    MarketDataInput,
+    MarketDataTool,
+    looks_like_anti_bot_response,
+)
 from trading_agent.models.market_data import MarketDataCache
+
+
+class TestAntiBotDetection:
+    """二次価格ソースが anti-bot/HTML を返したら価格化しない（誤値混入防壁・¥0）。"""
+
+    def test_html_doctype_is_anti_bot(self) -> None:
+        assert looks_like_anti_bot_response("<!DOCTYPE html><html>...") is True
+
+    def test_verify_challenge_is_anti_bot(self) -> None:
+        assert looks_like_anti_bot_response(
+            "<script>window.location='/__verify?...'</script>"
+        ) is True
+
+    def test_just_a_moment_is_anti_bot(self) -> None:
+        assert looks_like_anti_bot_response("Just a moment... Enable JavaScript") is True
+
+    def test_html_content_type_is_anti_bot(self) -> None:
+        # 本文が短くても content-type が html なら拒否
+        assert looks_like_anti_bot_response("x", content_type="text/html; charset=utf-8") is True
+
+    def test_valid_csv_is_not_anti_bot(self) -> None:
+        csv = (
+            "Symbol,Date,Time,Open,High,Low,Close,Volume\n"
+            "7203.JP,2026-06-06,15:00,100,110,95,105,1000"
+        )
+        assert looks_like_anti_bot_response(csv, content_type="text/csv") is False
+
+    def test_empty_is_not_anti_bot(self) -> None:
+        assert looks_like_anti_bot_response("") is False
 
 
 def _quote(current: float, prev: float, volume: float = 1000.0) -> dict[str, float]:

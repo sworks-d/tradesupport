@@ -54,6 +54,36 @@ def _default_fields() -> list[str]:
     return ["current_price", "volume_today", "prev_close"]
 
 
+# anti-bot/HTML/JS の痕跡（小文字化して部分一致で判定）。stooq 等の二次ソースが
+# rate-limit/bot 検知時に /__verify や challenge ページを返すのを価格としてパースしない防壁。
+_ANTI_BOT_MARKERS = (
+    "<html",
+    "<!doctype",
+    "<script",
+    "__verify",
+    "just a moment",
+    "enable javascript",
+    "captcha",
+    "cf-browser-verification",
+    "access denied",
+)
+
+
+def looks_like_anti_bot_response(text: str, content_type: str | None = None) -> bool:
+    """二次価格ソースの応答が価格でなく anti-bot/HTML/JS かを検知する（誤値混入防壁）。
+
+    True なら『価格としてパースしてはいけない・fetch 失敗扱い』。content-type が HTML、または
+    本文に anti-bot/HTML/JS の痕跡がある場合に True。CSV/数値の正常応答は False。
+    reconcile 専用だが純関数なので将来 primary にも適用できる（master 指摘の防壁）。
+    """
+    if content_type and "html" in content_type.lower():
+        return True
+    if not text:
+        return False
+    head = text[:2048].lower()
+    return any(m in head for m in _ANTI_BOT_MARKERS)
+
+
 class MarketDataInput(MCPToolInput):
     tickers: list[str]
     fields: list[str] = Field(default_factory=_default_fields)
