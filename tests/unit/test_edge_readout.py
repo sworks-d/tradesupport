@@ -24,10 +24,17 @@ def _engine(tmp_path: Path):
     return eng
 
 
-def _add(engine, *, tags=None, score=None, version=None, hit=None, ret=None, verified=True):
+def _add(
+    engine, *, tags=None, score=None, version=None, hit=None, ret=None, verified=True,
+    filled_via="ds_dispatch", broker_mode="paper",
+):
+    # finding B: _score_bucket_outcomes は official paper のみ集計するため、既定で
+    # official(ds_dispatch)/paper を付与する。非official 除外の検証はこの2引数で上書き。
     with Session(engine, expire_on_commit=False) as s:
         d = Decision(date=dt.date(2026, 6, 6), ticker="3697", action="buy", status="awaiting")
         d.entry_signal_tags = tags or []
+        d.filled_via = filled_via
+        d.entry_broker_mode = broker_mode
         if score is not None:
             d.fundamental_event_score = score
             d.event_score_version = version or EVENT_SCORE_VERSION
@@ -101,3 +108,18 @@ def test_unevaluated_excluded_from_buckets(tmp_path: Path) -> None:
     engine = _engine(tmp_path)
     _add(engine, score=75.0, hit="pending")
     assert _score_bucket_outcomes(engine) == []
+
+
+def test_non_official_excluded_from_buckets(tmp_path: Path) -> None:
+    """finding B: 非official(paper_auto)/非paper は bucket 集計に入らない＝forward と母集団一致。
+
+    gate と同規律で legacy/非official の汚染を排除し、phase_c の by_score_bucket(mature)と
+    forward runner の by_score_bucket(interim)を同じ official paper 母集団に揃える。
+    """
+    engine = _engine(tmp_path)
+    _add(engine, score=75.0, hit="hit", ret=0.1, filled_via="paper_auto")  # 非official → 除外
+    _add(engine, score=80.0, hit="hit", ret=0.1, broker_mode="live")        # 非paper → 除外
+    _add(engine, score=78.0, hit="hit", ret=0.1)                            # official paper → 計上
+    rows = _score_bucket_outcomes(engine)
+    by_bucket = {r["bucket"]: r for r in rows}
+    assert by_bucket["high"]["n"] == 1  # official paper の1件のみ

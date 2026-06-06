@@ -310,10 +310,16 @@ def _edge_status(n: int) -> tuple[str, bool]:
 
 
 def _score_bucket_outcomes(engine) -> list[dict[str, Any]]:
-    """(c) fundamental_event_score の bucket(low/mid/high/unscored)別 forward 成績。
+    """(c) fundamental_event_score の bucket(low/mid/high/unscored)別の **mature** 成績。
 
-    bucket_event_score（(c) 単一真実源）で分類し、評価済 decision の hit_or_miss/actual_return を
-    bucket 別に集計。small-n は status フラグで欺瞞なく可視化（記録のみ・売買不変）。
+    bucket_event_score（(c) 単一真実源）で分類し、**official paper の評価済（hit/miss/neutral 確定）**
+    decision の hit_or_miss/actual_return を bucket 別に集計。small-n は status フラグで欺瞞なく可視化
+    （記録のみ・売買不変）。
+
+    finding B（codex）: forward runner の by_score_bucket は『official paper 約定・interim(対TOPIX
+    超過)』。本関数は母集団を **同じ official paper** に揃え（gate と同規律で legacy/非official の
+    汚染を排除）、違いを『mature(満期評価・hit/miss 確定) vs forward interim(満期前)』の時間軸のみに
+    限定する。これで UI の母集団混同を防ぐ。
     """
     with Session(engine) as s:
         decs = s.exec(select(Decision)).all()
@@ -321,6 +327,9 @@ def _score_bucket_outcomes(engine) -> list[dict[str, Any]]:
     for d in decs:
         if d.hit_or_miss not in ("hit", "miss", "neutral"):
             continue  # 評価済（成績確定）のみ
+        # finding B: forward と母集団を揃える＝official paper のみ（gate と同規律・legacy 汚染排除）。
+        if d.filled_via not in _OFFICIAL_SOURCES or d.entry_broker_mode != "paper":
+            continue
         score = getattr(d, "fundamental_event_score", None)
         version = getattr(d, "event_score_version", None)
         bucket = bucket_event_score(score, version).bucket
@@ -392,12 +401,14 @@ def _edge_readout(engine) -> dict[str, Any]:
         "verified_decisions": firing["verified_decisions"],
         "thresholds": {"exploratory": _EDGE_N_EXPLORE, "candidate": _EDGE_N_CANDIDATE},
         "by_signal": by_signal,                              # シグナル別 funnel（フラット配列）
-        "by_score_bucket": _score_bucket_outcomes(engine),   # (c) score bucket 別 forward
+        "by_score_bucket": _score_bucket_outcomes(engine),   # (c) score bucket 別・official paper の mature 成績
         "no_fire_reasons": firing["no_fire_reasons"],        # なぜ発火しないか（rate-limit 等）
         "note": (
             "funnel: fired(発火)→n(評価済)→hit_rate/avg_r→net(正味エッジ)。status は small-n ガード"
             "(insufficient<30 / exploratory<100 / candidate>=100・要符号安定)。display_only=True は"
             "表示のみ・売買判断に使わない。空/小n も欺瞞なく status で可視化。"
+            " by_score_bucket は official paper の mature(満期評価・hit/miss 確定)成績。forward runner の"
+            " by_score_bucket(同 official paper・interim 対TOPIX超過)とは母集団一致・時間軸(mature vs interim)のみ相違。"
         ),
     }
 
