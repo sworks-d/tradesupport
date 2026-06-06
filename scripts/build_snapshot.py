@@ -1697,6 +1697,9 @@ async def build(*, live: bool, prefer_moomoo: bool, light: bool = False) -> dict
         "gates": gates,
         "scaling": scaling,
         "phase_c": phase_c,
+        # UI 安定キー: ニュース/ファンダ→利益エッジ readout（単一真実源 = phase_c_status._edge_readout）。
+        # UI は snapshot['edge_readout'] を読み、status/display_only フラグを忠実描画（判定ロジックを持たない）。
+        "edge_readout": phase_c.get("edge_readout", {}) if isinstance(phase_c, dict) else {},
         "broker": broker_src,
         "account_source": account_src,
         "holdings_source": holdings_source,

@@ -61,6 +61,7 @@ from trading_agent.reporting.feedback import (
     compare_signal_tags_vs_baseline,
     summarize_feedback,
 )
+from trading_agent.screening.event_score import bucket_event_score
 
 
 def _line(c: str = "─", n: int = 60) -> str:
@@ -279,14 +280,159 @@ def _signal_tag_firing(engine) -> dict[str, Any]:
         "no_fire_reasons": {
             "diag_recorded": diag_present,        # _event_diag が記録された verified 数
             "forecast": dict(forecast_reasons),   # fin_not_fetched / no_change / single_fy_point …
-            "dividend": dict(dividend_reasons),   # missing_shares / split_suspected / no_prior_fy_data …
+            "dividend": dict(dividend_reasons),   # missing_shares / split_suspected / no_prior_fy …
         },
         "note": (
             "発火率0が続く=接続/データが機能していない（空シグナル検知・欺瞞防止）。news(辞書)は補助、"
-            "構造化イベント(J-Quants由来)が主。no_fire_reasons で『なぜ発火しないか』(rate-limit=fin_not_fetched"
+            "構造化イベント(J-Quants由来)が主。no_fire_reasons で『なぜ発火しないか』(rate-limit"
             "/データ欠損/抑止)を観測する。"
         ),
     }
+
+
+# small-n ガード（codex 基準・観測後の閾値後出しをしない＝p-hacking 防止）。
+# UI は status フラグを見て忠実描画するだけ（判定ロジックを UI に持たせない＝単一真実源）。
+_EDGE_N_EXPLORE = 30   # これ未満 = insufficient（表示のみ）
+_EDGE_N_CANDIDATE = 100  # これ以上 = candidate（要符号安定）。間は exploratory
+
+
+def _edge_status(n: int) -> tuple[str, bool]:
+    """評価済 n → (status, display_only)。n<30=insufficient / 30-99=exploratory / >=100=candidate。
+
+    display_only=True は『表示するが売買判断に使わない』（insufficient/exploratory）。
+    candidate のみ display_only=False（さらに期間分割の符号安定確認が前提）。
+    """
+    if n < _EDGE_N_EXPLORE:
+        return "insufficient", True
+    if n < _EDGE_N_CANDIDATE:
+        return "exploratory", True
+    return "candidate", False
+
+
+def _score_bucket_outcomes(engine) -> list[dict[str, Any]]:
+    """(c) fundamental_event_score の bucket(low/mid/high/unscored)別 forward 成績。
+
+    bucket_event_score（(c) 単一真実源）で分類し、評価済 decision の hit_or_miss/actual_return を
+    bucket 別に集計。small-n は status フラグで欺瞞なく可視化（記録のみ・売買不変）。
+    """
+    with Session(engine) as s:
+        decs = s.exec(select(Decision)).all()
+    agg: dict[str, dict] = {}
+    for d in decs:
+        if d.hit_or_miss not in ("hit", "miss", "neutral"):
+            continue  # 評価済（成績確定）のみ
+        score = getattr(d, "fundamental_event_score", None)
+        version = getattr(d, "event_score_version", None)
+        bucket = bucket_event_score(score, version).bucket
+        a = agg.setdefault(bucket, {"n": 0, "hits": 0, "ret_sum": 0.0, "ret_n": 0})
+        a["n"] += 1
+        if d.hit_or_miss == "hit":
+            a["hits"] += 1
+        if getattr(d, "actual_return", None) is not None:
+            a["ret_sum"] += float(d.actual_return)
+            a["ret_n"] += 1
+    rows: list[dict[str, Any]] = []
+    for bucket in ("high", "mid", "low", "unscored"):
+        a = agg.get(bucket)
+        if a is None:
+            continue
+        status, display_only = _edge_status(a["n"])
+        rows.append({
+            "bucket": bucket,
+            "n": a["n"],
+            "hit_rate": round(a["hits"] / a["n"], 4) if a["n"] else None,
+            "avg_return": round(a["ret_sum"] / a["ret_n"], 4) if a["ret_n"] else None,
+            "status": status,
+            "display_only": display_only,
+        })
+    return rows
+
+
+# UI 安定キー: snapshot['edge_readout']。以後 shape を変えない（変える時は UI と擦り合わせ）。
+_EDGE_SIGNAL_KINDS = {
+    "event_upward_revision": "structured", "event_downward_revision": "structured",
+    "event_dividend_hike": "structured", "event_dividend_cut": "structured",
+    "earnings_accel": "structured", "news_positive": "news", "news_negative": "news",
+}
+
+
+def _edge_readout(engine) -> dict[str, Any]:
+    """『ニュース/ファンダ→利益エッジ』の1コヒーレント readout（UI 描画の単一真実源）。
+
+    散らばったピースを統合: M1 発火(by_tag/no_fire_reasons) + tag 別 forward 成績 + 正味エッジ
+    (compare_signal_tags_vs_baseline) + (c) score bucket 別 forward を、『どのシグナルが何件出て・
+    前向き成績は・正味エッジが見えるか』の funnel(fired→evaluated→edge)で1ビューに。
+    small-n は status/display_only フラグで欺瞞なく可視化（UI は判定せずフラグを忠実描画）。
+    DB のみ・コスト0・record-only（売買不変）。
+    """
+    firing = _signal_tag_firing(engine)
+    records = collect_feedback_records(engine, broker_mode="paper")
+    perf = summarize_feedback(records).get("by_signal_tags", {})
+    vs_base = compare_signal_tags_vs_baseline(records)
+
+    by_signal: list[dict[str, Any]] = []
+    for tag, kind in _EDGE_SIGNAL_KINDS.items():
+        p = perf.get(tag, {})
+        v = vs_base.get(tag, {})
+        n_eval = int(p.get("n", 0))
+        status, display_only = _edge_status(n_eval)
+        by_signal.append({
+            "signal": tag,
+            "kind": kind,                                   # structured | news
+            "fired": int(firing["by_tag"].get(tag, 0)),     # M1: タグが立った verified 数（上流）
+            "n": n_eval,                                     # 評価済(成績確定)件数（下流）
+            "hit_rate": round(float(p.get("hit_rate", 0.0)), 4) if n_eval else None,
+            "avg_r": round(float(p.get("avg_r", 0.0)), 4) if n_eval else None,
+            "net_hit_rate": v.get("net_hit_rate"),           # 正味エッジ(タグ有無差)
+            "net_avg_r": v.get("net_avg_r"),
+            "status": status,
+            "display_only": display_only,
+        })
+    return {
+        "verified_decisions": firing["verified_decisions"],
+        "thresholds": {"exploratory": _EDGE_N_EXPLORE, "candidate": _EDGE_N_CANDIDATE},
+        "by_signal": by_signal,                              # シグナル別 funnel（フラット配列）
+        "by_score_bucket": _score_bucket_outcomes(engine),   # (c) score bucket 別 forward
+        "no_fire_reasons": firing["no_fire_reasons"],        # なぜ発火しないか（rate-limit 等）
+        "note": (
+            "funnel: fired(発火)→n(評価済)→hit_rate/avg_r→net(正味エッジ)。status は small-n ガード"
+            "(insufficient<30 / exploratory<100 / candidate>=100・要符号安定)。display_only=True は"
+            "表示のみ・売買判断に使わない。空/小n も欺瞞なく status で可視化。"
+        ),
+    }
+
+
+_STATUS_MARK = {"insufficient": "⚪", "exploratory": "🟡", "candidate": "🟢"}
+
+
+def _print_edge_readout(engine) -> None:
+    """⑨ ニュース/ファンダ→利益エッジ readout（funnel: 発火→評価→正味エッジ→bucket）。"""
+    r = _edge_readout(engine)
+    print()
+    print(_line("="))
+    print("⑨ ニュース/ファンダ→利益エッジ（発火→評価→正味エッジ・small-n は status で明示）")
+    print(_line("="))
+    print(f"verified {r['verified_decisions']}件 / 閾値: 探索>={r['thresholds']['exploratory']} "
+          f"候補>={r['thresholds']['candidate']}")
+    print("[シグナル別 funnel]")
+    for row in r["by_signal"]:
+        if row["fired"] == 0 and row["n"] == 0:
+            continue  # 完全に空の行は省略（no_fire_reasons で別途可視化）
+        mark = _STATUS_MARK.get(row["status"], "")
+        net = row["net_avg_r"]
+        print(f"  {mark} {row['signal']:24} 発火{row['fired']} / 評価{row['n']} / "
+              f"命中{row['hit_rate']} / R{row['avg_r']} / 正味R{net} [{row['status']}]")
+    fired_any = any(x["fired"] or x["n"] for x in r["by_signal"])
+    if not fired_any:
+        print("  （まだ発火/評価ゼロ＝データ蓄積待ち。no_fire_reasons で理由を観測）")
+    print("[score bucket 別 forward]")
+    if r["by_score_bucket"]:
+        for b in r["by_score_bucket"]:
+            mark = _STATUS_MARK.get(b["status"], "")
+            print(f"  {mark} {b['bucket']:9} n={b['n']} 命中{b['hit_rate']} "
+                  f"平均リターン{b['avg_return']} [{b['status']}]")
+    else:
+        print("  （評価済 decision まだなし＝forward 蓄積待ち）")
 
 
 def _print_intent(engine) -> None:
@@ -688,6 +834,9 @@ def build_phase_c_status(engine) -> dict[str, Any]:
         # edge器(下の signal_tag_vs_baseline)の手前で「そもそもタグが立っているか」を見せ、
         # 空シグナルが silently empty になるのを防ぐ。news=補助 / 構造化イベント=主。
         "signal_tag_firing": _signal_tag_firing(engine),
+        # 『ニュース/ファンダ→利益エッジ』統合 readout（UI 安定キー・UI 描画の単一真実源）。
+        # 発火→評価済→正味エッジ→score bucket を funnel 1ビューに。small-n は status フラグで欺瞞なく可視化。
+        "edge_readout": _edge_readout(engine),
         # === Review Report v2（codex 仕様）===
         # 粒度の明示（codex P1/P2）: gate n は Decision 粒度、明細/breakdowns は fill record 粒度
         # （1 Decision を複数機体が fill すると record が増える）。UI は両者を区別して見せる。
@@ -759,6 +908,7 @@ def main() -> None:
     _print_fix_direction(engine)
     _print_v2(engine)
     _print_data(engine)
+    _print_edge_readout(engine)
     print()
     print("→ 含み損益・現在評価額はダッシュボード（build_snapshot）で。BT 結果は退行/事故検出用で自動配分には還元しない。")
 
