@@ -791,11 +791,20 @@ def close_sold_decision(
             p.closed_reason = d.action
             p.updated_at = utcnow()
             session.add(p)
+            # A-2c（codex P1）: 実退出を「元 buy Decision」に還元する。track_record / gate⑥ は
+            # buy Decision の hit_or_miss を集計するため、ここで確定しないと売却損益が
+            # フィードバックパイプラインに返らない（paper_close_due と同じ正規出口に揃える）。
+            _record_exit_on_decision(
+                session, p, exit_price=closed_price, day=closed_date
+            )
 
-        if cost_basis > 0:
-            d.actual_return = (proceeds - cost_basis) / cost_basis
+        realized_return = (proceeds - cost_basis) / cost_basis if cost_basis > 0 else None
+        # sell Decision 自体は「売り指示が執行済・評価ジョブ対象外」に寄せる。
+        # 実績は上で元 buy Decision に記録済なので、二重計上を避け hit_or_miss="skipped"。
+        # （status="ordered" のままだと _EVALUABLE 入りで evaluate_due_decisions に拾われうる）
+        d.status = "filled"
+        d.hit_or_miss = "skipped"
         d.evaluated_at = utcnow()
-        d.status = "ordered"  # paper_close_approved と同じ評価対象 status
         session.add(d)
         session.commit()
 
@@ -817,7 +826,7 @@ def close_sold_decision(
         "closed_price": closed_price,
         "proceeds_jpy": round(proceeds, 0),
         "pnl_jpy": round(proceeds - cost_basis, 0),
-        "actual_return": d.actual_return,
+        "actual_return": realized_return,
         "broker_mode": broker_mode,
         "treasury_error": treasury_error,
     }

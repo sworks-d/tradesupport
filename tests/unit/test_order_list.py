@@ -242,30 +242,56 @@ class TestSellItems:
 class TestSellCompletion:
     """A-2b: 手動売却の DB 反映（close_sold_decision）。"""
 
-    def test_close_sold_decision_closes_and_records(self, engine):
+    def test_close_sold_decision_records_on_buy_decision(self, engine):
+        """A-2c（codex P1）: 売却損益は元 buy Decision の hit_or_miss に還元され、
+        sell Decision 自体は評価対象外（hit_or_miss=skipped）になる。"""
         from trading_agent.models.portfolio import Portfolio
         from trading_agent.portfolio.paper_exec import close_sold_decision
 
-        _add_portfolio(engine, "3697", qty=50, buy_price=1000.0, broker_mode="live")
         with Session(engine) as s:
-            d = Decision(
-                date=dt.date(2026, 5, 31), ticker="3697", action="sell_loss",
-                status="approved", gendo_stance="撤退", stop_pct=0.10, entry_price=1000.0,
+            # 元 buy Decision（track_record 集計の主体）
+            buy = Decision(
+                date=dt.date(2026, 5, 1), ticker="3697", action="buy",
+                status="filled", entry_price=1000.0, stop_pct=0.10, expected_return=0.20,
+                hit_or_miss="pending",
             )
-            s.add(d)
+            s.add(buy)
             s.commit()
-            s.refresh(d)
-            dec_id = d.id
+            s.refresh(buy)
+            buy_id = buy.id
+            # 保有（buy Decision に紐付け）
+            s.add(
+                Portfolio(
+                    ticker="3697", buy_date=dt.date(2026, 5, 1), buy_price=1000.0, qty=50,
+                    currency="JPY", strategy_category="中期", target_period_days=90,
+                    target_pct=0.20, stop_loss_pct=0.10, target_date=dt.date(2026, 8, 1),
+                    thesis="t", status="active", broker_mode="live", decision_id=buy_id,
+                )
+            )
+            # 売り Decision（trailing 由来・approved）
+            sell = Decision(
+                date=dt.date(2026, 5, 31), ticker="3697", action="sell_loss",
+                status="approved", gendo_stance="撤退", stop_pct=0.10,
+            )
+            s.add(sell)
+            s.commit()
+            s.refresh(sell)
+            sell_id = sell.id
 
-        res = close_sold_decision(engine, dec_id, closed_price=850.0, broker_mode="live")
+        res = close_sold_decision(engine, sell_id, closed_price=850.0, broker_mode="live")
         assert "error" not in res
         assert res["qty"] == 50
         assert res["pnl_jpy"] == (850.0 - 1000.0) * 50
-        assert abs(res["actual_return"] - (-0.15)) < 1e-9
         with Session(engine) as s:
-            d2 = s.get(Decision, dec_id)
-            assert d2.status == "ordered"  # 評価対象へ
-            assert d2.actual_return is not None
+            # 元 buy Decision に実績が乗る（-15% < -10% stop → miss）
+            b = s.get(Decision, buy_id)
+            assert b.hit_or_miss == "miss"
+            assert b.actual_return is not None and abs(b.actual_return - (-0.15)) < 1e-9
+            # sell Decision は評価対象外（filled + skipped）
+            sd = s.get(Decision, sell_id)
+            assert sd.status == "filled"
+            assert sd.hit_or_miss == "skipped"
+            # 保有は closed
             ports = list(s.exec(select(Portfolio).where(col(Portfolio.ticker) == "3697")))
             assert all(p.status == "closed" for p in ports)
             assert all(p.closed_reason == "sell_loss" for p in ports)
