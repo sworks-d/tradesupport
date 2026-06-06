@@ -10,10 +10,26 @@ import { useEffect } from "react";
  */
 type Holding = {
   price_display: string | null;
+  current_price?: number | null;
   reconciliation: string; // ok / mismatch / single / cached
   as_of: string | null;
   source: string | null;
   pnl: { ratio_display: string; direction: string } | null; // 含み損益（取得単価×実価格）
+  // 保有カード拡充（build_snapshot holdings から）
+  qty?: number;
+  cost_price?: number;
+  cost_jpy?: number;
+  unrealized_jpy?: number | null;
+  name?: string;
+  sector?: string;
+  market?: string;
+  target_pct?: number | null;
+  stop_pct?: number | null;
+  buy_date?: string | null;
+  strategy?: string;
+  thesis?: string;
+  target_period_days?: number | null;
+  history_30d?: number[];
   // X-2B holding_health（Kanchi T1-T5 翻案）
   health?: {
     state: "OK" | "WARN" | "REVIEW";
@@ -87,6 +103,76 @@ type Account = {
   currency: string;
   positions: number;
 };
+// v2.10: 集中投資 KPI サマリー（D 案: ¥100k 検証用）
+type ConcentrationKpi = {
+  seed_jpy: number;
+  invested_jpy: number;
+  market_value_jpy: number;
+  cash_reserve_jpy: number;
+  unrealized_pnl_jpy: number;
+  unrealized_pnl_pct: number;
+  cumulative_return_jpy: number;
+  cumulative_return_pct: number;
+  position_count: number;
+  cash_reserve_pct: number;
+  investment_pct: number;
+};
+// v2.10 Phase 2 Mini: 判断精度
+type JudgmentBreakdown = {
+  total: number;
+  evaluated: number;
+  pending: number;
+  hits: number;
+  misses: number;
+  neutrals: number;
+  accuracy_pct: number | null;
+  avg_return_pct: number | null;
+};
+type JudgmentAccuracy = {
+  lookback_days: number;
+  status: "active" | "insufficient_data" | "error";
+  min_samples_required: number;
+  overall: JudgmentBreakdown;
+  by_source: { magi: JudgmentBreakdown; zeele: JudgmentBreakdown };
+  by_pilot: Record<string, JudgmentBreakdown>;
+};
+// v2.10 Phase 1: ポートフォリオ相関分析
+type CorrelationAnalysis = {
+  status: "active" | "insufficient_data" | "error";
+  tickers?: string[];
+  matrix?: number[][];
+  high_correlation_pairs?: { a: string; b: string; correlation: number }[];
+  max_corr?: number | null;
+  mean_abs_corr?: number | null;
+  concentration_label?: string;
+};
+// v2.10 Phase 4: テーマ強度
+type ThemeStrength = {
+  status: "active" | "no_matches" | "insufficient_data" | "error";
+  themes?: Record<
+    string,
+    {
+      mentions_7d: number;
+      mentions_30d: number;
+      momentum: number | null;
+      intensity: number;
+    }
+  >;
+  total_topics_30d?: number;
+  top_themes?: string[];
+};
+// v2.10 Phase 5: factor exposure
+type FactorExposure = {
+  status: "active" | "insufficient_data" | "error";
+  weighted_factors?: {
+    momentum: number | null;
+    value: number | null;
+    quality: number | null;
+    size: number | null;
+  };
+  concentration_label?: string;
+  max_factor?: string | null;
+};
 type Snapshot = {
   generated_at: string;
   mode: string; // 価格ソース live/demo
@@ -95,6 +181,13 @@ type Snapshot = {
   account?: Account;
   holdings: Record<string, Holding>;
   candidates?: Record<string, Candidate>; // {card_id: MAGI3審判}
+  dummy_system?: {
+    concentration_kpi?: ConcentrationKpi;
+    judgment_accuracy?: JudgmentAccuracy;
+    correlation_analysis?: CorrelationAnalysis;
+    theme_strength?: ThemeStrength;
+    factor_exposure?: FactorExposure;
+  };
 };
 
 // 詳細パネルの判定表示（.magi-jverdict）への可否マッピング
@@ -116,7 +209,7 @@ const BADGE: Record<string, { text: string; cls: string }> = {
 export default function LiveData() {
   useEffect(() => {
     let cancelled = false;
-    fetch("/data/snapshot.json")
+    fetch(`/data/snapshot.json?t=${Date.now()}`, { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
       .then((snap: Snapshot | null) => {
         if (!snap || cancelled) return;
@@ -130,48 +223,697 @@ export default function LiveData() {
             list.innerHTML = `<div class="holdings-empty">保有なし（現金100% · ¥${total}）<div class="he-sub">買い候補から発注すると、ここに「予測 vs 実績」が表示されます</div></div>`;
           }
         } else {
-          document.querySelectorAll<HTMLElement>(".hold").forEach((card) => {
-          const ticker = card
-            .querySelector(".hold-ticker")
-            ?.textContent?.trim();
-          if (!ticker) return;
-          const h = snap.holdings[ticker];
-          if (!h) return;
+          // 保有を snapshot.holdings から動的描画（dashboard.html .hold 構造を踏襲）
+          const list = document.querySelector<HTMLElement>(".holdings-list");
+          if (list) {
+            const esc = (s: unknown): string =>
+              String(s ?? "").replace(
+                /[&<>"]/g,
+                (c) =>
+                  (({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }) as Record<string, string>)[c],
+              );
+            const fmtJpy0 = (n: number | null | undefined) =>
+              n == null ? "—" : "¥" + Math.round(n).toLocaleString("ja-JP");
+            const stCls = (st?: string) =>
+              st === "REVIEW" ? "status-bad" : st === "WARN" ? "status-warn" : "status-good";
+            const stWord = (st?: string) =>
+              st === "REVIEW" ? "要確認" : st === "WARN" ? "注視" : "順調";
+            const cards = holdingTickers.map((ticker) => {
+              const h = snap.holdings[ticker];
+              const dir = h.pnl?.direction === "down" ? "down" : "up";
+              const color = dir === "down" ? "#f87171" : "#4ade80";
+              const hist = h.history_30d ?? [];
+              const cost = h.cost_price || hist[0] || 1;
+              let graphInner: string;
+              if (hist.length >= 2) {
+                const n = hist.length;
+                graphInner =
+                  `<polyline fill="none" stroke="${color}" stroke-width="2.2" points="` +
+                  hist
+                    .map((v, i) => {
+                      const x = 30 + (340 * i) / (n - 1);
+                      const y = Math.max(6, Math.min(86, 60 - (v / cost - 1) * 100 * 2.5));
+                      return `${x.toFixed(1)},${y.toFixed(1)}`;
+                    })
+                    .join(" ") +
+                  `"/>`;
+              } else {
+                graphInner = `<text x="190" y="52" fill="#6b6962" font-size="9" text-anchor="middle" font-family="JetBrains Mono">価格履歴なし</text>`;
+              }
+              const tgtY =
+                h.target_pct != null ? 60 - h.target_pct * 100 * 2.5 : null;
+              const tgtLine =
+                tgtY != null
+                  ? `<line x1="30" y1="${tgtY.toFixed(1)}" x2="370" y2="${tgtY.toFixed(1)}" stroke="#a09d92" stroke-width="0.6" stroke-dasharray="4,3" opacity="0.5"/><text x="368" y="${(tgtY - 3).toFixed(1)}" fill="#a09d92" font-size="7" text-anchor="end" font-family="JetBrains Mono">目標 +${Math.round((h.target_pct ?? 0) * 100)}%</text>`
+                  : "";
+              const vmeta = BADGE[h.reconciliation] ?? BADGE.single;
+              const verifyBadge = `<span class="hold-label verify-badge ${vmeta.cls}" title="出典:${esc(h.source ?? "-")} / 時点:${esc(h.as_of ?? "-")} / 照合:${esc(h.reconciliation)}">${vmeta.text}</span>`;
+              const hmeta = h.health ? HEALTH_BADGE[h.health.state] ?? HEALTH_BADGE.OK : null;
+              const healthBadge = hmeta
+                ? `<span class="hold-label health-badge ${hmeta.cls}" style="color:${hmeta.color};border-color:${hmeta.color}">${hmeta.text}</span>`
+                : "";
+              const termLabels = [
+                h.strategy ? `<span class="hold-label term">${esc(h.strategy)}</span>` : "",
+                h.market || h.sector
+                  ? `<span class="hold-label term">${esc([h.market, h.sector].filter(Boolean).join(" "))}</span>`
+                  : "",
+              ].join("");
+              return `
+                <div class="hold ${stCls(h.health?.state)}">
+                  <div class="hold-labels">
+                    <span class="hold-label ${stCls(h.health?.state)}">${stWord(h.health?.state)}</span>
+                    ${termLabels}${verifyBadge}${healthBadge}
+                  </div>
+                  <div class="hold-top">
+                    <div class="hold-left">
+                      <span class="hold-ticker">${esc(ticker)}</span>
+                      <span class="hold-name">${esc(h.name ?? ticker)}</span>
+                    </div>
+                    <div class="hold-right">
+                      <span class="hold-price">${esc(h.price_display ?? "—")}</span>
+                      <span class="hold-pnl ${dir}">${esc(h.pnl?.ratio_display ?? "—")}</span>
+                    </div>
+                  </div>
+                  <div class="hold-meta" style="display:flex;flex-wrap:wrap;gap:4px 14px;font-size:11px;opacity:.85;margin:2px 0 6px;">
+                    <span><b>${h.qty ?? 0}</b>株</span>
+                    <span>取得 ${fmtJpy0(h.cost_price)}</span>
+                    <span>含み <b style="color:${color}">${fmtJpy0(h.unrealized_jpy)}</b></span>
+                  </div>
+                  <svg class="hold-graph" viewBox="0 0 380 90" preserveAspectRatio="none" data-graph="${esc(ticker)}">
+                    <line x1="0" y1="10" x2="380" y2="10" stroke="#3a3a48" stroke-width="0.4" stroke-dasharray="2,2"/>
+                    <line x1="0" y1="35" x2="380" y2="35" stroke="#3a3a48" stroke-width="0.4" stroke-dasharray="2,2"/>
+                    <line x1="0" y1="60" x2="380" y2="60" stroke="#6b6962" stroke-width="0.7"/>
+                    <line x1="0" y1="75" x2="380" y2="75" stroke="#3a3a48" stroke-width="0.4" stroke-dasharray="2,2"/>
+                    <text x="2" y="13" fill="#6b6962" font-size="7" font-family="JetBrains Mono">+20%</text>
+                    <text x="2" y="63" fill="#6b6962" font-size="7" font-family="JetBrains Mono">0%</text>
+                    ${tgtLine}
+                    ${graphInner}
+                  </svg>
+                  <div class="hold-status-bar">
+                    <span class="lbl">進捗</span>
+                    <span class="val ${dir === "down" ? "warn" : "good"}">${h.buy_date ? esc(h.buy_date) + " 取得" : "取得日不明"} · 含み ${esc(h.pnl?.ratio_display ?? "—")}</span>
+                  </div>
+                </div>`;
+            });
+            list.innerHTML = cards.join("");
+            // 同期状態ヘッダ（確定/未報告/最終同期）
+            const wrap = list.closest(".holdings-wrap") ?? list.parentElement;
+            const snapMeta = snap as unknown as {
+              generated_at?: string;
+              pending_decisions?: Record<string, unknown>;
+            };
+            const pend = Object.keys(snapMeta.pending_decisions ?? {}).length;
+            const syncHtml = `<span>確定 <b>${holdingTickers.length}</b>件</span><span>未報告 <b style="color:${pend ? "#f5a85a" : "inherit"}">${pend}</b>件</span><span>最終同期 ${esc(snapMeta.generated_at ?? "—")}</span>`;
+            if (wrap) {
+              let hdr = wrap.querySelector<HTMLElement>(".holdings-sync");
+              if (!hdr) {
+                hdr = document.createElement("div");
+                hdr.className = "holdings-sync";
+                hdr.style.cssText =
+                  "font-size:11px;opacity:.8;margin:0 0 8px;display:flex;gap:14px;flex-wrap:wrap;";
+                wrap.insertBefore(hdr, list);
+              }
+              hdr.innerHTML = syncHtml;
+            }
+          }
+        }
 
-          const priceEl = card.querySelector<HTMLElement>(".hold-price");
-          if (priceEl && h.price_display) priceEl.textContent = h.price_display;
+        // === 増額ゲート⑥（paper/live 別 + combined 参考）& 段階大規模化（paper） ===
+        const gsMount = document.getElementById("gate-scaling-mount");
+        if (gsMount) {
+          const sd = snap as unknown as {
+            gates?: Record<
+              string,
+              | {
+                  passed: boolean;
+                  n: number;
+                  actionable: boolean;
+                  criteria: {
+                    name: string;
+                    value: unknown;
+                    threshold: string;
+                    passed: boolean;
+                  }[];
+                }
+              | { error: string }
+            >;
+            scaling?: {
+              current_risk_budget_jpy?: number;
+              target_ceiling_jpy?: number;
+              ceiling_progress_pct?: number | null;
+              ladder_jpy?: number[];
+              injections?: { created_at: string | null }[];
+            };
+          };
+          const escG = (s: unknown) =>
+            String(s ?? "").replace(
+              /[&<>"]/g,
+              (c) =>
+                (({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }) as Record<string, string>)[c],
+            );
+          const yen = (n: number | null | undefined) =>
+            n == null ? "—" : "¥" + Math.round(n).toLocaleString("ja-JP");
 
-          const pnlEl = card.querySelector<HTMLElement>(".hold-pnl");
-          if (pnlEl && h.pnl) {
-            pnlEl.textContent = h.pnl.ratio_display;
-            pnlEl.classList.remove("up", "down");
-            pnlEl.classList.add(h.pnl.direction);
+          // 段階大規模化 widget（paper 専用）
+          const sc = sd.scaling;
+          let scalingHtml = "";
+          if (sc) {
+            const cur = sc.current_risk_budget_jpy ?? 0;
+            const ceil = sc.target_ceiling_jpy ?? 1000000;
+            const pct = sc.ceiling_progress_pct ?? (ceil ? Math.round((cur / ceil) * 1000) / 10 : 0);
+            const ladder = sc.ladder_jpy ?? [100000, 300000, 600000, 1000000];
+            const ladderMarks = ladder
+              .map((m) => {
+                const reached = cur >= m;
+                const left = ceil ? (m / ceil) * 100 : 0;
+                return `<div style="position:absolute;left:${left}%;transform:translateX(-50%);top:-2px;text-align:center;"><div style="width:2px;height:14px;background:${reached ? "#4ade80" : "rgba(255,255,255,.25)"};margin:0 auto;"></div><div style="font-size:9px;color:${reached ? "#4ade80" : "var(--ink-3,#8893a5)"};margin-top:2px;white-space:nowrap;">¥${(m / 10000).toFixed(0)}万</div></div>`;
+              })
+              .join("");
+            const injTxt =
+              sc.injections && sc.injections.length
+                ? `資本注入 ${sc.injections.length}件・最新 ${escG(sc.injections[sc.injections.length - 1].created_at)}`
+                : "資本注入履歴なし（phase-C 開始でここに記録）";
+            scalingHtml = `
+              <div class="gs-card" style="background:var(--bg-2,#131923);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:16px;">
+                <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;">
+                  <span style="font-size:13px;font-weight:700;">📈 段階大規模化 <span style="font-size:11px;color:var(--ink-3,#8893a5);font-weight:400;">paper・試験運用</span></span>
+                  <span style="font-size:11px;color:var(--ink-3,#8893a5);">¥10万 → ¥100万</span>
+                </div>
+                <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:14px;">
+                  <span style="font-size:22px;font-weight:800;">${yen(cur)}</span>
+                  <span style="font-size:12px;color:var(--ink-3,#8893a5);">/ 上限 ${yen(ceil)}（${pct ?? 0}%）</span>
+                </div>
+                <div style="position:relative;margin:0 4px 22px;">
+                  <div style="height:8px;background:rgba(255,255,255,.08);border-radius:4px;overflow:hidden;"><div style="height:100%;width:${Math.min(100, pct ?? 0)}%;background:linear-gradient(90deg,#4ade80,#16a085);border-radius:4px;"></div></div>
+                  <div style="position:relative;height:0;">${ladderMarks}</div>
+                </div>
+                <div style="font-size:11px;color:var(--ink-3,#8893a5);">${injTxt}</div>
+              </div>`;
           }
 
-          const labels = card.querySelector(".hold-labels");
-          if (labels && !labels.querySelector(".verify-badge")) {
-            const meta = BADGE[h.reconciliation] ?? BADGE.single;
-            const badge = document.createElement("span");
-            badge.className = `hold-label verify-badge ${meta.cls}`;
-            badge.textContent = meta.text;
-            badge.title = `出典:${h.source ?? "-"} / 時点:${h.as_of ?? "-"} / 照合:${h.reconciliation}`;
-            labels.appendChild(badge);
-          }
-          // X-2B holding_health バッジ（Kanchi T1-T5 翻案）
-          if (labels && h.health && !labels.querySelector(".health-badge")) {
-            const meta = HEALTH_BADGE[h.health.state] ?? HEALTH_BADGE.OK;
-            const badge = document.createElement("span");
-            badge.className = `hold-label health-badge ${meta.cls}`;
-            badge.textContent = meta.text;
-            badge.style.color = meta.color;
-            badge.style.borderColor = meta.color;
-            const triggerSummary = h.health.evidence
-              .map((e) => `${e.trigger_id}:${e.reason}`)
-              .join("\n");
-            badge.title = `T1-T5: ${h.health.triggers_fired.join(", ") || "発火なし"}${triggerSummary ? "\n" + triggerSummary : ""}`;
-            labels.appendChild(badge);
-          }
+          // 増額ゲート⑥ panels（paper/live/combined）
+          const gd = sd.gates ?? {};
+          const gateCard = (key: string, label: string, sub: string) => {
+            const g = gd[key];
+            if (!g)
+              return `<div class="gs-card" style="background:var(--bg-2,#131923);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:14px;font-size:12px;color:var(--ink-3,#8893a5);">${label}：データなし</div>`;
+            if ("error" in g)
+              return `<div class="gs-card" style="background:var(--bg-2,#131923);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:14px;font-size:12px;color:var(--ink-3,#8893a5);">${label}：評価不可</div>`;
+            const head = g.actionable
+              ? g.passed
+                ? `<span style="color:#4ade80;">✅ 通過</span>`
+                : `<span style="color:#f5a85a;">⛔ 未通過</span>`
+              : `<span style="color:#8893a5;">📊 参考（増額不可）</span>`;
+            const crit = g.criteria
+              .map(
+                (c) =>
+                  `<div style="display:flex;gap:6px;font-size:11px;line-height:1.7;"><span style="color:${c.passed ? "#4ade80" : "#f87171"};width:12px;">${c.passed ? "✓" : "✗"}</span><span style="flex:1;color:var(--ink-2,#a8a89e);">${escG(c.name)}</span><span style="color:var(--ink-1,#e8ecf3);">${escG(c.value)}</span><span style="color:var(--ink-3,#8893a5);">(${escG(c.threshold)})</span></div>`,
+              )
+              .join("");
+            const border = !g.actionable
+              ? "rgba(136,147,165,.4)"
+              : g.passed
+                ? "rgba(74,222,128,.35)"
+                : "rgba(245,168,90,.3)";
+            return `
+              <div class="gs-card" style="background:var(--bg-2,#131923);border:1px solid ${border};border-radius:12px;padding:14px;">
+                <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px;">
+                  <span style="font-size:13px;font-weight:700;">${label}</span>${head}
+                </div>
+                <div style="font-size:11px;color:var(--ink-3,#8893a5);margin-bottom:8px;">${sub}・公式評価 n=${g.n}</div>
+                ${crit || `<div style="font-size:11px;color:var(--ink-3,#8893a5);">評価対象なし（約定→評価が貯まると判定開始）</div>`}
+              </div>`;
+          };
+
+          gsMount.innerHTML = `
+            <div class="section-label" style="margin-top:24px;"><span>増額ゲート⑥ & 運用規模</span><span class="zone-tag tag-magi" style="margin-left:8px">KATSURAGI</span></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px;">
+              ${gateCard("paper", "ゲート⑥ paper", "システム edge 検証（DS自動fill）")}
+              ${gateCard("live", "ゲート⑥ live", "実運用（楽天・手動）")}
+              ${gateCard("combined", "参考 combined", "paper+live 混在・増額不可")}
+            </div>
+            ${scalingHtml}`;
+        }
+
+        // === Phase C レポートビュー（#phase-c-body に5ブロック注入・コスト0データ） ===
+        const pcBody = document.getElementById("phase-c-body");
+        const pc = (snap as unknown as {
+          phase_c?: {
+            error?: string;
+            intent?: {
+              treasury?: Record<string, Record<string, number | string | null>>;
+              auto_trade?: { master_on?: boolean; pilots_on?: string[] };
+              halt?: { on?: boolean; reason?: string };
+            };
+            pnl_realized?: Record<string, { n: number; pnl_jpy: number; wins: number }>;
+            gates?: Record<
+              string,
+              {
+                passed: boolean;
+                n: number;
+                actionable: boolean;
+                criteria: { name: string; value: string; threshold: string; passed: boolean }[];
+              }
+            >;
+            pilot_performance_paper?: Record<string, { n: number; hit_rate: number; avg_r: number }>;
+            fix_direction_paper?: {
+              failing_criteria?: { name: string; value: string; threshold: string }[];
+              promotions?: { personality: string; note: string }[];
+            };
+            data_breakdown?: {
+              total?: number;
+              evaluated?: number;
+              by_status?: Record<string, number>;
+              by_filled_via?: Record<string, number>;
+              by_broker_mode?: Record<string, number>;
+            };
+            purchase_history_paper?: {
+              purchases?: {
+                ticker: string;
+                name: string;
+                buy_date: string | null;
+                buy_price: number;
+                qty: number;
+                cost_jpy: number;
+                status: string;
+                sell_price: number | null;
+                closed_reason: string | null;
+                realized_pnl_jpy: number | null;
+              }[];
+              official_n?: number;
+              legacy_excluded_n?: number;
+            };
+          };
+        }).phase_c;
+        if (pcBody && pc && !pc.error) {
+          const e2 = (s: unknown) =>
+            String(s ?? "").replace(
+              /[&<>"]/g,
+              (c) => (({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }) as Record<string, string>)[c],
+            );
+          const y2 = (n: number | null | undefined) =>
+            n == null ? "—" : "¥" + Math.round(Number(n)).toLocaleString("ja-JP");
+          const num = (n: unknown) => Number(n ?? 0);
+          const sect = (label: string) =>
+            `<div style="font-size:13px;font-weight:800;color:#a78bfa;margin:22px 0 10px;letter-spacing:.04em;">${label}</div>`;
+          const card = (inner: string) =>
+            `<div style="background:#131923;border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:16px;margin-bottom:12px;">${inner}</div>`;
+
+          // ① 実行意図 + paper/live 解放枠ウィジェット
+          const tre = pc.intent?.treasury ?? {};
+          const unlockWidget = (
+            t: Record<string, number | string | null> | undefined,
+            label: string,
+            accent: string,
+          ) => {
+            if (!t) return "";
+            const cap = num(t.account_capital_jpy);
+            const unlocked = num(t.current_risk_budget_jpy);
+            const exposure = num(t.active_exposure_jpy);
+            const deployable = num(t.deployable_jpy);
+            const prog = num(t.ceiling_progress_pct);
+            const ceil = num(t.target_ceiling_jpy);
+            const unlockedOfCap = cap ? Math.min(100, (unlocked / cap) * 100) : 0;
+            const expOfUnlocked = unlocked ? Math.min(100, (exposure / unlocked) * 100) : 0;
+            const stat = (lbl: string, val: string, c: string) =>
+              `<div style="flex:1;min-width:110px;"><div style="font-size:10px;color:#8893a5;text-transform:uppercase;letter-spacing:.05em;">${lbl}</div><div style="font-size:16px;font-weight:800;color:${c};">${val}</div></div>`;
+            return card(`
+              <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px;"><span style="font-size:13px;font-weight:700;">${label}</span><span style="font-size:11px;color:#8893a5;">上限 ${y2(ceil)} / 解放 ${prog}%</span></div>
+              <div style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:14px;">
+                ${stat("口座総額", y2(cap), "#e8ecf3")}
+                ${stat("解放枠 unlocked", y2(unlocked), accent)}
+                ${stat("使用中 exposure", y2(exposure), "#f5a85a")}
+                ${stat("deploy 可能", y2(deployable), "#4ade80")}
+              </div>
+              <div style="font-size:10px;color:#8893a5;margin-bottom:3px;">口座に対する解放枠（${unlockedOfCap.toFixed(0)}%）</div>
+              <div style="height:7px;background:rgba(255,255,255,.07);border-radius:4px;overflow:hidden;margin-bottom:10px;"><div style="height:100%;width:${unlockedOfCap}%;background:${accent};border-radius:4px;"></div></div>
+              <div style="font-size:10px;color:#8893a5;margin-bottom:3px;">解放枠の内訳：使用中 ${expOfUnlocked.toFixed(0)}% / 空き</div>
+              <div style="height:7px;background:#16331f;border-radius:4px;overflow:hidden;"><div style="height:100%;width:${expOfUnlocked}%;background:#f5a85a;"></div></div>
+            `);
+          };
+          const at = pc.intent?.auto_trade;
+          const ha = pc.intent?.halt;
+          const intentExtra = card(`
+            <div style="display:flex;gap:24px;flex-wrap:wrap;font-size:12px;">
+              <div><span style="color:#8893a5;">自動売買</span> <b style="color:${at?.master_on ? "#4ade80" : "#8893a5"};">${at?.master_on ? "🟢 master ON" : "⚫ master OFF"}</b> ${at?.pilots_on?.length ? "／稼働 " + at.pilots_on.map(e2).join(",") : "／稼働なし"}</div>
+              <div><span style="color:#8893a5;">HALT</span> <b style="color:${ha?.on ? "#f87171" : "#4ade80"};">${ha?.on ? "⛔ ON " + e2(ha.reason) : "🟢 なし"}</b></div>
+            </div>`);
+          const block1 =
+            sect("① 実行意図（いま何を回しているか）") +
+            unlockWidget(tre.paper, "paper（試験運用・DS自動fill）", "#a78bfa") +
+            unlockWidget(tre.live, "live（楽天本番・手動）", "#4ec9b0") +
+            intentExtra;
+
+          // ② 損益（確定・broker_mode別）
+          const pnl = pc.pnl_realized ?? {};
+          const pnlRows = Object.entries(pnl)
+            .filter(([, d]) => d.n > 0)
+            .map(([mode, d]) => {
+              const wr = d.n ? (d.wins / d.n) * 100 : 0;
+              const sign = d.pnl_jpy >= 0 ? "+" : "";
+              return `<div style="display:flex;justify-content:space-between;font-size:12px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.05);"><span><b>${e2(mode)}</b> 確定 ${d.n}件・勝ち ${d.wins}（${wr.toFixed(0)}%）</span><span style="font-weight:700;color:${d.pnl_jpy >= 0 ? "#4ade80" : "#f87171"};">${sign}${y2(d.pnl_jpy)}</span></div>`;
+            })
+            .join("");
+          const block2 =
+            sect("② 損益（確定・closed・broker_mode別／含み損益はダッシュボード）") +
+            card(pnlRows || `<div style="font-size:12px;color:#8893a5;">確定取引まだなし</div>`);
+
+          // ③ 分析（gate paper/live/combined + 機体別実績）
+          const gd = pc.gates ?? {};
+          const gcard = (key: string, label: string) => {
+            const g = gd[key];
+            if (!g) return "";
+            const head = g.actionable
+              ? g.passed
+                ? `<span style="color:#4ade80;">✅ 通過</span>`
+                : `<span style="color:#f5a85a;">⛔ 未通過</span>`
+              : `<span style="color:#8893a5;">📊 参考・増額不可</span>`;
+            const crit = (g.criteria ?? [])
+              .map(
+                (c) =>
+                  `<div style="display:flex;gap:6px;font-size:11px;line-height:1.7;"><span style="color:${c.passed ? "#4ade80" : "#f87171"};width:12px;">${c.passed ? "✓" : "✗"}</span><span style="flex:1;color:#a8a89e;">${e2(c.name)}</span><span style="color:#e8ecf3;">${e2(c.value)}</span><span style="color:#8893a5;">(${e2(c.threshold)})</span></div>`,
+              )
+              .join("");
+            const bd = !g.actionable
+              ? "rgba(136,147,165,.4)"
+              : g.passed
+                ? "rgba(74,222,128,.35)"
+                : "rgba(245,168,90,.3)";
+            return `<div style="flex:1;min-width:240px;background:#0f141d;border:1px solid ${bd};border-radius:10px;padding:12px;"><div style="display:flex;justify-content:space-between;margin-bottom:6px;font-size:12px;font-weight:700;"><span>${label}</span>${head}</div><div style="font-size:10px;color:#8893a5;margin-bottom:6px;">公式評価 n=${g.n}</div>${crit}</div>`;
+          };
+          const perf = pc.pilot_performance_paper ?? {};
+          const perfRows = Object.entries(perf)
+            .map(
+              ([name, d]) =>
+                `<div style="display:flex;justify-content:space-between;font-size:11px;padding:4px 0;"><span>${e2(name)}</span><span style="color:#8893a5;">n=${d.n}・命中 ${(d.hit_rate * 100).toFixed(0)}%・平均R ${d.avg_r >= 0 ? "+" : ""}${d.avg_r.toFixed(2)}</span></div>`,
+            )
+            .join("");
+          const block3 =
+            sect("③ 分析（増額ゲート⑥ paper/live 別 + 機体別実績）") +
+            card(
+              `<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;">${gcard("paper", "ゲート⑥ paper")}${gcard("live", "ゲート⑥ live")}${gcard("combined_reference", "参考 combined")}</div><div style="font-size:11px;color:#8893a5;margin-bottom:4px;">機体別 実績（paper）</div>${perfRows || `<div style="font-size:11px;color:#8893a5;">まだ評価データなし</div>`}`,
+            );
+
+          // ④ 修正の方向性（次にやること）
+          const fix = pc.fix_direction_paper ?? {};
+          const failing = fix.failing_criteria ?? [];
+          const failHtml = failing.length
+            ? failing
+                .map(
+                  (c) =>
+                    `<div style="display:flex;gap:8px;font-size:12px;padding:6px 0;border-bottom:1px solid rgba(245,168,90,.12);"><span style="color:#f5a85a;">✗</span><span style="flex:1;"><b>${e2(c.name)}</b></span><span style="color:#8893a5;">現在 ${e2(c.value)} → 要件 ${e2(c.threshold)}</span></div>`,
+                )
+                .join("")
+            : `<div style="font-size:12px;color:#4ade80;">paper ゲート⑥ 全要件 達成 → 増額余地あり</div>`;
+          const proms = fix.promotions ?? [];
+          const promHtml = proms.length
+            ? `<div style="font-size:11px;color:#8893a5;margin-top:10px;">昇格候補：</div>` +
+              proms
+                .map((p) => `<div style="font-size:11px;">${e2(p.personality)}：${e2(p.note)}</div>`)
+                .join("")
+            : "";
+          const block4 =
+            sect("④ 修正の方向性（次にやること）") +
+            card(
+              `<div style="background:rgba(245,168,90,.08);border:1px solid rgba(245,168,90,.25);border-radius:8px;padding:12px;"><div style="font-size:12px;font-weight:700;color:#f5a85a;margin-bottom:6px;">⚑ 次に直す＝増額ゲート⑥ 未達要件</div>${failHtml}</div>${promHtml}`,
+            );
+
+          // ⑤ 要素データ
+          const db = pc.data_breakdown ?? {};
+          const dictRow = (lbl: string, obj: Record<string, number> | undefined) =>
+            `<div style="font-size:11px;padding:4px 0;"><span style="color:#8893a5;">${lbl}</span> ${Object.entries(obj ?? {})
+              .map(([k, v]) => `${e2(k)}=${v}`)
+              .join(" / ") || "—"}</div>`;
+          const block5 =
+            sect("⑤ 要素データ（母集団の内訳）") +
+            card(
+              `<div style="font-size:12px;margin-bottom:6px;">decisions 総数 <b>${num(db.total)}</b> / 評価済 <b>${num(db.evaluated)}</b></div>${dictRow("status:", db.by_status)}${dictRow("filled_via:", db.by_filled_via)}${dictRow("broker_mode:", db.by_broker_mode)}<div style="font-size:10px;color:#8893a5;margin-top:8px;">※ 公式集合 = filled_via∈(ds_dispatch,manual) ∧ entry_market_regime有 ∧ broker_mode一致</div>`,
+            );
+
+          // ⑥ 約定履歴（何を・いつ・いくらで・何株 買ったか）= トレード台帳
+          const ph = pc.purchase_history_paper;
+          const phList = ph?.purchases ?? [];
+          const phRows = phList
+            .map((p) => {
+              const stCell =
+                p.status === "closed" && p.realized_pnl_jpy != null
+                  ? `<span style="color:${p.realized_pnl_jpy >= 0 ? "#4ade80" : "#f87171"};font-weight:700;">${p.realized_pnl_jpy >= 0 ? "+" : ""}${Math.round(p.realized_pnl_jpy).toLocaleString("ja-JP")}円</span><span style="color:#8893a5;font-size:10px;"> 売${e2(p.sell_price)}（${e2(p.closed_reason)}）</span>`
+                  : `<span style="color:#8893a5;">保有中</span>`;
+              return `<tr style="border-top:1px solid rgba(255,255,255,.06);">
+                <td style="padding:6px 8px;color:#c7d0dc;white-space:nowrap;">${e2(p.buy_date)}</td>
+                <td style="padding:6px 8px;"><b style="color:#e6ebf2;">${e2(p.ticker)}</b> <span style="color:#8893a5;font-size:10px;">${e2(p.name)}</span></td>
+                <td style="padding:6px 8px;text-align:right;color:#c7d0dc;">${num(p.qty)}株</td>
+                <td style="padding:6px 8px;text-align:right;color:#c7d0dc;">@${num(p.buy_price).toLocaleString("ja-JP")}</td>
+                <td style="padding:6px 8px;text-align:right;color:#c7d0dc;">${y2(p.cost_jpy)}</td>
+                <td style="padding:6px 8px;text-align:right;white-space:nowrap;">${stCell}</td>
+              </tr>`;
+            })
+            .join("");
+          const block6 =
+            sect(`⑥ 約定履歴（何を・いつ・いくらで · official ${num(ph?.official_n)}件）`) +
+            card(
+              phList.length
+                ? `<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;">
+                     <thead><tr style="color:#8893a5;font-size:10px;text-align:left;">
+                       <th style="padding:4px 8px;">買付日</th><th style="padding:4px 8px;">銘柄</th>
+                       <th style="padding:4px 8px;text-align:right;">株数</th><th style="padding:4px 8px;text-align:right;">買値</th>
+                       <th style="padding:4px 8px;text-align:right;">取得原価</th><th style="padding:4px 8px;text-align:right;">状態 / 実現損益</th>
+                     </tr></thead><tbody>${phRows}</tbody></table></div>
+                     <div style="font-size:10px;color:#8893a5;margin-top:8px;">※ official(ds_dispatch/manual) のみ。legacy ${num(ph?.legacy_excluded_n)}件は別掲で除外。含み損益は保有カード側。</div>`
+                : `<div style="font-size:12px;color:#8893a5;">約定なし（買い候補から発注・紙約定が入るとここに台帳が並ぶ）</div>`,
+            );
+
+          pcBody.innerHTML = block1 + block2 + block3 + block4 + block5 + block6;
+        }
+
+        // === 集中投資 KPI バインディング (v2.10) ===
+        // dashboard.html の <span data-kpi="seed_jpy" data-kpi-fmt="jpy"> 等に
+        // snapshot.dummy_system.concentration_kpi の値を流し込む。
+        const kpi = snap.dummy_system?.concentration_kpi;
+        if (kpi) {
+          document.querySelectorAll<HTMLElement>("[data-kpi]").forEach((el) => {
+            const key = el.dataset.kpi as keyof ConcentrationKpi | undefined;
+            if (!key || !(key in kpi)) return;
+            const raw = kpi[key];
+            if (typeof raw !== "number") return;
+            const fmt = el.dataset.kpiFmt;
+            if (fmt === "jpy") {
+              el.textContent = `¥${Math.round(raw).toLocaleString()}`;
+            } else if (fmt === "jpy-signed") {
+              const sign = raw >= 0 ? "+" : "−";
+              el.textContent = `${sign}¥${Math.abs(Math.round(raw)).toLocaleString()}`;
+              const wrap = el.closest<HTMLElement>(".track-stat-value");
+              if (wrap) {
+                wrap.classList.remove("up", "down");
+                wrap.classList.add(raw >= 0 ? "up" : "down");
+              }
+            } else if (fmt === "pct") {
+              el.textContent = raw.toFixed(1);
+            } else if (fmt === "pct-signed") {
+              const sign = raw >= 0 ? "+" : "−";
+              el.textContent = `${sign}${Math.abs(raw).toFixed(2)}`;
+            } else {
+              // position_count 等の整数
+              el.textContent = String(Math.round(raw));
+            }
           });
+        }
+
+        // === 判断精度バインディング (v2.10 Phase 2 Mini) ===
+        // Track Record カードに snapshot.dummy_system.judgment_accuracy を反映
+        const ja = snap.dummy_system?.judgment_accuracy;
+        if (ja) {
+          const ov = ja.overall;
+          const setText = (sel: string, txt: string) => {
+            const el = document.querySelector<HTMLElement>(sel);
+            if (el) el.textContent = txt;
+          };
+          // card-meta（過去 30 日 · 状態）
+          const metaTxt =
+            ja.status === "insufficient_data"
+              ? `過去${ja.lookback_days}日 · データ蓄積中 (評価済 ${ov.evaluated}/${ja.min_samples_required} 必要)`
+              : ja.status === "error"
+                ? `過去${ja.lookback_days}日 · 集計エラー`
+                : `過去${ja.lookback_days}日`;
+          setText("[data-ja-meta]", metaTxt);
+
+          // 的中率
+          const accEl = document.querySelector<HTMLElement>(
+            "[data-ja='accuracy']",
+          );
+          if (accEl) {
+            accEl.classList.remove("up", "down");
+            if (ov.accuracy_pct === null) {
+              accEl.textContent = "蓄積中";
+            } else {
+              accEl.textContent = `${ov.accuracy_pct.toFixed(0)}%`;
+              accEl.classList.add(ov.accuracy_pct >= 50 ? "up" : "down");
+            }
+          }
+          setText(
+            "[data-ja='evaluated_summary']",
+            `${ov.hits} / ${ov.evaluated} 件 (待ち ${ov.pending})`,
+          );
+
+          // 平均リターン
+          const arEl = document.querySelector<HTMLElement>(
+            "[data-ja='avg_return']",
+          );
+          if (arEl) {
+            arEl.classList.remove("up", "down");
+            if (ov.avg_return_pct === null) {
+              arEl.textContent = "—";
+            } else {
+              const sign = ov.avg_return_pct >= 0 ? "+" : "";
+              arEl.textContent = `${sign}${ov.avg_return_pct.toFixed(1)}%`;
+              arEl.classList.add(ov.avg_return_pct >= 0 ? "up" : "down");
+            }
+          }
+        }
+
+        // === Phase 1A-Step2: ピラミッディング状況バインディング ===
+        // dummy_system.personalities[].holdings[] から pyramid_stage を集めて
+        // 「機別の段階」を一覧表示する。
+        type HoldingExt = {
+          ticker: string;
+          name?: string;
+          pyramid_stage?: string;
+          current_alloc_pct?: number | null;
+          peak_pnl_pct?: number | null;
+          unrealized_pct?: number;
+        };
+        type PersonalitySnap = {
+          name: string;
+          icon?: string;
+          holdings?: HoldingExt[];
+        };
+        const ds = (snap as unknown as {
+          dummy_system?: { personalities?: PersonalitySnap[] };
+        }).dummy_system;
+        const pyramidStatsEl = document.querySelector<HTMLElement>(
+          "#pyramid-status-stats",
+        );
+        const pyramidMetaEl = document.querySelector<HTMLElement>("[data-pyr-meta]");
+        if (pyramidStatsEl && ds?.personalities) {
+          const allHoldings: { pilot: string; icon: string; h: HoldingExt }[] = [];
+          for (const p of ds.personalities) {
+            for (const h of p.holdings ?? []) {
+              allHoldings.push({ pilot: p.name, icon: p.icon ?? "", h });
+            }
+          }
+          if (allHoldings.length === 0) {
+            pyramidStatsEl.innerHTML = "";
+            if (pyramidMetaEl) pyramidMetaEl.textContent = "保有銘柄なし";
+          } else {
+            const html = allHoldings
+              .map(({ pilot, icon, h }) => {
+                const stage = h.pyramid_stage ?? "—";
+                const alloc = h.current_alloc_pct != null
+                  ? `${h.current_alloc_pct.toFixed(0)}%`
+                  : "—";
+                const peak = h.peak_pnl_pct != null
+                  ? `peak ${h.peak_pnl_pct >= 0 ? "+" : ""}${h.peak_pnl_pct.toFixed(1)}%`
+                  : "peak n/a";
+                return `
+                  <div class="track-stat">
+                    <div class="track-stat-label">${icon}${pilot} · ${h.ticker}</div>
+                    <div class="track-stat-value">${stage}</div>
+                    <div class="track-stat-sub">${alloc} / ${peak}</div>
+                  </div>
+                `;
+              })
+              .join("");
+            pyramidStatsEl.innerHTML = html;
+            if (pyramidMetaEl)
+              pyramidMetaEl.textContent = `${allHoldings.length} 銘柄`;
+          }
+        }
+
+        // === Phase 1: ポートフォリオ相関分析バインディング ===
+        const corr = snap.dummy_system?.correlation_analysis;
+        if (corr) {
+          const setText = (sel: string, txt: string) => {
+            const el = document.querySelector<HTMLElement>(sel);
+            if (el) el.textContent = txt;
+          };
+          if (corr.status === "active") {
+            setText(
+              "[data-corr='concentration_label']",
+              corr.concentration_label ?? "—",
+            );
+            setText(
+              "[data-corr='max_corr']",
+              corr.max_corr != null ? corr.max_corr.toFixed(3) : "—",
+            );
+            setText(
+              "[data-corr='mean_abs_corr']",
+              corr.mean_abs_corr != null ? corr.mean_abs_corr.toFixed(3) : "—",
+            );
+            setText(
+              "[data-corr='high_pairs_count']",
+              String(corr.high_correlation_pairs?.length ?? 0),
+            );
+            setText("[data-corr-meta]", `30 日 / ${corr.tickers?.length ?? 0} 銘柄`);
+          } else {
+            setText("[data-corr='concentration_label']", "蓄積中");
+            setText("[data-corr-meta]", "保有 2 件以上で計算");
+          }
+        }
+
+        // === Phase 4: テーマ強度バインディング ===
+        const ts = snap.dummy_system?.theme_strength;
+        if (ts) {
+          const setText = (sel: string, txt: string) => {
+            const el = document.querySelector<HTMLElement>(sel);
+            if (el) el.textContent = txt;
+          };
+          const top = ts.top_themes ?? [];
+          for (let i = 0; i < 3; i++) {
+            const name = top[i];
+            const m = name ? ts.themes?.[name] : null;
+            setText(`[data-theme='top${i + 1}_name']`, name ?? "—");
+            if (m) {
+              const mom = m.momentum != null ? `mom ${m.momentum >= 0 ? "+" : ""}${m.momentum.toFixed(2)}` : "";
+              setText(
+                `[data-theme='top${i + 1}_metrics']`,
+                `i=${m.intensity} / 7d=${m.mentions_7d} / 30d=${m.mentions_30d} ${mom}`,
+              );
+            } else {
+              setText(`[data-theme='top${i + 1}_metrics']`, "—");
+            }
+          }
+          setText("[data-theme='total_topics']", String(ts.total_topics_30d ?? 0));
+          if (ts.status !== "active") {
+            setText("[data-theme-meta]", ts.status === "no_matches" ? "ヒットなし" : "蓄積中");
+          } else {
+            setText("[data-theme-meta]", "過去 30 日 / Top 3");
+          }
+        }
+
+        // === Phase 5: factor exposure バインディング ===
+        const fx = snap.dummy_system?.factor_exposure;
+        if (fx) {
+          const setText = (sel: string, txt: string) => {
+            const el = document.querySelector<HTMLElement>(sel);
+            if (el) el.textContent = txt;
+          };
+          if (fx.status === "active") {
+            setText(
+              "[data-fx='concentration_label']",
+              fx.concentration_label ?? "—",
+            );
+            setText("[data-fx='max_factor']", fx.max_factor ?? "—");
+            const wf = fx.weighted_factors;
+            const fmt = (v: number | null | undefined) =>
+              v != null ? v.toFixed(1) : "—";
+            setText("[data-fx='momentum']", fmt(wf?.momentum));
+            setText("[data-fx='value']", fmt(wf?.value));
+            setText("[data-fx='size']", fmt(wf?.size));
+            setText("[data-fx-meta]", "4 軸の加重平均");
+          } else {
+            setText("[data-fx='concentration_label']", "蓄積中");
+            setText("[data-fx-meta]", "保有あり + データ整備が必要");
+          }
         }
 
         // === MAGI 買い候補に推奨サイジングを注入 ===
@@ -242,15 +984,52 @@ export default function LiveData() {
           if (eq) eq.textContent = `¥${snap.account.total_assets.toLocaleString()}`;
           const today = document.querySelector<HTMLElement>(".sb-equity-today");
           if (today) {
-            today.textContent = "±¥0 (0.0%) 今日";
+            // 全機の pnl_jpy 合計を表示
+            const dsAny = (snap as unknown as {
+              dummy_system?: { personalities?: { pnl_jpy?: number }[] };
+            }).dummy_system;
+            const pnl = (dsAny?.personalities ?? []).reduce(
+              (acc, p) => acc + (p.pnl_jpy ?? 0),
+              0,
+            );
+            const sign = pnl >= 0 ? "+" : "";
+            today.textContent = `${sign}¥${Math.round(pnl).toLocaleString()} 含み損益`;
             today.classList.remove("up", "down");
+            if (pnl > 0) today.classList.add("up");
+            if (pnl < 0) today.classList.add("down");
+          }
+        }
+        // v2.10: broker_mode + broker_provider を反映（サイドバーのバッジ）
+        const brokerBadge = document.getElementById("sb-broker-badge");
+        if (brokerBadge) {
+          const mode = (snap as unknown as { dummy_system?: { broker_mode?: string } })
+            .dummy_system?.broker_mode;
+          const provider = (snap as unknown as { broker_provider?: string }).broker_provider;
+          // provider 別バッジ
+          const providerIcon: Record<string, string> = {
+            rakuten: "🟢 楽天",
+            sbi: "🔵 SBI",
+            monex: "🟡 マネックス",
+            kabucom: "🟠 kabu.com",
+            moomoo: "🟣 moomoo",
+            fractional: "⚪ Sim",
+          };
+          const providerLabel = provider && providerIcon[provider] ? providerIcon[provider] : "🧪";
+          if (mode === "live" || mode === "moomoo_live") {
+            brokerBadge.textContent = `⚡ ${providerLabel} LIVE`;
+            brokerBadge.className = "sb-broker-badge live";
+          } else {
+            brokerBadge.textContent = `${providerLabel} Paper`;
+            brokerBadge.className = "sb-broker-badge paper";
           }
         }
 
-        // 接続インジケータ（.sb-live）：保有ソースを正直に表示（サンプル/実口座の誤認防止）
+        // 接続インジケータ（.sb-live）：保有ソースを正直に表示
+        // v2.10: 楽天/SBI/kabu.com も実接続扱いとして classify
         const live = document.querySelector(".sb-live");
         if (live) {
-          const isReal = snap.holdings_source.startsWith("moomoo");
+          const realPrefixes = ["moomoo", "楽天", "SBI", "マネックス", "auカブコム", "kabu"];
+          const isReal = realPrefixes.some(p => snap.holdings_source.startsWith(p));
           live.classList.toggle("sb-live-sample", !isReal);
           live.innerHTML = `<span class="sb-live-dot"></span>${snap.holdings_source}`;
         }
@@ -632,6 +1411,12 @@ export default function LiveData() {
           commander_counter: string | null;
           verdicts: Record<string, string>;
           price_history_30d?: number[];
+          suggested_price?: number | null;
+          recommended_shares?: number | null;
+          stop_price?: number | null;
+          target_price?: number | null;
+          expected_return_pct?: number | null;
+          estimated_cost_jpy?: number | null;
         };
         const pendingDecisions = ((snap as unknown) as {
           pending_decisions?: Record<string, PendingDecision>;
@@ -653,9 +1438,9 @@ export default function LiveData() {
         };
 
         const buyZoneItems = document.querySelector<HTMLElement>(".buy-zone .zone-items");
-        if (buyZoneItems && pendingList.length > 0) {
-          buyZoneItems.innerHTML = pendingList
-            .map((d) => {
+        // v2.10: 決裁待ちが多いと buy-zone が縦に膨張するので、4 件メイン + 残りは折りたたみ
+        const DECISIONS_TOP_LIMIT = 4;
+        const renderPendingItem = (d: PendingDecision) => {
               const stance = d.gendo_stance || "—";
               const market = d.market || "JP";
               const sector = d.sector || "";
@@ -748,6 +1533,17 @@ export default function LiveData() {
                 `;
               }
 
+              const fmtJpy = (n: number | null | undefined) =>
+                n == null ? "—" : "¥" + Math.round(n).toLocaleString("ja-JP");
+              const _priceFmt = fmtJpy(d.suggested_price);
+              const _stopFmt = fmtJpy(d.stop_price);
+              const _sharesVal =
+                d.recommended_shares != null && d.recommended_shares > 0
+                  ? String(d.recommended_shares)
+                  : "";
+              const _priceInputVal =
+                d.suggested_price != null ? String(Math.round(d.suggested_price)) : "";
+
               return `
                 <div class="act buy" data-detail="d${d.decision_id}">
                   <div class="act-top">
@@ -768,14 +1564,42 @@ export default function LiveData() {
                         <span class="magi-mini-state">${escapeHtml(stateText)}</span>
                       </div>
                       <div class="cmd-line" style="margin-top:6px;font-size:11px;opacity:0.85;">承認: <code style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:10px;user-select:all;">${escapeHtml(sqlCmd)}</code></div>
+                      <div class="act-order" style="display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;margin-top:8px;font-size:12px;">
+                        <span style="opacity:.75;">想定 <b>${_priceFmt}</b></span>
+                        <span style="opacity:.75;">stop <b>${_stopFmt}</b></span>
+                        <label style="display:inline-flex;align-items:center;gap:4px;opacity:.9;">株数 <input type="number" min="0" inputmode="numeric" data-shares-input value="${_sharesVal}" placeholder="手入力" style="width:62px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.18);color:inherit;border-radius:4px;padding:3px 6px;font-size:12px;"></label>
+                        <label style="display:inline-flex;align-items:center;gap:4px;opacity:.9;">単価 <input type="number" min="0" step="0.1" inputmode="decimal" data-price-input value="${_priceInputVal}" style="width:76px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.18);color:inherit;border-radius:4px;padding:3px 6px;font-size:12px;"></label>
+                      </div>
+                      <div class="act-actions" style="margin-top:8px;display:flex;gap:8px;align-items:center;">
+                        <button type="button" class="act-mark-filled" data-mark-filled data-decision-id="${d.decision_id}" data-ticker="${escapeHtml(d.ticker)}" style="display:inline-flex;align-items:center;gap:6px;background:linear-gradient(135deg,#4ade80,#16a085);color:#fff;border:none;border-radius:6px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;letter-spacing:0.3px;">✓ 約定を記録</button>
+                        <button type="button" class="act-skip" data-skip-decision data-decision-id="${d.decision_id}" data-ticker="${escapeHtml(d.ticker)}" style="background:transparent;color:var(--ink-2,#8893a5);border:1px solid rgba(255,255,255,.18);border-radius:6px;padding:8px 12px;font-size:12px;cursor:pointer;">見送り</button>
+                      </div>
                     </div>
                     <div class="act-arrow">→</div>
                   </div>
                   ${forecastBlock}
                 </div>
               `;
-            })
-            .join("");
+        };
+
+        if (buyZoneItems && pendingList.length > 0) {
+          const visibleList = pendingList.slice(0, DECISIONS_TOP_LIMIT);
+          const overflowList = pendingList.slice(DECISIONS_TOP_LIMIT);
+          const fillAllBar = `<div class="fill-all-bar" style="margin-bottom:10px;"><button type="button" data-fill-all style="width:100%;background:linear-gradient(135deg,#4ade80,#16a085);color:#fff;border:none;border-radius:8px;padding:10px;font-size:13px;font-weight:700;cursor:pointer;">✓ 全約定（株数を入力した銘柄をまとめて記録）</button></div>`;
+          let html = fillAllBar + visibleList.map(renderPendingItem).join("");
+          if (overflowList.length > 0) {
+            const overflowHtml = overflowList.map(renderPendingItem).join("");
+            html += `
+              <button class="decisions-overflow-toggle" data-decisions-overflow-toggle>
+                <span class="ovt-icon">+</span>
+                <span class="ovt-label">残り <span class="decisions-overflow-count">${overflowList.length}</span> 件の決裁待ちを表示</span>
+              </button>
+              <div class="decisions-overflow" data-decisions-overflow="collapsed">
+                ${overflowHtml}
+              </div>
+            `;
+          }
+          buyZoneItems.innerHTML = html;
         }
 
         // --- 詳細パネル：snapshot.candidates に対応 ID が無いものは非表示 ---
