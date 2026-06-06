@@ -148,6 +148,45 @@ class TestMagiVerify:
             # record-only: 売買ステータスは通常の verify 通り（タグは売買を変えない）
             assert d.status == "awaiting"
 
+    async def test_news_event_sink_writes_signal_tags_record_only(self, engine) -> None:
+        """A: news_event_sink の news_positive が Decision に record-only マージ + 証拠記録。"""
+        ids = materialize_decisions(engine, ["NVDA"])
+        sink: dict = {}
+
+        async def judge_fn(ticker: str) -> JudgeBundle:
+            # judge が取得済 news/開示から導出した news タグを sink に積む挙動を模す
+            sink[ticker] = (
+                ["news_positive"],
+                {"news_positive": {"source": "news+disclosure", "pos": 2, "neg": 0}},
+            )
+            return _bundle(default_hold=False)
+
+        await magi_verify(engine, ids, judge_fn, news_event_sink=sink)
+        with Session(engine) as s:
+            d = s.get(Decision, ids[0])
+            assert d.entry_signal_tags == ["news_positive"]
+            assert d.signal_tag_sources["news_positive"]["source"] == "news+disclosure"
+            # record-only: 売買は変えない（通常の verify 完了）
+            assert d.status == "awaiting"
+
+    async def test_earnings_and_news_sinks_coexist(self, engine) -> None:
+        """earnings タグと news タグが union merge で共存し、互いの証拠を上書きしない。"""
+        ids = materialize_decisions(engine, ["NVDA"])
+        e_sink: dict = {}
+        n_sink: dict = {}
+
+        async def judge_fn(ticker: str) -> JudgeBundle:
+            e_sink[ticker] = (["earnings_accel"], {"earnings_accel": {"source": "jquants"}})
+            n_sink[ticker] = (["news_negative"], {"news_negative": {"source": "news+disclosure"}})
+            return _bundle(default_hold=False)
+
+        await magi_verify(engine, ids, judge_fn, earnings_sink=e_sink, news_event_sink=n_sink)
+        with Session(engine) as s:
+            d = s.get(Decision, ids[0])
+            assert set(d.entry_signal_tags) == {"earnings_accel", "news_negative"}
+            assert d.signal_tag_sources["earnings_accel"]["source"] == "jquants"
+            assert d.signal_tag_sources["news_negative"]["source"] == "news+disclosure"
+
     async def test_counter_within_domain_persisted(self, engine) -> None:
         """B-1：審判の反証（counter_within_domain）が decision_id 付きで永続化される。"""
         ids = materialize_decisions(engine, ["NVDA"])
@@ -263,6 +302,42 @@ class TestMagiVerify:
         assert vr.credibility_flag == "warn"  # 開示GC注記で warn
         mel = next(v for v in verdicts if v.judge == "MELCHIOR")
         assert any("開示レッドフラグ" in c["claim"] for c in mel.counter_within_domain)
+
+    async def test_sector_passed_to_run_judges(self, engine) -> None:
+        """C-1（監査）: sector_lookup の値が run_judges に渡り MELCHIOR 業種別閾値が効く。
+
+        旧実装は sector を _apply_credibility にしか渡さず、run_judges 内は常に default
+        閾値だった（financials_fetcher 無しでも sector を渡すべき）。
+        """
+        from unittest.mock import patch
+
+        import trading_agent.magi.persist as persist_mod
+        from trading_agent.magi.persist import make_live_judge_fn
+        from trading_agent.mcp_tools.fundamentals import FundamentalsOutput
+        from trading_agent.mcp_tools.news import NewsOutput
+        from trading_agent.mcp_tools.technicals import TechnicalsOutput
+
+        async def call_tool(name: str, _inp):
+            if name == "fundamentals":
+                return FundamentalsOutput(
+                    success=True, data={"revenue_growth": 0.2, "operating_margin": 0.15}
+                )
+            if name == "technicals":
+                return TechnicalsOutput(success=True, data={"rsi": 50.0}, signals=[])
+            return NewsOutput(success=True, articles=[])
+
+        captured: dict[str, object] = {}
+        real_run_judges = persist_mod.run_judges
+
+        def spy(ticker, **kw):
+            captured["sector"] = kw.get("sector")
+            return real_run_judges(ticker, **kw)
+
+        # financials_fetcher を渡さなくても sector が run_judges に届くこと
+        judge = make_live_judge_fn(call_tool, sector_lookup=lambda _t: "Technology")
+        with patch.object(persist_mod, "run_judges", spy):
+            await judge("X")
+        assert captured["sector"] == "Technology"
 
     async def test_failure_is_isolated(self, engine) -> None:
         ids = materialize_decisions(engine, ["NVDA"])

@@ -42,6 +42,7 @@ from trading_agent.screening import (
 )
 from trading_agent.utils.logger import get_logger
 from trading_agent.utils.time_utils import today_jst, utcnow
+from trading_agent.wille.news_keywords import derive_news_event_tags
 
 _log = get_logger("magi_persist")
 
@@ -180,11 +181,13 @@ async def magi_verify(
     judge_fn: JudgeFn,
     *,
     earnings_sink: dict[str, tuple[list[str], dict]] | None = None,
+    news_event_sink: dict[str, tuple[list[str], dict]] | None = None,
 ) -> dict[str, int]:
     """各 decision で MAGI を回し、結果を永続化する。1件の失敗で全体を止めない。
 
-    A prime: earnings_sink（judge が J-Quants `fin` 再利用で積んだ earnings 系タグ）があれば、
-    その decision の entry_signal_tags に record-only でマージし、証拠を signal_tag_sources に残す。
+    A prime / A: earnings_sink（J-Quants `fin` 由来の earnings 系タグ）と news_event_sink
+    （取得済 news/開示由来の news 系タグ）があれば、その decision の entry_signal_tags に
+    record-only でマージし、証拠を signal_tag_sources に残す。
     **verify 時点（fill 前・PIT 正）に刻む。過去 decision への backfill はしない**（codex 条件 #1）。
     """
     counts = {"verified": 0, "held": 0, "failed": 0}
@@ -203,19 +206,22 @@ async def magi_verify(
             continue
         default_hold = persist_bundle(engine, decision_id, ticker, bundle)
         if earnings_sink is not None and ticker in earnings_sink:
-            _apply_earnings_tags(engine, decision_id, earnings_sink[ticker])
+            _apply_record_only_tags(engine, decision_id, earnings_sink[ticker])
+        if news_event_sink is not None and ticker in news_event_sink:
+            _apply_record_only_tags(engine, decision_id, news_event_sink[ticker])
         counts["held" if default_hold else "verified"] += 1
     return counts
 
 
-def _apply_earnings_tags(
-    engine: Engine, decision_id: int, earnings: tuple[list[str], dict]
+def _apply_record_only_tags(
+    engine: Engine, decision_id: int, payload: tuple[list[str], dict]
 ) -> None:
-    """A prime: earnings 系 signal_tags を Decision に record-only マージ（売買は変えない）。
+    """signal_tags を Decision に record-only マージ（売買は変えない・A/A prime 共通）。
 
-    entry_signal_tags は union merge（既存 ZEELE タグ等を消さない）。signal_tag_sources に証拠を残す。
+    earnings 系（J-Quants fin 由来）/ news 系（取得済 news・開示由来）どちらの (tags, evidence) でも使う。
+    entry_signal_tags は union merge（既存 ZEELE/earnings タグ等を消さない）。signal_tag_sources に証拠を残す。
     """
-    e_tags, e_evidence = earnings
+    e_tags, e_evidence = payload
     if not e_tags:
         return
     with Session(engine, expire_on_commit=False) as session:
@@ -249,6 +255,7 @@ def make_live_judge_fn(
     financials_fetcher: FinancialsFetcher | None = None,
     sector_lookup: Callable[[str], str | None] | None = None,
     earnings_sink: dict[str, tuple[list[str], dict]] | None = None,
+    news_event_sink: dict[str, tuple[list[str], dict]] | None = None,
 ) -> JudgeFn:
     """MCP（call_tool）で素材を集め、3審判→防御→統合→碇を回す judge_fn を作る。
 
@@ -258,6 +265,9 @@ def make_live_judge_fn(
     - earnings_sink：A prime。credibility 用に引いた J-Quants `fin` を再利用して導出した
       earnings 系 signal_tags（{ticker: (tags, evidence)}）をここに積む。magi_verify が
       Decision.entry_signal_tags に record-only でマージする（¥0・売買は変えない）。
+    - news_event_sink：A。judge が既に引いている per-ticker news / 開示の見出しから導出した
+      news 系イベントタグ（news_positive / news_negative）を {ticker: (tags, evidence)} で積む。
+      earnings_sink と同じく record-only でマージ（¥0・新規 fetch 無し・売買は変えない）。
     """
 
     async def judge(ticker: str) -> JudgeBundle:
@@ -269,15 +279,22 @@ def make_live_judge_fn(
             _log.warning("magi_news_failed", ticker=ticker, error=str(exc))
             news = None
 
-        verdicts = run_judges(ticker, fundamentals=fund, technicals=tech, news=news)
+        # C-1（監査）: sector を run_judges に渡して MELCHIOR の業種別閾値を効かせる。
+        # 旧実装は sector を _apply_credibility にしか渡さず、run_judges 内は常に default
+        # 閾値で判定していた（Tech の高 OM / 不動産の高 D/E を誤判定）。sector_lookup は
+        # financials_fetcher の有無に依存しないのでここで一度だけ引く。
+        sector = sector_lookup(ticker) if sector_lookup is not None else None
+        verdicts = run_judges(
+            ticker, fundamentals=fund, technicals=tech, news=news, sector=sector
+        )
         if llm_tool is not None:
             upgraded = await casper_llm(ticker, news=news, llm_tool=llm_tool)
             verdicts = [upgraded if v.judge == "CASPER" else v for v in verdicts]
 
         # S5b/S6：信用性フィルタを MELCHIOR 反証と防御層 credibility_flag に反映
         credibility_flag = "ok"
+        disclosures: list[dict] | None = None
         if financials_fetcher is not None:
-            sector = sector_lookup(ticker) if sector_lookup is not None else None
             disclosures = await _fetch_disclosures(call_tool, ticker)  # S4b：開示レッドフラグ
             credibility_flag, e_tags, e_evidence = _apply_credibility(
                 ticker, verdicts, financials_fetcher, sector, disclosures
@@ -285,6 +302,17 @@ def make_live_judge_fn(
             # A prime: earnings 系 signal_tags を sink に積む（magi_verify が Decision に record-only 付与）。
             if earnings_sink is not None and e_tags:
                 earnings_sink[ticker] = (e_tags, e_evidence)
+
+        # A: 取得済 news/開示の見出しから news 系イベントタグを導出し sink に積む。
+        # ¥0・新規 fetch 無し（line 上で引いた news / disclosures を再利用）・PIT 正（verify=fill 前）。
+        if news_event_sink is not None:
+            n_tags, n_evidence = derive_news_event_tags(
+                getattr(news, "articles", None),
+                disclosures,
+                asof=str(getattr(news, "data_asof", None) or "") or None,
+            )
+            if n_tags:
+                news_event_sink[ticker] = (n_tags, n_evidence)
 
         split = classify_split(verdicts)
         vr = verify(verdicts, credibility_flag=credibility_flag)
