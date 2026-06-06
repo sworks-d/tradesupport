@@ -553,20 +553,25 @@ async def run_morning_batch(
         }
 
     async def run_close_due() -> dict:
-        """v2.10 Phase 1A-Step2 修正 (致命 1) + Phase J: trailing 由来の sell は両モードで実行。
+        """trailing 由来の sell（損切り/利確）を執行する。
 
-        設計判断 (致命候補 3 修正):
-          - trailing は機械判定 (stop に届いた) → 執行も機械で問題ない
-          - manual モードは「buy 候補の判定」を人間が承認するための機構であり、
-            stop loss まで人間任せにすると損失拡大リスク
-          - したがって両モードで close_due を実行
-        I-10 ガード: HALT 中は強制 skip
+        A-2（監査反映）— broker_mode で設計を分離:
+          - paper: 機械判定の sell を自動執行（シミュレーション）。損切り/利確は
+            risk-reduction なので **HALT 中も実行する**。HALT は「新規 buy の停止」で
+            あって損切りを止めるものではない（旧実装は HALT 中 close も止めて含み損を
+            放置する欠陥だった・監査 E9）。
+          - live: 実口座は自動で触らない。approved の sell Decision はそのまま残し、
+            notify が生成する発注リストの「売り」ブロックでユーザーが手動執行する
+            （旧実装は live でも DB 上 close して売り指示が一切出なかった・監査 E2）。
         """
+        from trading_agent.utils.lot_size import get_broker_mode
+
+        broker_mode = get_broker_mode()
+        if broker_mode != "paper":
+            # live は自動 close しない（発注リストの売りブロックで手動執行）
+            return {"status": "skipped", "reason": "live_manual_sell_via_order_list"}
+
         from trading_agent.portfolio.anomaly_detector import is_halted
-
-        if is_halted():
-            return {"status": "skipped", "reason": "halted"}
-
         from trading_agent.portfolio.paper_exec import paper_close_approved
 
         def _price_lookup(ticker: str) -> float | None:
@@ -581,7 +586,11 @@ async def run_morning_batch(
             except Exception:
                 return None
 
-        return paper_close_approved(engine, price_lookup=_price_lookup)
+        result = paper_close_approved(engine, price_lookup=_price_lookup, broker_mode="paper")
+        if is_halted():
+            # 損切り/利確は止めない（新規 buy のみ auto_fill 側で HALT 停止）
+            result["halt_note"] = "HALT中だが損切り/利確は実行（risk-reduction）"
+        return result
 
     async def run_materialize() -> dict[str, int]:
         # 買い候補を Decision(status="verifying") として保存（A-4）

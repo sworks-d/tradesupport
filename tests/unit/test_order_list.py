@@ -124,6 +124,121 @@ class TestRenderHtml:
         assert "¥100,000" in html
 
 
+def _add_portfolio(engine, ticker: str, *, qty: int, buy_price: float, broker_mode: str):
+    from trading_agent.models.portfolio import Portfolio
+
+    with Session(engine) as s:
+        s.add(
+            Portfolio(
+                ticker=ticker,
+                buy_date=dt.date(2026, 5, 1),
+                buy_price=buy_price,
+                qty=qty,
+                currency="JPY",
+                strategy_category="中期",
+                target_period_days=90,
+                target_pct=0.20,
+                stop_loss_pct=0.10,
+                target_date=dt.date(2026, 8, 1),
+                thesis="test",
+                status="active",
+                broker_mode=broker_mode,
+            )
+        )
+        s.commit()
+
+
+class TestSellItems:
+    """A-2: live 売り出口（発注リストに売り指示が出る）。"""
+
+    def test_build_sell_items_from_approved_sell(self, engine):
+        from trading_agent.reporting.order_list import build_sell_items
+
+        _add_portfolio(engine, "3697", qty=50, buy_price=1000.0, broker_mode="live")
+        with Session(engine) as s:
+            s.add(
+                Decision(
+                    date=dt.date(2026, 5, 31), ticker="3697", action="sell_loss",
+                    status="approved", gendo_stance="撤退",
+                    thesis_at_decision="trailing stop 到達", stop_pct=0.10,
+                    entry_price=1000.0,
+                )
+            )
+            s.commit()
+        with patch(
+            "trading_agent.reporting.order_list._fetch_price", return_value=850.0
+        ):
+            items = build_sell_items(engine, broker_mode="live")
+        assert len(items) == 1
+        it = items[0]
+        assert it.ticker == "3697"
+        assert it.qty == 50
+        assert it.action == "sell_loss"
+        assert it.pnl_pct is not None and it.pnl_pct < 0
+
+    def test_paper_holding_not_in_live_sell_list(self, engine):
+        """paper 保有は live の発注リストに出ない（broker_mode 分離）。"""
+        from trading_agent.reporting.order_list import build_sell_items
+
+        _add_portfolio(engine, "3697", qty=50, buy_price=1000.0, broker_mode="paper")
+        with Session(engine) as s:
+            s.add(
+                Decision(
+                    date=dt.date(2026, 5, 31), ticker="3697", action="sell_loss",
+                    status="approved", gendo_stance="撤退", stop_pct=0.10,
+                )
+            )
+            s.commit()
+        with patch(
+            "trading_agent.reporting.order_list._fetch_price", return_value=850.0
+        ):
+            items = build_sell_items(engine, broker_mode="live")
+        assert items == []
+
+    def test_render_includes_sell_section(self):
+        from trading_agent.reporting.order_list import SellOrderItem
+
+        sell = [
+            SellOrderItem(
+                decision_id=1, ticker="3697", name="SHIFT", qty=50,
+                action="sell_loss", stance="撤退", reason="trailing stop 到達",
+                current_price=850.0, buy_price=1000.0, pnl_pct=-0.15, pnl_jpy=-7500.0,
+            )
+        ]
+        html = render_html(
+            [], date=dt.date(2026, 5, 31), available_jpy=100_000, sell_items=sell
+        )
+        assert "今日の売り" in html
+        assert "3697" in html
+        assert "損切り" in html
+        assert "全部売却" in html
+
+    def test_e2e_trailing_to_sell_list(self, engine):
+        """E2E: trailing_check が approved sell を作り → 発注リストに売りが出る。"""
+        from trading_agent.portfolio.trailing_check import run_trailing_check
+        from trading_agent.reporting.order_list import build_sell_items
+
+        _add_portfolio(engine, "3697", qty=30, buy_price=1000.0, broker_mode="live")
+        with patch(
+            "trading_agent.portfolio.earnings_guard.fetch_next_earnings_date",
+            return_value=None,
+        ):
+            res = run_trailing_check(
+                engine, broker_mode="live", today=dt.date(2026, 5, 31),
+                price_lookup={"3697": 700.0},  # entry 1000 比 -30% → stop 発火
+            )
+        assert len(res["stop_triggered"]) == 1
+        assert res["stop_triggered"][0]["action"] == "sell_loss"
+        with patch(
+            "trading_agent.reporting.order_list._fetch_price", return_value=700.0
+        ):
+            items = build_sell_items(engine, broker_mode="live")
+        assert len(items) == 1
+        assert items[0].ticker == "3697"
+        assert items[0].qty == 30
+        assert items[0].action == "sell_loss"
+
+
 class TestGenerateOrderList:
     def test_generates_file(self, engine, tmp_path: Path):
         out_dir = tmp_path / "orders"

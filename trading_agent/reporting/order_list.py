@@ -27,6 +27,7 @@ from sqlalchemy.engine import Engine
 from sqlmodel import Session, col, select
 
 from trading_agent.models.decisions import Decision
+from trading_agent.models.portfolio import Portfolio
 from trading_agent.models.universe import Universe
 from trading_agent.portfolio.misato import treasury_view
 from trading_agent.utils.lot_size import get_broker_provider, get_lot_size
@@ -58,6 +59,23 @@ class OrderItem:
     risk_pct: float = 0.0  # 損失率（stop_loss）
     sector: str = "—"
     thesis_summary: str = ""  # 推奨理由 1 行
+
+
+@dataclass
+class SellOrderItem:
+    """売り発注リスト 1 件分（A-2: live は手動執行のため売り指示を明示）。"""
+
+    decision_id: int
+    ticker: str
+    name: str
+    qty: int  # 保有株数（全部売る）
+    action: str  # "sell_loss" / "sell_profit"
+    stance: str  # 撤退 / 利確
+    reason: str  # 売却理由 1 行
+    current_price: float | None = None
+    buy_price: float | None = None
+    pnl_pct: float | None = None
+    pnl_jpy: float | None = None
 
 
 def _fetch_price(ticker: str) -> float | None:
@@ -209,6 +227,71 @@ def build_order_items(
     return items
 
 
+def build_sell_items(
+    engine: Engine,
+    *,
+    broker_mode: str = "live",
+) -> list[SellOrderItem]:
+    """approved の sell Decision（trailing 由来）から売り発注リストを組み立てる（A-2）。
+
+    live は close_due で自動 close しないため approved の sell Decision が残る。
+    保有 Portfolio（broker_mode）から qty を引き「何を・何株売るか」を提示する。
+    損切り（sell_loss）を先頭に並べる（負けを止めるのが最優先）。
+    """
+    items: list[SellOrderItem] = []
+    with Session(engine) as s:
+        sell_decs = list(
+            s.exec(
+                select(Decision)
+                .where(col(Decision.status) == "approved")
+                .where(col(Decision.action).in_(("sell_loss", "sell_profit")))
+            ).all()
+        )
+        for d in sell_decs:
+            ports = list(
+                s.exec(
+                    select(Portfolio)
+                    .where(col(Portfolio.ticker) == d.ticker)
+                    .where(col(Portfolio.status) == "active")
+                    .where(col(Portfolio.broker_mode) == broker_mode)
+                ).all()
+            )
+            if not ports:
+                continue
+            qty = int(sum(int(p.qty or 0) for p in ports))
+            if qty <= 0:
+                continue
+            buy_price = float(ports[0].buy_price or 0) or None
+            u = s.get(Universe, d.ticker)
+            name = u.name if u else d.ticker
+            price = _fetch_price(d.ticker)
+            pnl_pct: float | None = None
+            pnl_jpy: float | None = None
+            if price is not None and buy_price:
+                pnl_pct = (price - buy_price) / buy_price
+                pnl_jpy = (price - buy_price) * qty
+            reason = (d.thesis_at_decision or "").split("|")[0].strip()[:80]
+            items.append(
+                SellOrderItem(
+                    decision_id=d.id or 0,
+                    ticker=d.ticker,
+                    name=name,
+                    qty=qty,
+                    action=d.action,
+                    stance=d.gendo_stance
+                    or ("撤退" if d.action == "sell_loss" else "利確"),
+                    reason=reason,
+                    current_price=price,
+                    buy_price=buy_price,
+                    pnl_pct=pnl_pct,
+                    pnl_jpy=pnl_jpy,
+                )
+            )
+    # 損切り（sell_loss）を先頭に
+    items.sort(key=lambda it: 0 if it.action == "sell_loss" else 1)
+    return items
+
+
 # ============================================================
 # HTML 生成
 # ============================================================
@@ -283,6 +366,7 @@ body {{
 .section-header.suggest {{ color: var(--suggest); }}
 .section-header.review {{ color: var(--review); }}
 .section-header.watch {{ color: var(--watch); }}
+.section-header.stop {{ color: var(--warn); }}
 
 /* ===== カード ===== */
 .order-card {{
@@ -303,6 +387,10 @@ body {{
 .order-card.stance-watch {{
   opacity: 0.7;
   border-left: 4px solid var(--watch);
+}}
+.order-card.stance-stop {{
+  border-left: 4px solid var(--warn);
+  background: linear-gradient(90deg, rgba(229,115,115,0.08) 0%, var(--bg-2) 60%);
 }}
 .order-card.filled {{ opacity: 0.4; }}
 
@@ -526,6 +614,7 @@ body {{
     </div>
   </div>
 
+{sell_cards}
 {cards}
 
   <div class="footer">
@@ -638,8 +727,80 @@ _SECTION_HEADER_TEMPLATE = (
 )
 
 
-def render_html(items: list[OrderItem], *, date: dt.date, available_jpy: float) -> str:
-    """発注リストを HTML に変換（カード型・推奨度別セクション分け）。"""
+_SELL_CARD_TEMPLATE = """  <div class="order-card stance-{stance_class}" id="sell-{decision_id}">
+    <div class="card-head">
+      <div class="card-title">
+        <div class="ticker">{ticker}</div>
+        <div class="name">{name}</div>
+      </div>
+      <div class="card-priority">{stance_icon}</div>
+    </div>
+    <div class="tags">
+      <span class="tag tag-stance">{stance}</span>
+      <span class="tag">{action_label}</span>
+      <span class="tag">{pnl_label}</span>
+    </div>
+    <div class="thesis">
+      <div class="lead">▾ 売却理由</div>
+      <div>{reason}</div>
+    </div>
+    <div class="rakuten-order">
+      <div class="ro-header">🛒 楽天証券での売却内容</div>
+      <div class="ro-grid">
+        <div class="ro-row">
+          <span class="ro-label">銘柄コード</span>
+          <span class="ro-value ro-mono">{ticker}</span>
+          <button class="ro-copy" onclick="copyTicker('{ticker}')" aria-label="銘柄コードをコピー">📋</button>
+        </div>
+        <div class="ro-row">
+          <span class="ro-label">数量</span>
+          <span class="ro-value ro-mono">{qty} 株（全部売却）</span>
+          <button class="ro-copy" onclick="copyShares({qty})" aria-label="株数をコピー">📋</button>
+        </div>
+        <div class="ro-row">
+          <span class="ro-label">注文タイプ</span>
+          <span class="ro-value">寄付（成行）売り</span>
+          <span></span>
+        </div>
+        <div class="ro-row ro-total">
+          <span class="ro-label">現在値 / 取得</span>
+          <span class="ro-value ro-mono">¥{price_str} / ¥{buy_str}</span>
+          <span></span>
+        </div>
+      </div>
+      <div class="ro-sub">{pnl_detail}</div>
+    </div>
+    <div class="actions">
+      <button class="btn btn-done" onclick="copyShares({qty})">📋 株数コピー → 楽天で売却</button>
+    </div>
+  </div>
+"""
+
+
+def render_html(
+    items: list[OrderItem],
+    *,
+    date: dt.date,
+    available_jpy: float,
+    sell_items: list[SellOrderItem] | None = None,
+) -> str:
+    """発注リストを HTML に変換（カード型・推奨度別セクション分け）。
+
+    A-2: sell_items があれば「売り」セクションを買いより前に描画する
+    （負けを止める＝損切り/利確を最優先で目立たせる）。
+    """
+    # 売りセクション（買いより前・損切り最優先）
+    sell_cards = ""
+    sell_items = sell_items or []
+    if sell_items:
+        n_loss = sum(1 for it in sell_items if it.action == "sell_loss")
+        n_profit = len(sell_items) - n_loss
+        header = (
+            '  <div class="section-header stop">🔻 今日の売り（損切り '
+            f"{n_loss} / 利確 {n_profit}）— 寄付で先に売却</div>\n"
+        )
+        sell_cards = header + "".join(_render_sell_card(it) for it in sell_items)
+
     if not items:
         cards = '  <div class="order-card no-orders">本日の発注候補はありません。</div>'
     else:
@@ -682,7 +843,40 @@ def render_html(items: list[OrderItem], *, date: dt.date, available_jpy: float) 
         remaining=remaining,
         cost_warn_class=cost_warn,
         n=len(items),
+        sell_cards=sell_cards,
         cards=cards,
+    )
+
+
+def _render_sell_card(item: SellOrderItem) -> str:
+    """売り 1 件分のカード HTML（A-2）。"""
+    stance_class = "stop" if item.action == "sell_loss" else "suggest"
+    stance_icon = "🔻" if item.action == "sell_loss" else "🟢"
+    action_label = "損切り" if item.action == "sell_loss" else "利確"
+    price_str = f"{int(item.current_price):,}" if item.current_price else "—"
+    buy_str = f"{int(item.buy_price):,}" if item.buy_price else "—"
+    if item.pnl_pct is not None and item.pnl_jpy is not None:
+        sign = "+" if item.pnl_jpy >= 0 else ""
+        pnl_label = f"{sign}{item.pnl_pct * 100:.1f}%"
+        pnl_detail = f"概算損益 {sign}¥{item.pnl_jpy:,.0f}（{sign}{item.pnl_pct * 100:.1f}%）"
+    else:
+        pnl_label = "損益不明"
+        pnl_detail = "現在値取得不可（推測しない）"
+    reason = html.escape(item.reason) if item.reason else f"{action_label}ライン到達"
+    return _SELL_CARD_TEMPLATE.format(
+        decision_id=item.decision_id,
+        ticker=html.escape(item.ticker),
+        name=html.escape(item.name[:30]),
+        stance=html.escape(item.stance),
+        stance_class=stance_class,
+        stance_icon=stance_icon,
+        action_label=action_label,
+        pnl_label=pnl_label,
+        reason=reason,
+        qty=item.qty,
+        price_str=price_str,
+        buy_str=buy_str,
+        pnl_detail=pnl_detail,
     )
 
 
@@ -751,7 +945,12 @@ def generate_order_list(
         available = 0.0
 
     items = build_order_items(engine, date=d, available_jpy=available)
-    html_content = render_html(items, date=d, available_jpy=available)
+    # A-2: live は close_due で自動 close しないため、approved の sell Decision を
+    # 「売り」ブロックとして提示する（live 保有を対象）。
+    sell_items = build_sell_items(engine, broker_mode="live")
+    html_content = render_html(
+        items, date=d, available_jpy=available, sell_items=sell_items
+    )
 
     out_path = out_dir / f"{d.isoformat()}.html"
     out_path.write_text(html_content, encoding="utf-8")
