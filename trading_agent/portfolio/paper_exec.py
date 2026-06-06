@@ -714,12 +714,19 @@ def paper_close_approved(
                         "action": sd.action,
                     }
                 )
-                # Decision に actual_return を記録（evaluate との整合性）
-                if entry_p > 0:
-                    sd.actual_return = (current_price - entry_p) / entry_p
-                sd.evaluated_at = utcnow()
-            # Decision を「処理済」に
-            sd.status = "ordered"  # 既存 _EVALUABLE に含まれる
+                # A-2c 同型（負けない/feedback-loop 整合）: 実退出を「元 buy Decision」に還元する。
+                # track_record / gate⑥ は buy Decision の hit_or_miss を集計するため、ここで確定
+                # しないと売却損益がフィードバックパイプラインに返らない（close_sold_decision /
+                # paper_close_due と同じ正規出口に揃える）。p.decision_id → 元 buy Decision。
+                _record_exit_on_decision(
+                    session, p, exit_price=current_price, day=today
+                )
+            # sell Decision 自体は「売り指示が執行済・評価ジョブ対象外」に寄せる。
+            # 実績は上で元 buy Decision に還元済なので、二重計上を避け hit_or_miss="skipped"。
+            # （status="ordered" だと _EVALUABLE 入りで evaluate_due_decisions に拾われ二重計上になる）
+            sd.status = "filled"
+            sd.hit_or_miss = "skipped"
+            sd.evaluated_at = utcnow()
             session.add(sd)
         session.commit()
 
@@ -830,3 +837,72 @@ def close_sold_decision(
         "broker_mode": broker_mode,
         "treasury_error": treasury_error,
     }
+
+
+def record_delisted_exit(
+    engine: Engine,
+    *,
+    portfolio_id: int,
+    closed_price: float,
+    closed_date: dt.date | None = None,
+) -> dict[str, Any]:
+    """上場廃止 close の closed_price を後日入力し、元 buy Decision に損益を還元する（survivorship-bias 是正）.
+
+    close_delisted_holdings.py が `closed_reason='delisted'`・`closed_price=None` で閉じた Portfolio に、
+    人間が実際の closed_price（株式交換比率／最終値／0=無価値）を入力する経路。入力時点で
+    `_record_exit_on_decision` を呼び、元 buy Decision（p.decision_id）に hit_or_miss/actual_return を
+    確定する。これが無いと上場廃止の損失が track_record/勝率から漏れ『負けない』calibration を楽観に歪める。
+
+    **closed_price 未入力（None）の間は何もしない（H10・推測しない）= 入力された時だけ確定。**
+    冪等(codex P1): 初回入力で closed_price が確定したら **再入力では上書きしない**（同一価格は
+    already_recorded で no-op、異価格は already_recorded_price_mismatch エラー）。これにより
+    Portfolio.closed_price と元 buy Decision.actual_return が乖離する desync を防ぐ。
+    売買挙動は変えない（評価への損益還元のみ）。
+    """
+    if closed_price is None or closed_price < 0:
+        return {"error": "invalid_price", "closed_price": closed_price}
+    closed_date = closed_date or today_jst()
+    with Session(engine, expire_on_commit=False) as session:
+        p = session.get(Portfolio, portfolio_id)
+        if p is None:
+            return {"error": "portfolio_not_found", "portfolio_id": portfolio_id}
+        if p.status != "closed" or p.closed_reason != "delisted":
+            return {
+                "error": "not_a_delisted_close",
+                "status": p.status,
+                "closed_reason": p.closed_reason,
+            }
+        if getattr(p, "decision_id", None) is None:
+            # 元 buy Decision に紐付かない（旧データ）→ 還元先が無いので推測しない。
+            return {"error": "no_buy_decision_link", "portfolio_id": portfolio_id}
+        # codex P1: 再入力 desync 防止。初回入力で closed_price が確定したら上書きしない。
+        # 異価格の再入力は Portfolio.closed_price と buy Decision.actual_return を乖離させるため拒否。
+        if p.closed_price is not None:
+            if float(p.closed_price) == float(closed_price):
+                return {
+                    "already_recorded": True,
+                    "portfolio_id": portfolio_id,
+                    "closed_price": float(p.closed_price),
+                }
+            return {
+                "error": "already_recorded_price_mismatch",
+                "portfolio_id": portfolio_id,
+                "existing": float(p.closed_price),
+                "attempted": float(closed_price),
+            }
+        p.closed_price = float(closed_price)
+        p.updated_at = utcnow()
+        session.add(p)
+        # A-2c 同型: 実 closed_price で元 buy Decision に損益を還元（survivorship-bias 是正）。
+        _record_exit_on_decision(session, p, exit_price=float(closed_price), day=closed_date)
+        session.commit()
+        buy = session.get(Decision, p.decision_id)
+        return {
+            "ok": True,
+            "portfolio_id": portfolio_id,
+            "ticker": p.ticker,
+            "closed_price": float(closed_price),
+            "buy_decision_id": p.decision_id,
+            "hit_or_miss": buy.hit_or_miss if buy else None,
+            "actual_return": buy.actual_return if buy else None,
+        }

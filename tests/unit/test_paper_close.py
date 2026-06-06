@@ -37,20 +37,32 @@ def _add_universe(eng, ticker: str) -> None:
 def _add_holding(
     eng, ticker: str, *, qty: int = 100, buy_price: float = 1000.0
 ) -> int:
+    """買い Decision + それに紐付く active Portfolio(decision_id) を作る。
+
+    返り値 = 元 buy Decision の id（A-2c: 売却損益はここに還元される）。
+    """
     _add_universe(eng, ticker)
     with Session(eng, expire_on_commit=False) as s:
+        buy = Decision(
+            date=dt.date(2026, 5, 1), ticker=ticker, action="buy", status="filled",
+            entry_price=buy_price, stop_pct=0.08, expected_return=0.20,
+            target_period_days=60, evaluation_date=dt.date(2026, 7, 1),
+            hit_or_miss="pending",
+        )
+        s.add(buy)
+        s.commit()
+        s.refresh(buy)
         p = Portfolio(
             ticker=ticker, personality="ASUKA",
             buy_date=dt.date(2026, 5, 1), buy_price=buy_price, qty=qty,
             currency="JPY", strategy_category="中期",
             target_period_days=60, target_pct=0.10, stop_loss_pct=0.08,
             target_date=dt.date(2026, 7, 1), thesis="test",
-            status="active", broker_mode="paper",
+            status="active", broker_mode="paper", decision_id=buy.id,
         )
         s.add(p)
         s.commit()
-        s.refresh(p)
-        return int(p.id) if p.id is not None else 0
+        return int(buy.id) if buy.id is not None else 0
 
 
 def _add_sell_decision(eng, ticker: str, action: str = "sell_loss") -> int:
@@ -68,8 +80,8 @@ def _add_sell_decision(eng, ticker: str, action: str = "sell_loss") -> int:
 class TestPaperCloseApproved:
     def test_sell_decision_でportfolio_close(self, tmp_path: Path) -> None:
         eng = _engine(tmp_path)
-        _add_holding(eng, "A", qty=100, buy_price=1000.0)
-        _add_sell_decision(eng, "A", action="sell_loss")
+        buy_id = _add_holding(eng, "A", qty=100, buy_price=1000.0)
+        sell_id = _add_sell_decision(eng, "A", action="sell_loss")
 
         r = paper_close_approved(
             eng, price_lookup=lambda t: 900.0, today=dt.date(2026, 5, 31)
@@ -88,12 +100,16 @@ class TestPaperCloseApproved:
             assert p.closed_price == 900.0
             assert p.closed_reason == "sell_loss"
 
-        # Decision に actual_return が記録されている
+        # A-2c 同型: 売却損益は **元 buy Decision** に還元される（track_record/gate⑥ 用）。
         with Session(eng) as s:
-            d = s.exec(select(Decision).where(col(Decision.ticker) == "A")).first()
-            assert d.actual_return is not None
-            assert abs(d.actual_return - (-0.10)) < 1e-9
-            assert d.status == "ordered"
+            buy = s.get(Decision, buy_id)
+            assert buy.hit_or_miss == "miss"  # -10% ≤ -stop(8%) → 損失確定
+            assert buy.actual_return is not None and abs(buy.actual_return - (-0.10)) < 1e-9
+            assert buy.evaluated_at is not None
+            # sell Decision は執行済・評価対象外（skipped）で二重計上しない
+            sell = s.get(Decision, sell_id)
+            assert sell.status == "filled"
+            assert sell.hit_or_miss == "skipped"
 
     def test_価格None_でskip_推測しない(self, tmp_path: Path) -> None:
         eng = _engine(tmp_path)
@@ -120,13 +136,17 @@ class TestPaperCloseApproved:
         self, tmp_path: Path
     ) -> None:
         eng = _engine(tmp_path)
-        _add_holding(eng, "A", buy_price=1000.0)
-        _add_sell_decision(eng, "A", action="sell_profit")
+        buy_id = _add_holding(eng, "A", buy_price=1000.0)
+        sell_id = _add_sell_decision(eng, "A", action="sell_profit")
         r = paper_close_approved(eng, price_lookup=lambda t: 1100.0)
         assert r["closed"] == 1
         with Session(eng) as s:
-            d = s.exec(select(Decision).where(col(Decision.ticker) == "A")).first()
-            assert d.actual_return == 0.10
+            # A-2c: 利益も元 buy Decision に還元（actual_return=+0.10）。sell は skipped。
+            buy = s.get(Decision, buy_id)
+            assert buy.actual_return is not None and abs(buy.actual_return - 0.10) < 1e-9
+            assert buy.hit_or_miss != "pending"  # 評価確定（+10%<target20% → neutral）
+            sell = s.get(Decision, sell_id)
+            assert sell.status == "filled" and sell.hit_or_miss == "skipped"
         with Session(eng) as s:
             p = s.exec(select(Portfolio).where(col(Portfolio.ticker) == "A")).first()
             assert p.closed_reason == "sell_profit"
