@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 import datetime as dt
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Callable
 from typing import Any
 
@@ -25,6 +25,7 @@ from sqlmodel import Session, col, select
 
 from trading_agent.evaluation.official_sources import OFFICIAL_FILL_SOURCES
 from trading_agent.models.decisions import Decision
+from trading_agent.screening.event_score import EVENT_SCORE_VERSION, bucket_event_score
 from trading_agent.utils.time_utils import today_jst
 
 # series_fetcher(tickers, start_date) -> {ticker: [close, ...]}（index 0 = start日以降の最初の営業日）
@@ -171,6 +172,14 @@ def compute_forward_diagnosis(
     records: list[dict[str, Any]] = []  # tag with/without control 用に per-decision を保持
     cur_vals: list[float] = []  # current_mtm（entry→今日）の超過
     cur_bars: list[int] = []
+    # (d) score bucket: low/mid/high/unscored 別に horizon agg + current_mtm を保持。
+    # bucket 判定は (c) 単一真実源 bucket_event_score を import（閾値を持たない）。official 集合のみ。
+    _BUCKETS = ("low", "mid", "high", "unscored")
+    bkt_agg: dict[str, dict[str, Any]] = {b: _agg_init(horizons) for b in _BUCKETS}
+    bkt_cur_vals: dict[str, list[float]] = {b: [] for b in _BUCKETS}
+    bkt_cur_bars: dict[str, list[int]] = {b: [] for b in _BUCKETS}
+    score_version_counts: Counter[str] = Counter()  # version_dist（混在検知）
+    cutpoint_versions_seen: set[str] = set()
 
     # entry_date でグルーピングして系列を取得（同日約定はまとめて 1 fetch）。
     by_date: dict[dt.date, list[Decision]] = defaultdict(list)
@@ -193,6 +202,16 @@ def compute_forward_diagnosis(
             if cur is not None:
                 cur_vals.append(cur[0])
                 cur_bars.append(cur[1])
+            # (d) score bucket（official 全件対象。horizon 未到達でも current_mtm/unscored を計上）。
+            # version 混在/不一致・score None は bucket_event_score 側で unscored に落ちる。
+            br = bucket_event_score(d.fundamental_event_score, d.event_score_version)
+            score_version_counts[d.event_score_version or "none"] += 1
+            if br.cutpoint_version:
+                cutpoint_versions_seen.add(br.cutpoint_version)
+            _agg_add(bkt_agg[br.bucket], exc)  # None horizon はスキップされる
+            if cur is not None:
+                bkt_cur_vals[br.bucket].append(cur[0])
+                bkt_cur_bars[br.bucket].append(cur[1])
             if all(v is None for v in exc.values()):
                 # 固定 horizon は未到達でも、control 用に exc(None) は records に残す
                 records.append({"tags": tags, "exc": exc})
@@ -212,6 +231,20 @@ def compute_forward_diagnosis(
         "current_mtm": _current_finalize(cur_vals, cur_bars),
         # codex P2/#3: tag with/without control（地合い/fill バイアス補正）。
         "tag_vs_control": _tag_control_compare(records, horizons),
+        # (d) score bucket 別の horizon 超過 + current_mtm（official 集合のみ・純追加・record-only）。
+        # 閾値は (c) bucket_event_score の単一真実源。score None / version 不一致は unscored。
+        "by_score_bucket": {
+            b: {
+                "horizons": _agg_finalize(bkt_agg[b]),
+                "current_mtm": _current_finalize(bkt_cur_vals[b], bkt_cur_bars[b]),
+            }
+            for b in _BUCKETS
+        },
+        "score_bucket_meta": {
+            "version_dist": dict(score_version_counts),
+            "cutpoint_versions": sorted(cutpoint_versions_seen),
+            "bucketer": EVENT_SCORE_VERSION,
+        },
         "decisions_n": len(decs),
         # codex P1: base 混在の注記。銘柄=実 entry_price 基準 / TOPIX=entry日 series[0] close 基準。
         "benchmark_base": "stock=entry_price / benchmark=entry_date_close（基準時点が厳密一致でない）",
