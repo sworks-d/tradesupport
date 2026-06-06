@@ -270,7 +270,13 @@ class ScreeningAgent(Agent[ScreeningAgentInput]):
 
     async def _fill_technicals(self, ticker: str, data: ScreeningTickerData) -> None:
         try:
-            out = await self._ctx.call_tool("technicals", TechnicalsInput(ticker=ticker))
+            # B-3b（監査）: 出来高サージ判定用に volume_5d/30d_avg も opt-in で要求する。
+            from trading_agent.mcp_tools.technicals import _default_indicators
+
+            indicators = [*_default_indicators(), "volume_5d_avg", "volume_30d_avg"]
+            out = await self._ctx.call_tool(
+                "technicals", TechnicalsInput(ticker=ticker, indicators=indicators)
+            )
             payload = getattr(out, "data", None)
             signals = getattr(out, "signals", []) or []
             if out.success and payload:
@@ -285,6 +291,13 @@ class ScreeningAgent(Agent[ScreeningAgentInput]):
                 max_p = payload.get("max_price_90d")
                 if isinstance(max_p, int | float):
                     data.max_price_90d = float(max_p)
+                # B-3b: 出来高サージ判定用（None なら発火しない＝推測しない）
+                v5 = payload.get("volume_5d_avg")
+                if isinstance(v5, int | float):
+                    data.volume_5d_avg = float(v5)
+                v30 = payload.get("volume_30d_avg")
+                if isinstance(v30, int | float):
+                    data.volume_30d_avg = float(v30)
         except Exception as exc:
             self._log.warning("screening_technicals_failed", ticker=ticker, error=str(exc))
 

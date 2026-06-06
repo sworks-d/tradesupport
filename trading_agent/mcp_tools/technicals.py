@@ -30,6 +30,12 @@ from trading_agent.utils.time_utils import utcnow
 
 # 終値系列の取得関数の型：(ticker, period_days) → 終値リスト（古い→新しい）
 HistoryProvider = Callable[[str, int], list[float]]
+# 出来高系列の取得関数の型：(ticker, period_days) → 出来高リスト（古い→新しい）
+VolumeProvider = Callable[[str, int], list[float]]
+
+# B-3b（監査）: 出来高サージ判定用の指標名。screening が opt-in で要求する。
+# 既定 indicators には入れない（magi 等の他 caller に余計な出来高取得を増やさないため）。
+_VOLUME_INDICATORS = ("volume_5d_avg", "volume_30d_avg")
 
 
 def _default_indicators() -> list[str]:
@@ -138,8 +144,14 @@ class TechnicalsTool(MCPTool[TechnicalsInput]):
     input_schema = TechnicalsInput
     output_schema = TechnicalsOutput
 
-    def __init__(self, *, history_provider: HistoryProvider | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        history_provider: HistoryProvider | None = None,
+        volume_provider: VolumeProvider | None = None,
+    ) -> None:
         self._history: HistoryProvider = history_provider or _fetch_history_yfinance
+        self._volume: VolumeProvider = volume_provider or _fetch_volume_yfinance
 
     async def _execute(self, tool_input: TechnicalsInput) -> MCPToolOutput:
         closes = self._history(tool_input.ticker, tool_input.period_days)
@@ -151,6 +163,15 @@ class TechnicalsTool(MCPTool[TechnicalsInput]):
             value = self._compute(indicator, closes)
             if value is not None:
                 data[indicator] = value
+
+        # B-3b: 出来高指標が要求されたときだけ出来高系列を取得し平均を計算（opt-in）。
+        if any(ind in _VOLUME_INDICATORS for ind in tool_input.indicators):
+            volumes = self._volume(tool_input.ticker, tool_input.period_days)
+            if volumes:
+                if "volume_5d_avg" in tool_input.indicators and len(volumes) >= 5:
+                    data["volume_5d_avg"] = sum(volumes[-5:]) / 5.0
+                if "volume_30d_avg" in tool_input.indicators and len(volumes) >= 30:
+                    data["volume_30d_avg"] = sum(volumes[-30:]) / 30.0
 
         signals = self._signals(tool_input.indicators, closes, data)
         now = utcnow()
@@ -228,3 +249,18 @@ def _fetch_history_yfinance(ticker: str, period_days: int) -> list[float]:
     if hist.empty:
         return []
     return [float(x) for x in hist["Close"].tolist()]
+
+
+def _fetch_volume_yfinance(ticker: str, period_days: int) -> list[float]:
+    """日次出来高系列（古い→新しい）。取得不可は空（推測しない）。B-3b。"""
+    import yfinance as yf
+
+    from trading_agent.mcp_tools.fundamentals import to_yfinance_symbol
+
+    try:
+        hist = yf.Ticker(to_yfinance_symbol(ticker)).history(period=f"{period_days}d")
+    except Exception as exc:
+        raise NetworkError(f"yfinance volume failed: {exc}") from exc
+    if hist.empty or "Volume" not in hist.columns:
+        return []
+    return [float(x) for x in hist["Volume"].tolist()]

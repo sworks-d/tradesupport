@@ -87,6 +87,31 @@ class TestTool:
         assert "overbought_rsi" in out.signals
         assert "macd_bullish" in out.signals
 
+    async def test_volume_indicators_opt_in(self) -> None:
+        """B-3b: volume 指標を要求したときだけ出来高平均が計算される。"""
+        closes = [float(i) for i in range(1, 121)]
+        # 直近5日に出来高サージ（古い→新しい）。最後5本=2000、それ以前=1000。
+        volumes = [1000.0] * 115 + [2000.0] * 5
+
+        tool = TechnicalsTool(
+            history_provider=lambda _t, _d: closes,
+            volume_provider=lambda _t, _d: volumes,
+        )
+        # 既定 indicators（volume 無し）→ 出来高は計算されない
+        out_default = await tool.execute(TechnicalsInput(ticker="AAPL"))
+        assert "volume_5d_avg" not in out_default.data
+
+        # opt-in 要求 → 計算される
+        out = await tool.execute(
+            TechnicalsInput(
+                ticker="AAPL",
+                indicators=["rsi", "volume_5d_avg", "volume_30d_avg"],
+            )
+        )
+        assert out.data["volume_5d_avg"] == 2000.0
+        # 直近30本=2000*5 + 1000*25 = 35000 → /30
+        assert abs(out.data["volume_30d_avg"] - 35000.0 / 30.0) < 1e-6
+
     async def test_no_history_is_not_found(self) -> None:
         tool = TechnicalsTool(history_provider=lambda _t, _d: [])
         out = await tool.execute(TechnicalsInput(ticker="ZZZZ"))
