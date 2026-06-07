@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Trading Agent — Dashboard",
+  title: "INVESTIGELION — WILLE 司令室",
+  description: "WILLE / KATSURAGI / AKAGI + DS 4 機 による投資判断システム",
 };
 
 // new_dashboard.html の <head> フォント読込を逐語再現。

@@ -1,9 +1,11 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import BrokerModeToggle from "./BrokerModeToggle";
 import CashFlowPanel from "./CashFlowPanel";
 import ChartCrispLabels from "./ChartCrispLabels";
 import DashboardInteractions from "./DashboardInteractions";
 import DetailPanels from "./DetailPanels";
+import DummySystemPanel from "./DummySystemPanel";
 import LiveData from "./LiveData";
 import ZeelePanel from "./ZeelePanel";
 
@@ -32,6 +34,8 @@ export default function Page() {
       <LiveData />
       <ZeelePanel />
       <CashFlowPanel />
+      <DummySystemPanel />
+      <BrokerModeToggle />
     </>
   );
 }

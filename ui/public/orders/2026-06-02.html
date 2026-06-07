@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<!-- 30 分ごと自動更新（朝バッチ後に同日内で再生成されてもユーザー画面が最新に） -->
+<meta http-equiv="refresh" content="1800">
+<title>今朝の発注リスト (2026-06-02)</title>
+<style>
+:root {
+  --bg: #0a0e14;
+  --bg-2: #131923;
+  --bg-3: #1d2533;
+  --bg-4: #28324a;
+  --fg: #e8ecf3;
+  --fg-mute: #8893a5;
+  --suggest: #4ec9b0;
+  --review: #569cd6;
+  --watch: #6c7689;
+  --warn: #f5a85a;
+  --danger: #e85c5c;
+  --border: rgba(255,255,255,0.06);
+  --r-lg: 16px;
+  --r-md: 10px;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+body {
+  margin: 0; padding: 0;
+  font-family: -apple-system, "SF Pro Text", "Hiragino Sans", sans-serif;
+  background: var(--bg); color: var(--fg);
+  font-size: 16px; line-height: 1.5;
+}
+.container { max-width: 720px; margin: 0 auto; padding: 16px 12px 32px; }
+
+/* ===== ヘッダー ===== */
+.header {
+  background: linear-gradient(180deg, var(--bg-2) 0%, rgba(19,25,35,0.6) 100%);
+  border-radius: var(--r-lg);
+  padding: 18px 16px;
+  margin-bottom: 12px;
+  border: 1px solid var(--border);
+}
+.header h1 { margin: 0 0 4px; font-size: 19px; font-weight: 700; }
+.header .subtitle { color: var(--fg-mute); font-size: 12px; }
+.summary {
+  display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;
+  margin-top: 14px;
+}
+.summary > div {
+  background: var(--bg-3); padding: 10px 8px;
+  border-radius: var(--r-md);
+  text-align: center;
+}
+.summary .label { font-size: 11px; color: var(--fg-mute); margin-bottom: 2px; }
+.summary .value { font-size: 17px; font-weight: 700; color: var(--suggest); }
+.summary .value.warn { color: var(--warn); }
+
+/* ===== セクション見出し ===== */
+.section-header {
+  font-size: 13px;
+  color: var(--fg-mute);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin: 18px 0 8px 4px;
+  font-weight: 600;
+}
+.section-header.suggest { color: var(--suggest); }
+.section-header.review { color: var(--review); }
+.section-header.watch { color: var(--watch); }
+
+/* ===== カード ===== */
+.order-card {
+  background: var(--bg-2);
+  border-radius: var(--r-lg);
+  padding: 16px;
+  margin-bottom: 10px;
+  border: 1px solid var(--border);
+  position: relative;
+}
+.order-card.stance-suggest {
+  border-left: 4px solid var(--suggest);
+  background: linear-gradient(90deg, rgba(78,201,176,0.06) 0%, var(--bg-2) 60%);
+}
+.order-card.stance-review {
+  border-left: 4px solid var(--review);
+}
+.order-card.stance-watch {
+  opacity: 0.7;
+  border-left: 4px solid var(--watch);
+}
+.order-card.filled { opacity: 0.4; }
+
+.card-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  margin-bottom: 12px;
+}
+.card-title .ticker {
+  font-size: 22px; font-weight: 800; color: var(--review);
+  letter-spacing: 0.02em;
+}
+.card-title .name {
+  font-size: 13px; color: var(--fg-mute); margin-top: 2px;
+}
+.card-priority {
+  background: var(--bg-4); color: var(--fg);
+  font-weight: 700; font-size: 14px;
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.stance-suggest .card-priority { background: var(--suggest); color: var(--bg); }
+
+.tags {
+  display: flex; gap: 6px; flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.tag {
+  display: inline-flex; align-items: center;
+  padding: 3px 8px; border-radius: 4px;
+  font-size: 11px; font-weight: 600;
+  background: var(--bg-3); color: var(--fg-mute);
+}
+.tag.tag-stance { background: var(--bg-4); color: var(--fg); }
+.stance-suggest .tag.tag-stance { background: var(--suggest); color: var(--bg); }
+.stance-review .tag.tag-stance { background: var(--review); color: var(--bg); }
+
+/* ===== 推奨理由 ===== */
+.thesis {
+  background: var(--bg-3);
+  border-radius: var(--r-md);
+  padding: 10px 12px;
+  font-size: 13px;
+  color: var(--fg);
+  margin-bottom: 12px;
+  border-left: 3px solid var(--review);
+}
+.thesis .lead {
+  color: var(--fg-mute); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  margin-bottom: 2px;
+}
+
+/* ===== 価格情報 ===== */
+.price-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+  margin-bottom: 12px;
+}
+.price-box {
+  background: var(--bg-3);
+  border-radius: var(--r-md);
+  padding: 10px 12px;
+}
+.price-box .label {
+  font-size: 10px; color: var(--fg-mute);
+  text-transform: uppercase; letter-spacing: 0.06em;
+}
+.price-box .value {
+  font-size: 18px; font-weight: 700;
+  margin-top: 2px;
+}
+.price-box .sub {
+  font-size: 11px; color: var(--fg-mute); margin-top: 2px;
+}
+.price-box.target .value { color: var(--suggest); }
+.price-box.target .sub { color: var(--suggest); }
+.price-box.stop .value { color: var(--warn); }
+.price-box.stop .sub { color: var(--warn); }
+
+/* ===== バー：リスク vs リワード ===== */
+.rr-bar {
+  display: flex; height: 8px; border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 12px;
+  background: var(--bg-3);
+}
+.rr-bar .risk-side { background: var(--warn); }
+.rr-bar .reward-side { background: var(--suggest); }
+.rr-labels {
+  display: flex; justify-content: space-between;
+  font-size: 10px; color: var(--fg-mute);
+  margin-top: -8px; margin-bottom: 12px;
+}
+
+/* ===== 楽天証券での発注内容 ===== */
+.rakuten-order {
+  background: var(--bg-4);
+  border-radius: var(--r-md);
+  padding: 14px;
+  margin-bottom: 12px;
+  border: 1px solid rgba(189, 0, 0, 0.2);
+}
+.ro-header {
+  font-size: 12px;
+  color: var(--fg-mute);
+  margin-bottom: 10px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+.ro-grid {
+  display: flex; flex-direction: column; gap: 8px;
+}
+.ro-row {
+  display: grid;
+  grid-template-columns: 110px 1fr 36px;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+.ro-row:last-child { border-bottom: none; }
+.ro-row.ro-total {
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255,255,255,0.1);
+  border-bottom: none;
+}
+.ro-label {
+  color: var(--fg-mute); font-size: 12px;
+}
+.ro-value {
+  font-size: 16px; font-weight: 700; color: var(--fg);
+}
+.ro-mono {
+  font-family: "SF Mono", Menlo, Monaco, "Courier New", monospace;
+  letter-spacing: 0.02em;
+}
+.ro-amount {
+  font-size: 20px; color: var(--suggest);
+}
+.ro-copy {
+  background: var(--bg-3); border: 1px solid var(--border);
+  color: var(--fg);
+  width: 36px; height: 36px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px;
+  padding: 0;
+}
+.ro-copy:active { background: var(--suggest); color: var(--bg); }
+.ro-sub {
+  color: var(--fg-mute); font-size: 11px;
+  margin-top: 8px; text-align: right;
+}
+
+/* ===== アクション ===== */
+.actions {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+  margin-top: 4px;
+}
+.actions .btn-done { grid-column: 1 / -1; }
+.btn {
+  min-height: 44px;
+  background: var(--bg-3); color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  font-size: 14px; font-weight: 600;
+  cursor: pointer; user-select: none;
+  display: flex; align-items: center; justify-content: center;
+  font-family: inherit; padding: 0 10px;
+  gap: 6px;
+}
+.btn:active { transform: scale(0.98); }
+.btn-copy { background: var(--bg-3); }
+.btn-done {
+  background: var(--suggest); color: var(--bg);
+  font-weight: 700; font-size: 15px;
+}
+.btn-done.completed { background: var(--fg-mute); }
+
+/* ===== フッター ===== */
+.footer {
+  text-align: center; padding: 24px 0 8px;
+  color: var(--fg-mute); font-size: 12px;
+  line-height: 1.7;
+}
+.no-orders {
+  text-align: center; padding: 60px 20px;
+  color: var(--fg-mute); font-size: 14px;
+}
+
+@media (max-width: 480px) {
+  body { font-size: 15px; }
+  .container { padding: 12px 8px 32px; }
+  .order-card { padding: 14px; }
+  .summary .value { font-size: 15px; }
+  .card-title .ticker { font-size: 20px; }
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>🌅 今朝の発注リスト</h1>
+    <div class="subtitle">2026-06-02 / 楽天かぶミニ寄付発注 / 2 銘柄推奨</div>
+    <div class="summary">
+      <div>
+        <div class="label">予算</div>
+        <div class="value">¥0</div>
+      </div>
+      <div>
+        <div class="label">推奨合計</div>
+        <div class="value">¥0</div>
+      </div>
+      <div>
+        <div class="label">残予算</div>
+        <div class="value">¥0</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-header watch">⏳ 優先度低・様子見（2 件）</div>
+  <div class="order-card stance-watch" id="order-1">
+    <div class="card-head">
+      <div class="card-title">
+        <div class="ticker">AAPL</div>
+        <div class="name">AAPL</div>
+      </div>
+      <div class="card-priority">1</div>
+    </div>
+    <div class="tags">
+      <span class="tag tag-stance">静観</span>
+      <span class="tag">中期</span>
+      <span class="tag">Tech</span>
+      <span class="tag">時価総額 ¥300,000B</span>
+    </div>
+    <div class="thesis">
+      <div class="lead">▾ 推奨理由</div>
+      <div>KATSURAGI:候補プール外（DS未申請 or 質/予算未達）</div>
+    </div>
+    <div class="price-grid">
+      <div class="price-box target">
+        <div class="label">▲ 目標 (+20%)</div>
+        <div class="value">¥367</div>
+        <div class="sub">期待リターン</div>
+      </div>
+      <div class="price-box stop">
+        <div class="label">▼ 損切 (-10%)</div>
+        <div class="value">¥275</div>
+        <div class="sub">stop_loss</div>
+      </div>
+    </div>
+    <div class="rr-bar">
+      <div class="risk-side" style="width: 33%;"></div>
+      <div class="reward-side" style="width: 67%;"></div>
+    </div>
+    <div class="rr-labels">
+      <span>リスク 10%</span>
+      <span>R/R 2.0</span>
+      <span>リワード 20%</span>
+    </div>
+    <div class="rakuten-order">
+      <div class="ro-header">🛒 楽天証券での発注内容</div>
+      <div class="ro-grid">
+        <div class="ro-row">
+          <span class="ro-label">銘柄コード</span>
+          <span class="ro-value ro-mono">AAPL</span>
+          <button class="ro-copy" onclick="copyTicker('AAPL')" aria-label="銘柄コードをコピー">📋</button>
+        </div>
+        <div class="ro-row">
+          <span class="ro-label">数量</span>
+          <span class="ro-value ro-mono">0 株</span>
+          <button class="ro-copy" onclick="copyShares(0)" aria-label="株数をコピー">📋</button>
+        </div>
+        <div class="ro-row">
+          <span class="ro-label">注文タイプ</span>
+          <span class="ro-value">寄付（成行）</span>
+          <span></span>
+        </div>
+        <div class="ro-row ro-total">
+          <span class="ro-label">概算約定金額</span>
+          <span class="ro-value ro-mono ro-amount">¥0</span>
+          <span></span>
+        </div>
+      </div>
+      <div class="ro-sub">@現在株価 ¥306 / 株 × 0 株</div>
+    </div>
+    <div class="actions">
+      <button class="btn btn-done" onclick="markFilled(1, 'AAPL', this)">✓ 楽天で発注した</button>
+    </div>
+  </div>
+  <div class="order-card stance-watch" id="order-2">
+    <div class="card-head">
+      <div class="card-title">
+        <div class="ticker">NVDA</div>
+        <div class="name">NVDA</div>
+      </div>
+      <div class="card-priority">2</div>
+    </div>
+    <div class="tags">
+      <span class="tag tag-stance">静観</span>
+      <span class="tag">中期</span>
+      <span class="tag">Tech</span>
+      <span class="tag">時価総額 ¥300,000B</span>
+    </div>
+    <div class="thesis">
+      <div class="lead">▾ 推奨理由</div>
+      <div>KATSURAGI:候補プール外（DS未申請 or 質/予算未達）</div>
+    </div>
+    <div class="price-grid">
+      <div class="price-box target">
+        <div class="label">▲ 目標 (+20%)</div>
+        <div class="value">¥269</div>
+        <div class="sub">期待リターン</div>
+      </div>
+      <div class="price-box stop">
+        <div class="label">▼ 損切 (-10%)</div>
+        <div class="value">¥201</div>
+        <div class="sub">stop_loss</div>
+      </div>
+    </div>
+    <div class="rr-bar">
+      <div class="risk-side" style="width: 33%;"></div>
+      <div class="reward-side" style="width: 67%;"></div>
+    </div>
+    <div class="rr-labels">
+      <span>リスク 10%</span>
+      <span>R/R 2.0</span>
+      <span>リワード 20%</span>
+    </div>
+    <div class="rakuten-order">
+      <div class="ro-header">🛒 楽天証券での発注内容</div>
+      <div class="ro-grid">
+        <div class="ro-row">
+          <span class="ro-label">銘柄コード</span>
+          <span class="ro-value ro-mono">NVDA</span>
+          <button class="ro-copy" onclick="copyTicker('NVDA')" aria-label="銘柄コードをコピー">📋</button>
+        </div>
+        <div class="ro-row">
+          <span class="ro-label">数量</span>
+          <span class="ro-value ro-mono">0 株</span>
+          <button class="ro-copy" onclick="copyShares(0)" aria-label="株数をコピー">📋</button>
+        </div>
+        <div class="ro-row">
+          <span class="ro-label">注文タイプ</span>
+          <span class="ro-value">寄付（成行）</span>
+          <span></span>
+        </div>
+        <div class="ro-row ro-total">
+          <span class="ro-label">概算約定金額</span>
+          <span class="ro-value ro-mono ro-amount">¥0</span>
+          <span></span>
+        </div>
+      </div>
+      <div class="ro-sub">@現在株価 ¥224 / 株 × 0 株</div>
+    </div>
+    <div class="actions">
+      <button class="btn btn-done" onclick="markFilled(2, 'NVDA', this)">✓ 楽天で発注した</button>
+    </div>
+  </div>
+
+
+  <div class="footer">
+    💡 上から順に楽天証券で発注 → 「✓ 完了」ボタンで DB に反映<br>
+    未完了 Decision は翌朝バッチで再評価・繰越されます
+  </div>
+</div>
+
+<script>
+function copyTicker(t) {
+  navigator.clipboard.writeText(t).then(() => {
+    alert('ticker ' + t + ' をコピーしました');
+  });
+}
+function copyShares(s) {
+  navigator.clipboard.writeText(s).then(() => {
+    alert(s + ' 株をコピーしました');
+  });
+}
+function markFilled(decisionId, ticker, btn) {
+  if (!confirm(ticker + ' を発注完了にしますか?')) return;
+  const cmd = '.venv/bin/python scripts/mark_filled.py --decision-id ' + decisionId;
+  navigator.clipboard.writeText(cmd).then(() => {
+    btn.textContent = '✓ 完了済';
+    btn.classList.add('completed');
+    btn.closest('.order-card').classList.add('filled');
+    alert('発注完了マーク用 CLI コマンドをコピーしました。PC で実行してください:\n' + cmd);
+  });
+}
+</script>
+</body>
+</html>

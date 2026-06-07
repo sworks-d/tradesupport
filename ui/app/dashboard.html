@@ -16,11 +16,78 @@
       </div>
     </div>
 
+    <!-- v2.8: Paper / 本番 モードトグル（BrokerModeToggle.tsx が createPortal でマウント） -->
+    <div id="broker-mode-mount"></div>
+
+    <!-- v2.10: 今朝の発注リスト動線（楽天本番運用・最優先表示）-->
+    <div class="sb-section sb-orders">
+      <a href="/orders/latest.html" target="_blank" rel="noopener" class="sb-orders-link">
+        <div class="sb-orders-icon">🌅</div>
+        <div class="sb-orders-text">
+          <div class="sb-orders-title">今朝の発注リスト</div>
+          <div class="sb-orders-sub">楽天で何を買うべきか</div>
+        </div>
+        <div class="sb-orders-arrow">→</div>
+      </a>
+    </div>
+    <style>
+      .sb-orders .sb-orders-link {
+        display: flex; align-items: center; gap: 10px;
+        padding: 12px 14px;
+        background: linear-gradient(90deg, rgba(255,140,66,0.18) 0%, rgba(255,140,66,0.04) 100%);
+        border: 1px solid rgba(255,140,66,0.25);
+        border-radius: 8px;
+        text-decoration: none; color: #ece9de;
+        transition: background 0.15s;
+      }
+      .sb-orders .sb-orders-link:hover {
+        background: linear-gradient(90deg, rgba(255,140,66,0.28) 0%, rgba(255,140,66,0.08) 100%);
+        border-color: rgba(255,140,66,0.5);
+      }
+      .sb-orders .sb-orders-icon { font-size: 22px; flex-shrink: 0; }
+      .sb-orders .sb-orders-text { flex: 1; min-width: 0; }
+      .sb-orders .sb-orders-title { font-weight: 700; font-size: 13px; color: #ff8c42; }
+      .sb-orders .sb-orders-sub { font-size: 11px; color: #a8a89e; margin-top: 2px; }
+      .sb-orders .sb-orders-arrow { color: #ff8c42; font-size: 18px; font-weight: 700; }
+    </style>
+
+    <!-- Phase C レポートボタン → 全画面オーバーレイ #phase-c-view を開く -->
+    <div class="sb-section sb-report">
+      <button type="button" class="sb-report-link" data-open-report>
+        <div class="sb-report-icon">📋</div>
+        <div class="sb-report-text">
+          <div class="sb-report-title">Phase C レポート</div>
+          <div class="sb-report-sub">実行意図・損益・ゲート⑥・修正方向</div>
+        </div>
+        <div class="sb-report-arrow">→</div>
+      </button>
+    </div>
+    <style>
+      .sb-report .sb-report-link {
+        display: flex; align-items: center; gap: 10px; width: 100%;
+        padding: 12px 14px;
+        background: linear-gradient(90deg, rgba(93,63,211,0.20) 0%, rgba(93,63,211,0.04) 100%);
+        border: 1px solid rgba(93,63,211,0.35);
+        border-radius: 8px; cursor: pointer;
+        color: #ece9de; font-family: inherit; text-align: left;
+        transition: background 0.15s;
+      }
+      .sb-report .sb-report-link:hover {
+        background: linear-gradient(90deg, rgba(93,63,211,0.30) 0%, rgba(93,63,211,0.08) 100%);
+        border-color: rgba(93,63,211,0.6);
+      }
+      .sb-report .sb-report-icon { font-size: 22px; flex-shrink: 0; }
+      .sb-report .sb-report-text { flex: 1; min-width: 0; }
+      .sb-report .sb-report-title { font-weight: 700; font-size: 13px; color: #a78bfa; }
+      .sb-report .sb-report-sub { font-size: 11px; color: #a8a89e; margin-top: 2px; }
+      .sb-report .sb-report-arrow { color: #a78bfa; font-size: 18px; font-weight: 700; }
+    </style>
+
     <!-- Total Equity with sparkline -->
     <div class="sb-section">
-      <div class="sb-equity-label">総資産</div>
-      <div class="sb-equity-value">¥108,420</div>
-      <div class="sb-equity-today up">+¥1,240 (+1.2%) 今日</div>
+      <div class="sb-equity-label">総資産 <span class="sb-broker-badge" id="sb-broker-badge">🧪 Paper</span></div>
+      <div class="sb-equity-value">¥—</div>
+      <div class="sb-equity-today">読み込み中…</div>
 
       <div class="sb-spark">
         <svg width="100%" height="48" viewBox="0 0 240 48" preserveAspectRatio="none">
@@ -50,9 +117,9 @@
 
       <div class="sb-last-updated">
         <span>30秒前 取得</span>
-        <button class="sb-refresh-btn" id="sb-refresh-btn">
-          <span class="icon">↻</span>
-          <span>更新</span>
+        <button class="sb-refresh-btn sb-refresh-prominent" id="sb-refresh-btn" title="価格と DS / KATSURAGI の状態を最新化（snapshot 再生成）">
+          <span class="icon">🔄</span>
+          <span>価格＆状態を更新</span>
         </button>
       </div>
     </div>
@@ -205,26 +272,26 @@
   <!-- =========================================================== -->
   <main class="main">
 
+    <!-- 🏷 サービスタイトル（最上部） -->
     <div class="main-head">
-      <div class="main-title">ダッシュボード</div>
+      <div class="main-title">
+        <span style="background: linear-gradient(135deg, #5d3fd3, #4ade80); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-weight: 800; letter-spacing: 1px;">INVESTIGELION</span>
+      </div>
       <div class="refresh-bar">
         <div class="last-updated" id="last-updated">
           <span class="dot"></span>
           <span>最終更新 <span id="updated-time">たった今</span></span>
+          <span style="opacity:0.5; font-size:11px; margin-left:8px;">← 更新はサイドバー「価格＆状態を更新」</span>
         </div>
-        <button class="refresh-btn" id="refresh-btn">
-          <span class="icon">↻</span>
-          <span>価格を更新</span>
-        </button>
       </div>
     </div>
 
     <!-- =========================================== -->
-    <!-- ★ Action Zone: 売り × 買い                  -->
+    <!-- ★ Action Zone: 買い × 売り（最優先・最上部）  -->
     <!-- =========================================== -->
     <div class="section-label">
       <span class="priority">最優先</span>
-      <span>今すべきこと</span>
+      <span>今すべきこと（買う・売る）</span>
     </div>
 
     <div class="action-zone">
@@ -427,7 +494,7 @@
             <span class="more-toggle-count">1 件</span>
           </div>
           <div class="more-list open" data-list="sell-more">
-            <div class="more-list-inner">
+            <div class="more-list-inner" data-overflow="collapsed">
 
               <div class="mini-act sell-loss" data-detail="sell-tsla">
                 <div class="mini-act-score">62</div>
@@ -438,12 +505,17 @@
                     <span>US</span><span>·</span><span>ソフトウェア</span><span>·</span><span>注視</span>
                   </div>
                 </div>
-                
+
               <div class="mini-act-price">$420</div>
               <div class="mini-act-return down">-2.1%</div>
                 <div class="mini-act-prob"><span class="pct">55%</span><br>進捗</div>
                 <div class="mini-act-arrow">→</div>
               </div>
+
+              <button class="mini-act-overflow-toggle" data-overflow-toggle hidden>
+                <span class="ovt-icon">+</span>
+                <span class="ovt-label">残り <span data-overflow-count>0</span> 件を表示</span>
+              </button>
 
             </div>
           </div>
@@ -636,7 +708,7 @@
             <span class="more-toggle-count">8 件</span>
           </div>
           <div class="more-list" data-list="buy-more">
-            <div class="more-list-inner">
+            <div class="more-list-inner" data-overflow="collapsed">
 
               <div class="mini-act buy" data-detail="nvda">
                 <div class="mini-act-score">76</div>
@@ -759,12 +831,17 @@
                     <span>JP</span><span>·</span><span>投資</span><span>·</span><span>AI</span>
                   </div>
                 </div>
-                
+
               <div class="mini-act-price">¥10,300</div>
               <div class="mini-act-return up">+9%</div>
                 <div class="mini-act-prob"><span class="pct">52%</span><br>勝率</div>
                 <div class="mini-act-arrow">→</div>
               </div>
+
+              <button class="mini-act-overflow-toggle" data-overflow-toggle hidden>
+                <span class="ovt-icon">+</span>
+                <span class="ovt-label">残り <span data-overflow-count>0</span> 件を表示</span>
+              </button>
 
             </div>
             <div class="more-footer">
@@ -775,6 +852,12 @@
       </div>
 
     </div>
+
+    <!-- ダミーシステム（WILLE 司令室 + DS 4 機）= 観測。操作(買い/売り)の下に配置。 -->
+    <div class="section-label">
+      <span>システム状況 · DS / MISATO</span>
+    </div>
+    <div id="dummy-system-mount"></div>
 
     <!-- =========================================== -->
     <!-- Cash Flow / Allocation (D-26)                 -->
@@ -1117,6 +1200,173 @@
     </div>
 
     <!-- =========================================== -->
+    <!-- 集中投資 KPI (D 案: ¥100k 検証用 / v2.10)      -->
+    <!-- =========================================== -->
+    <div class="section-label">
+      <span>集中投資パフォーマンス</span>
+      <span class="lbl">D 案 / 元本ベース</span>
+    </div>
+
+    <div class="card concentration-kpi-card">
+      <div class="card-head">
+        <div class="card-title">
+          <span class="dot sub"></span>集中投資ステータス
+        </div>
+        <div class="card-meta"><span data-kpi="position_count">—</span> 銘柄保有中</div>
+      </div>
+
+      <div class="track-stats">
+        <div class="track-stat">
+          <div class="track-stat-label">元本</div>
+          <div class="track-stat-value" data-kpi-fmt="jpy" data-kpi="seed_jpy">¥—</div>
+          <div class="track-stat-sub">treasury 残額</div>
+        </div>
+        <div class="track-stat">
+          <div class="track-stat-label">投入額</div>
+          <div class="track-stat-value" data-kpi-fmt="jpy" data-kpi="invested_jpy">¥—</div>
+          <div class="track-stat-sub"><span data-kpi-fmt="pct" data-kpi="investment_pct">—</span>% of 元本</div>
+        </div>
+        <div class="track-stat sub">
+          <div class="track-stat-label">cash 余力</div>
+          <div class="track-stat-value" data-kpi-fmt="jpy" data-kpi="cash_reserve_jpy">¥—</div>
+          <div class="track-stat-sub"><span data-kpi-fmt="pct" data-kpi="cash_reserve_pct">—</span>% of 元本</div>
+        </div>
+        <div class="track-stat sub">
+          <div class="track-stat-label">含み損益</div>
+          <div class="track-stat-value" data-kpi-fmt="jpy-signed" data-kpi="unrealized_pnl_jpy">¥—</div>
+          <div class="track-stat-sub"><span data-kpi-fmt="pct-signed" data-kpi="unrealized_pnl_pct">—</span>% on 投入額</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- =========================================== -->
+    <!-- ピラミッディング状況 (v2.10 Phase 1A-Step2)    -->
+    <!-- 各機別に「初期 40% / 70% / 100%」の段階表示    -->
+    <!-- =========================================== -->
+    <div class="section-label">
+      <span>ピラミッディング状況</span>
+      <span class="lbl">機別段階エントリー / 真の trailing</span>
+    </div>
+
+    <div class="card pyramid-status-card">
+      <div class="card-head">
+        <div class="card-title">
+          <span class="dot sub"></span>段階別保有
+        </div>
+        <div class="card-meta" data-pyr-meta>保有銘柄なし</div>
+      </div>
+      <div class="track-stats" id="pyramid-status-stats">
+        <!-- LiveData が動的に <div class="track-stat"> 群を生成 -->
+      </div>
+    </div>
+
+    <!-- =========================================== -->
+    <!-- リスク・テーマ分析 (v2.10 Phase 1/4/5)         -->
+    <!-- =========================================== -->
+    <div class="section-label">
+      <span>リスク・テーマ分析</span>
+      <span class="lbl">中期主戦場 / Phase 1-5</span>
+    </div>
+
+    <div class="lower-row">
+      <!-- Phase 1: ポートフォリオ相関 -->
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title">
+            <span class="dot sub"></span>ポートフォリオ相関 <span class="en">Correlation</span>
+          </div>
+          <div class="card-meta" data-corr-meta>30 日リターン</div>
+        </div>
+        <div class="track-stats">
+          <div class="track-stat">
+            <div class="track-stat-label">集中度</div>
+            <div class="track-stat-value" data-corr="concentration_label">—</div>
+            <div class="track-stat-sub">mean |corr| ベース</div>
+          </div>
+          <div class="track-stat">
+            <div class="track-stat-label">最大相関</div>
+            <div class="track-stat-value" data-corr="max_corr">—</div>
+            <div class="track-stat-sub">|corr| ≥ 0.7 で強相関</div>
+          </div>
+          <div class="track-stat sub">
+            <div class="track-stat-label">平均 |相関|</div>
+            <div class="track-stat-value" data-corr="mean_abs_corr">—</div>
+            <div class="track-stat-sub">0.3 未満で分散良</div>
+          </div>
+          <div class="track-stat sub">
+            <div class="track-stat-label">強相関ペア</div>
+            <div class="track-stat-value" data-corr="high_pairs_count">—</div>
+            <div class="track-stat-sub">≥ 0.7 のペア数</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Phase 4: テーマ強度 -->
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title">
+            <span class="dot sub"></span>テーマ強度 <span class="en">Theme Strength</span>
+          </div>
+          <div class="card-meta" data-theme-meta>過去 30 日 / Top 3</div>
+        </div>
+        <div class="track-stats">
+          <div class="track-stat">
+            <div class="track-stat-label">Top テーマ</div>
+            <div class="track-stat-value" data-theme="top1_name">—</div>
+            <div class="track-stat-sub" data-theme="top1_metrics">—</div>
+          </div>
+          <div class="track-stat">
+            <div class="track-stat-label">2 位</div>
+            <div class="track-stat-value" data-theme="top2_name">—</div>
+            <div class="track-stat-sub" data-theme="top2_metrics">—</div>
+          </div>
+          <div class="track-stat sub">
+            <div class="track-stat-label">3 位</div>
+            <div class="track-stat-value" data-theme="top3_name">—</div>
+            <div class="track-stat-sub" data-theme="top3_metrics">—</div>
+          </div>
+          <div class="track-stat sub">
+            <div class="track-stat-label">記事総数</div>
+            <div class="track-stat-value" data-theme="total_topics">—</div>
+            <div class="track-stat-sub">past 30d</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Phase 5: factor exposure -->
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title">
+            <span class="dot sub"></span>factor 偏り <span class="en">Factor Exposure</span>
+          </div>
+          <div class="card-meta" data-fx-meta>4 軸の加重平均</div>
+        </div>
+        <div class="track-stats">
+          <div class="track-stat">
+            <div class="track-stat-label">偏りラベル</div>
+            <div class="track-stat-value" data-fx="concentration_label">—</div>
+            <div class="track-stat-sub" data-fx="max_factor">—</div>
+          </div>
+          <div class="track-stat">
+            <div class="track-stat-label">momentum</div>
+            <div class="track-stat-value" data-fx="momentum">—</div>
+            <div class="track-stat-sub">0=低 / 100=高</div>
+          </div>
+          <div class="track-stat sub">
+            <div class="track-stat-label">value</div>
+            <div class="track-stat-value" data-fx="value">—</div>
+            <div class="track-stat-sub">PER 逆数</div>
+          </div>
+          <div class="track-stat sub">
+            <div class="track-stat-label">size</div>
+            <div class="track-stat-value" data-fx="size">—</div>
+            <div class="track-stat-sub">時価総額逆数</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- =========================================== -->
     <!-- Secondary: 警告 + 情報                        -->
     <!-- =========================================== -->
     <div class="section-label">
@@ -1194,29 +1444,29 @@
           <div class="card-title">
             <span class="dot sub"></span>予測の検証 <span class="en">Track Record</span>
           </div>
-          <div class="card-meta">過去30日</div>
+          <div class="card-meta" data-ja-meta>過去30日</div>
         </div>
 
         <div class="track-stats">
           <div class="track-stat">
             <div class="track-stat-label">的中率</div>
-            <div class="track-stat-value">68%</div>
-            <div class="track-stat-sub">15 / 22件</div>
+            <div class="track-stat-value" data-ja="accuracy">—</div>
+            <div class="track-stat-sub" data-ja="evaluated_summary">—</div>
           </div>
           <div class="track-stat">
             <div class="track-stat-label">平均リターン</div>
-            <div class="track-stat-value up">+4.8%</div>
+            <div class="track-stat-value" data-ja="avg_return">—</div>
             <div class="track-stat-sub">1件あたり30日後</div>
           </div>
           <div class="track-stat sub">
             <div class="track-stat-label">スコア相関</div>
-            <div class="track-stat-value">0.62</div>
-            <div class="track-stat-sub">スコア高=勝率高</div>
+            <div class="track-stat-value">未集計</div>
+            <div class="track-stat-sub">Phase 3 で実装</div>
           </div>
           <div class="track-stat sub">
             <div class="track-stat-label">S&amp;P 500との差</div>
-            <div class="track-stat-value up">+2.3pt</div>
-            <div class="track-stat-sub">超過リターン</div>
+            <div class="track-stat-value">未集計</div>
+            <div class="track-stat-sub">Phase 3 で実装</div>
           </div>
         </div>
 
@@ -1625,6 +1875,20 @@
 
       </div>
 
+    </div>
+
+    <!-- 増額ゲート⑥（paper/live 別 + combined 参考）& 段階大規模化（paper 専用）。LiveData が注入。 -->
+    <div id="gate-scaling-mount"></div>
+
+    <!-- Phase C 現況ビュー（レポートボタンで開く全画面オーバーレイ）。LiveData が #phase-c-body に注入。 -->
+    <div id="phase-c-view" style="display:none;position:fixed;inset:0;z-index:2000;background:#0a0e14;overflow-y:auto;">
+      <div style="max-width:1120px;margin:0 auto;padding:20px 18px 60px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;background:#0a0e14;padding:8px 0 14px;border-bottom:1px solid rgba(255,255,255,.08);margin-bottom:18px;z-index:1;">
+          <div style="font-size:18px;font-weight:800;">📋 Phase C ペーパーテスト 現況 <span style="font-size:12px;color:#8893a5;font-weight:400;">コスト0・DBのみ</span></div>
+          <button type="button" data-close-report style="background:rgba(255,255,255,.08);color:#e8ecf3;border:1px solid rgba(255,255,255,.18);border-radius:8px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;">✕ 閉じる</button>
+        </div>
+        <div id="phase-c-body"></div>
+      </div>
     </div>
 
   </main>

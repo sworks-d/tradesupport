@@ -77,7 +77,7 @@ export default function DisciplineBanner() {
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/data/snapshot.json")
+    fetch(`/data/snapshot.json?t=${Date.now()}`, { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
       .then((d: BannerData | null) => {
         if (!cancelled) setData(d);
