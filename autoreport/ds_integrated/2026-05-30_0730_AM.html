@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>DS 統合レポート 2026-05-30 AM</title>
+<style>
+  body { background: #1a1a1f; color: #ece9de; font-family: -apple-system, "Hiragino Sans", sans-serif; padding: 24px; max-width: 1200px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .subtitle { color: #888; font-size: 12px; margin-bottom: 20px; }
+  .card { background: #252530; border: 1px solid rgba(255,255,255,0.08); border-radius: 6px; padding: 18px 20px; margin-bottom: 16px; }
+  h2 { font-size: 14px; letter-spacing: 1px; color: #a8a89e; margin: 0 0 12px; font-weight: 600; }
+  .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .pilot-card { background: #2c2c38; border-radius: 4px; padding: 12px; border-top: 3px solid #888; }
+  .pilot-card.REI { border-top-color: #4a90e2; }
+  .pilot-card.ASUKA { border-top-color: #e74c3c; }
+  .pilot-card.SHINJI { border-top-color: #9b59b6; }
+  .pilot-card.KAWORU { border-top-color: #5d3fd3; }
+  .pilot-head { display: flex; justify-content: space-between; align-items: baseline; }
+  .pilot-name { font-weight: 700; font-size: 14px; }
+  .pnl-big { font-weight: 700; font-size: 16px; padding: 2px 8px; border-radius: 3px; }
+  .pnl-big.up { background: rgba(74,222,128,0.15); color: #4ade80; }
+  .pnl-big.down { background: rgba(248,113,113,0.15); color: #f87171; }
+  .pnl-big.flat { background: rgba(255,255,255,0.05); color: #a8a89e; }
+  .pilot-stats { display: flex; gap: 12px; margin-top: 6px; font-size: 11px; color: #a8a89e; flex-wrap: wrap; }
+  .pilot-stats b { color: #ece9de; }
+  table { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 8px; }
+  th, td { padding: 5px 8px; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.05); }
+  th { color: #888; font-weight: 600; font-size: 10px; text-transform: uppercase; }
+  .up { color: #4ade80; }
+  .down { color: #f87171; }
+  .outlook li { margin-bottom: 6px; font-size: 13px; line-height: 1.5; }
+  .total-row { background: rgba(255,255,255,0.04); font-weight: 600; }
+  .misato-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+  .misato-stat { background: rgba(93,63,211,0.08); border-radius: 4px; padding: 10px 12px; border-left: 3px solid #6a5acd; }
+  .misato-stat .lbl { font-size: 10px; color: #888; text-transform: uppercase; }
+  .misato-stat .val { font-size: 16px; font-weight: 700; color: #ece9de; margin-top: 2px; }
+  .total-pnl-hero { display: flex; gap: 24px; align-items: baseline; padding: 16px 20px; background: linear-gradient(135deg, rgba(93,63,211,0.1), rgba(74,222,128,0.05)); border-radius: 6px; margin-bottom: 16px; }
+  .total-pnl-hero .lbl { font-size: 11px; color: #888; }
+  .total-pnl-hero .seed-val { font-size: 22px; font-weight: 700; color: #b9a3ff; }
+  .total-pnl-hero .pnl-val { font-size: 24px; font-weight: 700; }
+  .total-pnl-hero .pnl-val.up { color: #4ade80; }
+  .total-pnl-hero .pnl-val.down { color: #f87171; }
+</style>
+</head>
+<body>
+
+<h1>🤖 DS 統合レポート — 朝の進捗（2026-05-30 07:30）</h1>
+<div class="subtitle">生成: 2026-05-30 07:30:06</div>
+
+<!-- HERO: MISATO 投入額 vs DS 全体損益 -->
+<div class="total-pnl-hero">
+  <div>
+    <div class="lbl">💰 MISATO 投入額（seed）</div>
+    <div class="seed-val">¥100,000</div>
+  </div>
+  <div style="font-size:18px;color:#888;">→</div>
+  <div>
+    <div class="lbl">📊 DS 全体時価</div>
+    <div class="seed-val">¥14,521</div>
+  </div>
+  <div style="font-size:18px;color:#888;">=</div>
+  <div>
+    <div class="lbl">📈 損益</div>
+    <div class="pnl-val up">+¥311 (+2.19%)</div>
+  </div>
+</div>
+
+<!-- MISATO セクション -->
+<div class="card" style="border-left: 4px solid #5d3fd3;">
+  <h2>🎖 MISATO 司令塔 — 財務状態</h2>
+  <div class="misato-grid">
+    <div class="misato-stat">
+      <div class="lbl">預かり金 (seed)</div>
+      <div class="val">¥100,000</div>
+    </div>
+    <div class="misato-stat">
+      <div class="lbl">配分済 (allocated)</div>
+      <div class="val">¥14,210</div>
+    </div>
+    <div class="misato-stat">
+      <div class="lbl">未配分 (available)</div>
+      <div class="val">¥85,790</div>
+    </div>
+    <div class="misato-stat">
+      <div class="lbl">入金回数</div>
+      <div class="val">1 回</div>
+    </div>
+    <div class="misato-stat">
+      <div class="lbl">直近入金</div>
+      <div class="val" style="font-size:12px;">2026-05-29 15:19</div>
+    </div>
+    <div class="misato-stat">
+      <div class="lbl">自動売買マスター</div>
+      <div class="val" style="font-size:13px;">⚫ OFF</div>
+    </div>
+  </div>
+  <div style="margin-top:12px;font-size:11px;color:#888;">
+    安全装置: 1 命令上限 ¥500,000 / 1 機上限 ¥200,000 / HALT ファイル / dry-run→approve 2 段
+  </div>
+
+  <h2 style="margin-top:18px;">📤 MISATO の配分内訳（どの機にいくら振ったか）</h2>
+  <table>
+    <tr>
+      <th>機体</th>
+      <th>配分額</th>
+      <th>配分率</th>
+      <th>投入済</th>
+      <th>投入率（配分内）</th>
+      <th>残現金（未使用）</th>
+      <th>状態</th>
+    </tr>
+    <tr>
+          <td>🔵 DS/REI</td>
+          <td>¥0</td>
+          <td>0.0%</td>
+          <td>¥14,995</td>
+          <td>0%</td>
+          <td>¥-14,995</td>
+          <td>⏸ 未配分</td>
+        </tr>
+<tr>
+          <td>🔴 DS/ASUKA</td>
+          <td>¥14,210</td>
+          <td>100.0%</td>
+          <td>¥14,042</td>
+          <td>99%</td>
+          <td>¥168</td>
+          <td>✅ 配分済</td>
+        </tr>
+<tr>
+          <td>🟣 DS/SHINJI</td>
+          <td>¥0</td>
+          <td>0.0%</td>
+          <td>¥14,042</td>
+          <td>0%</td>
+          <td>¥-14,042</td>
+          <td>⏸ 未配分</td>
+        </tr>
+<tr>
+          <td>🌒 DS/KAWORU</td>
+          <td>¥0</td>
+          <td>0.0%</td>
+          <td>¥0</td>
+          <td>0%</td>
+          <td>¥0</td>
+          <td>⏸ 未配分</td>
+        </tr>
+    <tr class="total-row">
+      <td>合計</td>
+      <td>¥14,210</td>
+      <td>100%</td>
+      <td>¥43,078</td>
+      <td>303%</td>
+      <td>¥-28,868</td>
+      <td></td>
+    </tr>
+  </table>
+  
+              <h2 style="margin-top:18px;">📋 最新 MISATO 配分案</h2>
+              <div style="font-size:12px;color:#a8a89e;">
+                配分方式: opportunity-driven（機会駆動 fill: 採用 0 件 / 却下 3 件 / cash 保持 ¥70,616）<br>
+                割当 3 件・実 fill 0 件・shortlist 3 件
+              </div>
+              <div style="margin-top:8px;font-size:11px;color:#ece9de;font-family:'JetBrains Mono',ui-monospace,monospace;">
+                
+              </div>
+            
+</div>
+
+<div class="card">
+  <h2>📊 DS 機別 配分 + 損益 サマリー</h2>
+  <div class="summary-grid">
+    
+    <div class="pilot-card REI">
+      <div class="pilot-head">
+        <span class="pilot-name">🔵 DS/REI</span>
+        <span class="pnl-big up">+¥15 (+0.00%)</span>
+      </div>
+      <div class="pilot-stats">
+        <span>配分 <b>¥0</b></span>
+        <span>保有 <b>1</b> 銘柄</span>
+        <span>投入 <b>¥14,995</b></span>
+        <span>残現金 <b>¥-14,995</b></span>
+      </div>
+    </div>
+    
+
+    <div class="pilot-card ASUKA">
+      <div class="pilot-head">
+        <span class="pilot-name">🔴 DS/ASUKA</span>
+        <span class="pnl-big up">+¥148 (+1.04%)</span>
+      </div>
+      <div class="pilot-stats">
+        <span>配分 <b>¥14,210</b></span>
+        <span>保有 <b>1</b> 銘柄</span>
+        <span>投入 <b>¥14,042</b></span>
+        <span>残現金 <b>¥168</b></span>
+      </div>
+    </div>
+    
+
+    <div class="pilot-card SHINJI">
+      <div class="pilot-head">
+        <span class="pilot-name">🟣 DS/SHINJI</span>
+        <span class="pnl-big up">+¥148 (+0.00%)</span>
+      </div>
+      <div class="pilot-stats">
+        <span>配分 <b>¥0</b></span>
+        <span>保有 <b>1</b> 銘柄</span>
+        <span>投入 <b>¥14,042</b></span>
+        <span>残現金 <b>¥-14,042</b></span>
+      </div>
+    </div>
+    
+
+    <div class="pilot-card KAWORU">
+      <div class="pilot-head">
+        <span class="pilot-name">🌒 DS/KAWORU</span>
+        <span class="pnl-big flat">+¥0 (+0.00%)</span>
+      </div>
+      <div class="pilot-stats">
+        <span>配分 <b>¥0</b></span>
+        <span>保有 <b>0</b> 銘柄</span>
+        <span>投入 <b>¥0</b></span>
+        <span>残現金 <b>¥0</b></span>
+      </div>
+    </div>
+    
+  </div>
+  <table>
+    <tr><th>機体</th><th>配分（元本）</th><th>投入</th><th>残現金</th><th>時価</th><th>合計</th><th>損益 ¥</th><th>損益 %</th></tr>
+    <tr>
+      <td>🔵 DS/REI</td>
+      <td>¥0</td>
+      <td>¥14,995</td>
+      <td>¥-14,995</td>
+      <td>¥15,010</td>
+      <td>¥15</td>
+      <td class="up">+¥15</td>
+      <td class="up">+0.00%</td>
+    </tr>
+<tr>
+      <td>🔴 DS/ASUKA</td>
+      <td>¥14,210</td>
+      <td>¥14,042</td>
+      <td>¥168</td>
+      <td>¥14,190</td>
+      <td>¥14,358</td>
+      <td class="up">+¥148</td>
+      <td class="up">+1.04%</td>
+    </tr>
+<tr>
+      <td>🟣 DS/SHINJI</td>
+      <td>¥0</td>
+      <td>¥14,042</td>
+      <td>¥-14,042</td>
+      <td>¥14,190</td>
+      <td>¥148</td>
+      <td class="up">+¥148</td>
+      <td class="up">+0.00%</td>
+    </tr>
+<tr>
+      <td>🌒 DS/KAWORU</td>
+      <td>¥0</td>
+      <td>¥0</td>
+      <td>¥0</td>
+      <td>¥0</td>
+      <td>¥0</td>
+      <td class="">+¥0</td>
+      <td class="">+0.00%</td>
+    </tr>
+    <tr class="total-row"><td>合計</td><td>¥14,210</td><td>¥43,078</td><td>¥-28,868</td><td>¥43,389</td><td>¥14,521</td><td class="up">+¥311</td><td class="up">+2.19%</td></tr>
+  </table>
+</div>
+
+<div class="card">
+  <h2>📈 進捗（D-23 評価データ蓄積）</h2>
+  <div style="display: flex; gap: 20px; font-size: 13px;">
+    <div>📝 総 decision: <b>64</b> 件</div>
+    <div>✅ 評価済: <b>0</b> 件</div>
+    <div>🎯 hit: <b style="color:#4ade80;">0</b></div>
+    <div>❌ miss: <b style="color:#f87171;">0</b></div>
+    <div>➖ neutral: <b>0</b></div>
+    <div>⏳ pending: <b>0</b></div>
+  </div>
+  <div style="margin-top:8px;font-size:11px;color:#888;">
+    D-23 ゲート進捗: n 0/30 件・hit_rate ≥50%・avg_R ≥+0.5 で「正式推奨（昇格）」に到達。
+  </div>
+</div>
+
+<div class="card">
+  <h2>🔮 展望（次に起こりそうなこと）</h2>
+  <ul class="outlook">
+    <li>📌 評価データはまだ蓄積中（0 件）。評価期日（60-180 日後）の到来を待って hit_rate / avg_R が分離していく段階。</li>
+<li>🌒 DS/KAWORU: 保有なし。次の MISATO dispatch で候補申請があれば fill 可能。</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h2>🎫 DS 所持銘柄 一覧（機別損益サマリー付き）</h2>
+  <div style="margin-bottom:14px;">
+      <b>🔵 DS/REI</b> (1 銘柄・PnL <span class="up">¥+15 (+0.00%)</span>)
+      <table>
+        <tr><th>コード</th><th>会社名</th><th>株数</th><th>取得</th><th>現在</th><th>時価</th><th>含み損益</th><th>期限</th><th>stop 距離</th></tr>
+        <tr>
+          <td>9432</td>
+          <td>ＮＴＴ</td>
+          <td>100</td>
+          <td>¥150</td>
+          <td>¥150</td>
+          <td>¥15,010</td>
+          <td class="up">+¥15 (+0.10%)</td>
+          <td>179 日</td>
+          <td>+15.1%</td>
+        </tr>
+      </table>
+    </div>
+<div style="margin-bottom:14px;">
+      <b>🔴 DS/ASUKA</b> (1 銘柄・PnL <span class="up">¥+148 (+1.04%)</span>)
+      <table>
+        <tr><th>コード</th><th>会社名</th><th>株数</th><th>取得</th><th>現在</th><th>時価</th><th>含み損益</th><th>期限</th><th>stop 距離</th></tr>
+        <tr>
+          <td>8729</td>
+          <td>ソニーフィナンシャルグループ</td>
+          <td>100</td>
+          <td>¥140</td>
+          <td>¥142</td>
+          <td>¥14,190</td>
+          <td class="up">+¥148 (+1.05%)</td>
+          <td>59 日</td>
+          <td>+9.0%</td>
+        </tr>
+      </table>
+    </div>
+<div style="margin-bottom:14px;">
+      <b>🟣 DS/SHINJI</b> (1 銘柄・PnL <span class="up">¥+148 (+0.00%)</span>)
+      <table>
+        <tr><th>コード</th><th>会社名</th><th>株数</th><th>取得</th><th>現在</th><th>時価</th><th>含み損益</th><th>期限</th><th>stop 距離</th></tr>
+        <tr>
+          <td>8729</td>
+          <td>ソニーフィナンシャルグループ</td>
+          <td>100</td>
+          <td>¥140</td>
+          <td>¥142</td>
+          <td>¥14,190</td>
+          <td class="up">+¥148 (+1.05%)</td>
+          <td>89 日</td>
+          <td>+10.9%</td>
+        </tr>
+      </table>
+    </div>
+<div style="margin-bottom:12px;"><b>🌒 DS/KAWORU</b>: 保有なし</div>
+</div>
+
+</body>
+</html>

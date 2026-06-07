@@ -1,0 +1,823 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ダミーシステム運用レポート 2026-05-31</title>
+<style>
+  :root {
+    --bg: #1a1a1f;
+    --bg-2: #252530;
+    --ink: #ece9de;
+    --ink-2: #a8a89e;
+    --ink-3: #6b6962;
+    --up: #4ade80;
+    --down: #f87171;
+    --warn: #fbbf24;
+    --key: #ff8c42;
+    --border: rgba(255,255,255,0.08);
+    --r: 8px;
+  }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif;
+    margin: 0;
+    padding: 32px 24px;
+    line-height: 1.6;
+  }
+  .wrap { max-width: min(96vw, 1600px); margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 4px 0; letter-spacing: 0.5px; }
+  .subtitle { color: var(--ink-2); font-size: 12px; margin-bottom: 24px; }
+  .card {
+    background: var(--bg-2); border: 1px solid var(--border);
+    border-radius: var(--r); padding: 18px 20px; margin-bottom: 16px;
+  }
+  .card h2 {
+    font-size: 14px; letter-spacing: 1px; color: var(--ink-2);
+    margin: 0 0 12px 0; font-weight: 600;
+  }
+  /* レスポンシブ：画面幅に合わせて 1-4 列に自動調整・各カード最低 240px 確保 */
+  .grid-4 { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+  .grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+  .stat { background: var(--bg); border-radius: 6px; padding: 12px 14px; }
+  .stat-label { color: var(--ink-2); font-size: 11px; letter-spacing: 1px; }
+  .stat-value { font-size: 22px; font-weight: 600; margin-top: 4px; }
+  .stat-sub { color: var(--ink-3); font-size: 11px; margin-top: 2px; }
+  .ds-card {
+    background: var(--bg); border-radius: 6px; padding: 16px;
+    border: 1px solid var(--border); display: flex; flex-direction: column;
+  }
+  .ds-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .ds-icon { font-size: 22px; }
+  .ds-name { font-weight: 700; font-size: 15px; letter-spacing: 0.5px; }
+  .ds-desc { color: var(--ink-3); font-size: 11px; line-height: 1.4; min-height: 36px; }
+  .ds-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+  .ds-stat-lbl { color: var(--ink-2); font-size: 10px; letter-spacing: 0.5px; }
+  .ds-stat-val { font-size: 14px; font-weight: 600; }
+  .pnl.up { color: var(--up); }
+  .pnl.down { color: var(--down); }
+  .pnl.flat { color: var(--ink-2); }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--border); }
+  th { color: var(--ink-2); font-weight: 600; letter-spacing: 0.5px; font-size: 10px; }
+  .stance-推し  { background: rgba(74, 222, 128, 0.15); color: var(--up); padding: 1px 6px; border-radius: 3px; font-size: 11px; font-weight: 600; }
+  .stance-要検討 { background: rgba(251, 191, 36, 0.15); color: var(--warn); padding: 1px 6px; border-radius: 3px; font-size: 11px; font-weight: 600; }
+  .stance-静観  { background: rgba(168, 168, 158, 0.15); color: var(--ink-2); padding: 1px 6px; border-radius: 3px; font-size: 11px; font-weight: 600; }
+  .filled-tag { background: rgba(255, 140, 66, 0.15); color: var(--key); padding: 1px 4px; border-radius: 2px; font-size: 10px; margin-right: 3px; }
+  .cost-bar { background: var(--bg); border-radius: 4px; height: 10px; overflow: hidden; margin: 6px 0 4px 0; }
+  .cost-bar-fill { height: 100%; background: var(--key); }
+  .footer { color: var(--ink-3); font-size: 11px; margin-top: 24px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>🤖 ダミーシステム運用レポート</h1>
+  <div class="subtitle">
+    2026-05-31 ・ 生成 2026-05-31 18:01
+    ・ ペーパー検証（DS/REI・DS/ASUKA・DS/SHINJI・DS/KAWORU の 4 機並行）
+  </div>
+  <div style="background: rgba(74,222,128,0.08); border-left: 3px solid var(--up); padding: 8px 12px; border-radius: 3px; margin-bottom: 16px; font-size: 11px; line-height: 1.5;">
+    🔬 <b>moomoo 実弾相当シミュレーション</b>：
+    JP 単元未満手数料 0%・JP 単元 0.088%・US ETF 0.495%・USD/JPY スプレッド ¥0.25/$・寄付スリッページ ±0.2%。
+    各機の PnL は手数料・スリッページ・FX 込みの実弾相当値です。
+  </div>
+
+  
+  <div class="card" style="border-left: 4px solid #c0392b; background: linear-gradient(135deg, rgba(192,57,43,0.08) 0%, rgba(192,57,43,0.02) 100%);">
+    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+      <span style="font-size: 22px;">📡</span>
+      <div>
+        <div style="font-size: 11px; color: var(--ink-2); letter-spacing: 1.5px;">NERV 作戦本部</div>
+        <div style="font-size: 16px; font-weight: 700; letter-spacing: 0.5px;">葛城ミサト 作戦部長 — 状況報告</div>
+      </div>
+    </div>
+    <div style="background: rgba(0,0,0,0.15); padding: 12px 14px; border-radius: 4px; font-size: 13px; line-height: 1.65; margin-bottom: 10px;">
+      <div style="color: var(--ink-2); font-size: 10px; letter-spacing: 1px; margin-bottom: 4px;">▼ 現状認識</div>
+      4 機全員が初日マイナス、範囲 0.00pt の僅差。これは買付直後の手数料・スリッページ反映で全機に均等に乗ってる初期コスト。差が広がるのは数日先、性格別の真価が出るのはこれからよ。
+    </div>
+    <!-- 性格別ランキング（合算は出さない・相対比較が主眼）-->
+    <div style="background: rgba(0,0,0,0.12); padding: 10px 12px; border-radius: 4px; margin-bottom: 10px;">
+      <div style="color: var(--ink-2); font-size: 10px; letter-spacing: 1px; margin-bottom: 6px;">▼ 性格別ランキング（PnL %）</div>
+      <table style="background: transparent; font-size: 12px;">
+        <tr><th style="background: transparent; color: var(--ink-2);">順位</th><th style="background: transparent; color: var(--ink-2);">機体</th><th style="background: transparent; color: var(--ink-2);">PnL</th><th style="background: transparent; color: var(--ink-2);">保有</th><th style="background: transparent; color: var(--ink-2);">前日比</th><th style="background: transparent; color: var(--ink-2);">現 max</th><th style="background: transparent; color: var(--ink-2);">観察</th></tr>
+        
+        <tr>
+          <td><b>1</b></td>
+          <td>🔵 DS/REI</td>
+          <td class="pnl flat"><b>+0.00%</b></td>
+          <td>0 件</td>
+          <td class="pnl flat">+¥0</td>
+          <td>15.0%</td>
+          <td style="color: var(--ink-2); font-size: 11px;">未エントリー（買える銘柄なし or 認識中）</td>
+        </tr>
+        
+        <tr>
+          <td><b>2</b></td>
+          <td>🔴 DS/ASUKA</td>
+          <td class="pnl flat"><b>+0.00%</b></td>
+          <td>0 件</td>
+          <td class="pnl flat">+¥0</td>
+          <td>20.0%</td>
+          <td style="color: var(--ink-2); font-size: 11px;">未エントリー（買える銘柄なし or 認識中）</td>
+        </tr>
+        
+        <tr>
+          <td><b>3</b></td>
+          <td>🟣 DS/SHINJI</td>
+          <td class="pnl flat"><b>+0.00%</b></td>
+          <td>0 件</td>
+          <td class="pnl flat">+¥0</td>
+          <td>7.0%</td>
+          <td style="color: var(--ink-2); font-size: 11px;">未エントリー（買える銘柄なし or 認識中）</td>
+        </tr>
+        
+        <tr>
+          <td><b>4</b></td>
+          <td>🌒 DS/KAWORU</td>
+          <td class="pnl flat"><b>+0.00%</b></td>
+          <td>0 件</td>
+          <td class="pnl flat">+¥0</td>
+          <td>20.0%</td>
+          <td style="color: var(--ink-2); font-size: 11px;">未エントリー（買える銘柄なし or 認識中）</td>
+        </tr>
+        
+      </table>
+      <div style="margin-top: 8px; font-size: 11px; color: var(--ink-3);">
+        首位⇔最下位の差：<b style="color: var(--ink);">0.00pt</b>
+        （差が広がるほど性格別の特徴が出てる）
+      </div>
+    </div>
+    <div style="background: rgba(0,0,0,0.15); padding: 12px 14px; border-radius: 4px; font-size: 13px; line-height: 1.65;">
+      <div style="color: var(--ink-2); font-size: 10px; letter-spacing: 1px; margin-bottom: 4px;">▼ 次の指示</div>
+      明朝 07:00 朝バッチ → 07:15 ダミーシステム自動操縦 → 07:30 評価 → 18:00 本レポート再生成。stop / 期限到達分は自動売却、新規 decisions は accept_stances に応じて各機が独自に拾う。30 件評価到達まではノータッチ、増額ゲート判定はそれから。緊急停止は touch ~/.trading-agent/HALT。
+    </div>
+
+    
+    
+    <div style="margin-top: 12px; background: rgba(93,63,211,0.08); border: 1px solid rgba(93,63,211,0.35); padding: 12px 14px; border-radius: 4px;">
+      <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+        <span style="font-size: 16px;">🎖</span>
+        <div style="font-size: 13px; font-weight: 700; color: var(--ink);">MISATO 司令塔（オーケストレーター）</div>
+        <span style="font-size: 10px; color: var(--ink-3); margin-left: auto;">2026-05-31 09:00:05</span>
+      </div>
+      
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; margin-bottom: 10px;">
+        <div style="font-size: 11px; color: var(--ink-2);">
+          元本: <b style="color: var(--ink); font-size: 13px;">¥100,000</b>
+        </div>
+        <div style="font-size: 11px; color: var(--ink-2);">
+          配分方式: <b style="color: var(--ink);">均等</b>
+          <span style="opacity: 0.7;">（機会駆動 fill: 採用 7 件 / 却下 1 件 / cash 保持 ¥90,294）</span>
+        </div>
+        <div style="font-size: 11px; color: var(--ink-2);">
+          割当案: <b style="color: var(--ink); font-size: 13px;">8</b> 件
+        </div>
+      </div>
+      <table style="background: transparent; font-size: 11px; margin-bottom: 10px;">
+        <tr><th style="background: transparent; color: var(--ink-2);">機体</th><th style="background: transparent; color: var(--ink-2);">配分</th><th style="background: transparent; color: var(--ink-2);">割当</th><th style="background: transparent; color: var(--ink-2);">内訳</th></tr>
+        
+        <tr>
+          <td><b>DS/REI</b></td>
+          <td>¥0</td>
+          <td>0 件</td>
+          <td style="color: var(--ink-2); font-size: 10px;">
+            
+            
+              —
+            
+          </td>
+        </tr>
+        
+        <tr>
+          <td><b>DS/ASUKA</b></td>
+          <td>¥1,695</td>
+          <td>6 件</td>
+          <td style="color: var(--ink-2); font-size: 10px;">
+            
+            
+              4689(推し) / 543A(推し) / 7201(推し) …他 3
+            
+          </td>
+        </tr>
+        
+        <tr>
+          <td><b>DS/SHINJI</b></td>
+          <td>¥8,010</td>
+          <td>2 件</td>
+          <td style="color: var(--ink-2); font-size: 10px;">
+            
+            
+              4519(ZEELE) / 5803(ZEELE)
+            
+          </td>
+        </tr>
+        
+        <tr>
+          <td><b>DS/KAWORU</b></td>
+          <td>¥0</td>
+          <td>0 件</td>
+          <td style="color: var(--ink-2); font-size: 10px;">
+            
+            
+              —
+            
+          </td>
+        </tr>
+        
+      </table>
+      
+      <div style="padding: 6px 10px; background: rgba(0,0,0,0.12); border-radius: 4px; font-size: 11px; color: var(--ink-3);">
+        昇格候補なし（D-23 ゲート未到達: n≥30 ∩ hit≥50% ∩ R≥+0.5）
+      </div>
+      
+      
+    </div>
+    
+  </div>
+  
+
+  <div class="card">
+    <h2>本日のサマリー</h2>
+    <div class="grid-4">
+      <div class="stat">
+        <div class="stat-label">UNIVERSE</div>
+        <div class="stat-value">934</div>
+        <div class="stat-sub">active 銘柄</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">本日 DECISIONS</div>
+        <div class="stat-value">24</div>
+        <div class="stat-sub">推し 0 ・ 要検討 15 ・ 静観 9</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">TOPICS 取得</div>
+        <div class="stat-value">450</div>
+        <div class="stat-sub">本日新規</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">本日 LLM コスト</div>
+        <div class="stat-value">¥268</div>
+        <div class="cost-bar"><div class="cost-bar-fill" style="width: 16.0%"></div></div>
+        <div class="stat-sub">月次 ¥801 / ¥5,000</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>ダミーシステム 4 機（並行ペーパー検証）</h2>
+    <div class="grid-4">
+      
+      <div class="ds-card">
+        <div class="ds-head">
+          <span class="ds-icon">🔵</span>
+          <span class="ds-name">DS/REI</span>
+        </div>
+        <div class="ds-desc">MAGI 全員一致＋機械照合 OK の「推し」を最優先。推しがない日は「要検討」も拾うが、サイジングは中庸・長期保有・stop -12% で「動くが負けない」を狙う。</div>
+        <!-- 自動売買ルール 1 行サマリ（要点だけ）-->
+        <div style="margin-top: 10px; padding: 6px 10px; background: rgba(255,140,66,0.06); border-left: 2px solid var(--key); border-radius: 3px; font-size: 11px; line-height: 1.4; color: var(--ink-2);">
+          推し+要検討 / 1銘柄 15% / 保有 180日 / Stop -15% / 動的: PnL±5% で ±20%
+        </div>
+        <!-- 動的 max（PnL 連動で調整された 1 銘柄上限）-->
+        <div style="margin-top: 6px; font-size: 11px; color: var(--ink-3);">
+          現在の 1 銘柄上限:
+          <b style="color: var(--ink);">15.0%</b>
+          (¥3,750)
+          
+            <span>標準</span>
+          
+        </div>
+        <div class="ds-stats">
+          <div>
+            <div class="ds-stat-lbl">総資産（時価）</div>
+            <div class="ds-stat-val">¥25,000</div>
+          </div>
+          <div>
+            <div class="ds-stat-lbl">PnL（累積）</div>
+            <div class="ds-stat-val pnl flat">
+              +¥0<br>
+              <span style="font-size:11px;">(+0.00%)</span>
+            </div>
+          </div>
+          <div>
+            <div class="ds-stat-lbl">前日比</div>
+            <div class="ds-stat-val pnl flat">
+              +¥0
+            </div>
+          </div>
+          <div>
+            <div class="ds-stat-lbl">保有 / 残現金</div>
+            <div class="ds-stat-val">0 件<br><span style="font-size:11px;">¥25,000</span></div>
+          </div>
+        </div>
+        
+        <div style="margin-top:12px; color: var(--ink-3); font-size: 12px;">保有なし</div>
+        
+        <!-- DS の思考ログ：各保有銘柄を採用した理由 -->
+        
+      </div>
+      
+      <div class="ds-card">
+        <div class="ds-head">
+          <span class="ds-icon">🔴</span>
+          <span class="ds-name">DS/ASUKA</span>
+        </div>
+        <div class="ds-desc">「推し」+「要検討」を大胆に採用。1 銘柄あたり最大 20% で集中投資・短期回転・stop -6% で素早く撤退する真の攻め型。</div>
+        <!-- 自動売買ルール 1 行サマリ（要点だけ）-->
+        <div style="margin-top: 10px; padding: 6px 10px; background: rgba(255,140,66,0.06); border-left: 2px solid var(--key); border-radius: 3px; font-size: 11px; line-height: 1.4; color: var(--ink-2);">
+          推し+要検討 / 1銘柄 20% / 保有 60日 / Stop -8% / 動的: PnL±5% で ±20%
+        </div>
+        <!-- 動的 max（PnL 連動で調整された 1 銘柄上限）-->
+        <div style="margin-top: 6px; font-size: 11px; color: var(--ink-3);">
+          現在の 1 銘柄上限:
+          <b style="color: var(--ink);">20.0%</b>
+          (¥5,000)
+          
+            <span>標準</span>
+          
+        </div>
+        <div class="ds-stats">
+          <div>
+            <div class="ds-stat-lbl">総資産（時価）</div>
+            <div class="ds-stat-val">¥25,000</div>
+          </div>
+          <div>
+            <div class="ds-stat-lbl">PnL（累積）</div>
+            <div class="ds-stat-val pnl flat">
+              +¥0<br>
+              <span style="font-size:11px;">(+0.00%)</span>
+            </div>
+          </div>
+          <div>
+            <div class="ds-stat-lbl">前日比</div>
+            <div class="ds-stat-val pnl flat">
+              +¥0
+            </div>
+          </div>
+          <div>
+            <div class="ds-stat-lbl">保有 / 残現金</div>
+            <div class="ds-stat-val">0 件<br><span style="font-size:11px;">¥25,000</span></div>
+          </div>
+        </div>
+        
+        <div style="margin-top:12px; color: var(--ink-3); font-size: 12px;">保有なし</div>
+        
+        <!-- DS の思考ログ：各保有銘柄を採用した理由 -->
+        
+      </div>
+      
+      <div class="ds-card">
+        <div class="ds-head">
+          <span class="ds-icon">🟣</span>
+          <span class="ds-name">DS/SHINJI</span>
+        </div>
+        <div class="ds-desc">守りと攻めの間。「推し」+「要検討」を中サイズで採用し、中期保有・stop -8%。</div>
+        <!-- 自動売買ルール 1 行サマリ（要点だけ）-->
+        <div style="margin-top: 10px; padding: 6px 10px; background: rgba(255,140,66,0.06); border-left: 2px solid var(--key); border-radius: 3px; font-size: 11px; line-height: 1.4; color: var(--ink-2);">
+          推し+要検討 / 1銘柄 7% / 保有 90日 / Stop -10% / 動的: PnL±5% で ±20%
+        </div>
+        <!-- 動的 max（PnL 連動で調整された 1 銘柄上限）-->
+        <div style="margin-top: 6px; font-size: 11px; color: var(--ink-3);">
+          現在の 1 銘柄上限:
+          <b style="color: var(--ink);">7.0%</b>
+          (¥1,750)
+          
+            <span>標準</span>
+          
+        </div>
+        <div class="ds-stats">
+          <div>
+            <div class="ds-stat-lbl">総資産（時価）</div>
+            <div class="ds-stat-val">¥25,000</div>
+          </div>
+          <div>
+            <div class="ds-stat-lbl">PnL（累積）</div>
+            <div class="ds-stat-val pnl flat">
+              +¥0<br>
+              <span style="font-size:11px;">(+0.00%)</span>
+            </div>
+          </div>
+          <div>
+            <div class="ds-stat-lbl">前日比</div>
+            <div class="ds-stat-val pnl flat">
+              +¥0
+            </div>
+          </div>
+          <div>
+            <div class="ds-stat-lbl">保有 / 残現金</div>
+            <div class="ds-stat-val">0 件<br><span style="font-size:11px;">¥25,000</span></div>
+          </div>
+        </div>
+        
+        <div style="margin-top:12px; color: var(--ink-3); font-size: 12px;">保有なし</div>
+        
+        <!-- DS の思考ログ：各保有銘柄を採用した理由 -->
+        
+      </div>
+      
+      <div class="ds-card">
+        <div class="ds-head">
+          <span class="ds-icon">🌒</span>
+          <span class="ds-name">DS/KAWORU</span>
+        </div>
+        <div class="ds-desc">いいとこどりの第17使徒。REI/ASUKA/SHINJI の 3 機が共通で買った銘柄を最優先で拾い（皆が買うものは強い）、加えて 3 機が見ない「静観」も独自眼で組み入れる。一点集中・短期回転・極タイト stop で「合議の総取り＋異質シグナル」を狙う異形枠。</div>
+        <!-- 自動売買ルール 1 行サマリ（要点だけ）-->
+        <div style="margin-top: 10px; padding: 6px 10px; background: rgba(255,140,66,0.06); border-left: 2px solid var(--key); border-radius: 3px; font-size: 11px; line-height: 1.4; color: var(--ink-2);">
+          全 stance + 3 機合議優先 / 1銘柄 20% / 保有 21日 / Stop -5% / 動的: PnL±5% で ±20%
+        </div>
+        <!-- 動的 max（PnL 連動で調整された 1 銘柄上限）-->
+        <div style="margin-top: 6px; font-size: 11px; color: var(--ink-3);">
+          現在の 1 銘柄上限:
+          <b style="color: var(--ink);">20.0%</b>
+          (¥5,000)
+          
+            <span>標準</span>
+          
+        </div>
+        <div class="ds-stats">
+          <div>
+            <div class="ds-stat-lbl">総資産（時価）</div>
+            <div class="ds-stat-val">¥25,000</div>
+          </div>
+          <div>
+            <div class="ds-stat-lbl">PnL（累積）</div>
+            <div class="ds-stat-val pnl flat">
+              +¥0<br>
+              <span style="font-size:11px;">(+0.00%)</span>
+            </div>
+          </div>
+          <div>
+            <div class="ds-stat-lbl">前日比</div>
+            <div class="ds-stat-val pnl flat">
+              +¥0
+            </div>
+          </div>
+          <div>
+            <div class="ds-stat-lbl">保有 / 残現金</div>
+            <div class="ds-stat-val">0 件<br><span style="font-size:11px;">¥25,000</span></div>
+          </div>
+        </div>
+        
+        <div style="margin-top:12px; color: var(--ink-3); font-size: 12px;">保有なし</div>
+        
+        <!-- DS の思考ログ：各保有銘柄を採用した理由 -->
+        
+      </div>
+      
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>本日の MAGI 判定（決裁待ち）</h2>
+    
+    <table>
+      <tr><th>ID</th><th>銘柄</th><th>STANCE</th><th>STATUS</th><th>紙約定したダミー</th></tr>
+      
+      <tr>
+        <td>77</td>
+        <td>
+          <div style="font-weight:600;">4194</div>
+          <div style="color: var(--ink-3); font-size: 10px;">ビジョナル</div>
+        </td>
+        <td><span class="stance-要検討">要検討</span></td>
+        <td>cancelled</td>
+        <td>
+          
+          <span style="color: var(--ink-3); font-size: 11px;">なし</span>
+        </td>
+      </tr>
+      
+      <tr>
+        <td>78</td>
+        <td>
+          <div style="font-weight:600;">7974</div>
+          <div style="color: var(--ink-3); font-size: 10px;">任天堂</div>
+        </td>
+        <td><span class="stance-要検討">要検討</span></td>
+        <td>cancelled</td>
+        <td>
+          
+          <span style="color: var(--ink-3); font-size: 11px;">なし</span>
+        </td>
+      </tr>
+      
+      <tr>
+        <td>79</td>
+        <td>
+          <div style="font-weight:600;">4519</div>
+          <div style="color: var(--ink-3); font-size: 10px;">中外製薬</div>
+        </td>
+        <td><span class="stance-要検討">要検討</span></td>
+        <td>cancelled</td>
+        <td>
+          
+          <span style="color: var(--ink-3); font-size: 11px;">なし</span>
+        </td>
+      </tr>
+      
+      <tr>
+        <td>80</td>
+        <td>
+          <div style="font-weight:600;">3697</div>
+          <div style="color: var(--ink-3); font-size: 10px;">ＳＨＩＦＴ</div>
+        </td>
+        <td><span class="stance-静観">静観</span></td>
+        <td>cancelled</td>
+        <td>
+          
+          <span style="color: var(--ink-3); font-size: 11px;">なし</span>
+        </td>
+      </tr>
+      
+      <tr>
+        <td>81</td>
+        <td>
+          <div style="font-weight:600;">5803</div>
+          <div style="color: var(--ink-3); font-size: 10px;">フジクラ</div>
+        </td>
+        <td><span class="stance-要検討">要検討</span></td>
+        <td>cancelled</td>
+        <td>
+          
+          <span style="color: var(--ink-3); font-size: 11px;">なし</span>
+        </td>
+      </tr>
+      
+      <tr>
+        <td>82</td>
+        <td>
+          <div style="font-weight:600;">4733</div>
+          <div style="color: var(--ink-3); font-size: 10px;">オービックビジネスコンサルタント</div>
+        </td>
+        <td><span class="stance-要検討">要検討</span></td>
+        <td>cancelled</td>
+        <td>
+          
+          <span style="color: var(--ink-3); font-size: 11px;">なし</span>
+        </td>
+      </tr>
+      
+      <tr>
+        <td>83</td>
+        <td>
+          <div style="font-weight:600;">6702</div>
+          <div style="color: var(--ink-3); font-size: 10px;">富士通</div>
+        </td>
+        <td><span class="stance-要検討">要検討</span></td>
+        <td>cancelled</td>
+        <td>
+          
+          <span style="color: var(--ink-3); font-size: 11px;">なし</span>
+        </td>
+      </tr>
+      
+      <tr>
+        <td>84</td>
+        <td>
+          <div style="font-weight:600;">4151</div>
+          <div style="color: var(--ink-3); font-size: 10px;">協和キリン</div>
+        </td>
+        <td><span class="stance-要検討">要検討</span></td>
+        <td>cancelled</td>
+        <td>
+          
+          <span style="color: var(--ink-3); font-size: 11px;">なし</span>
+        </td>
+      </tr>
+      
+      <tr>
+        <td>85</td>
+        <td>
+          <div style="font-weight:600;">6273</div>
+          <div style="color: var(--ink-3); font-size: 10px;">ＳＭＣ</div>
+        </td>
+        <td><span class="stance-静観">静観</span></td>
+        <td>cancelled</td>
+        <td>
+          
+          <span style="color: var(--ink-3); font-size: 11px;">なし</span>
+        </td>
+      </tr>
+      
+      <tr>
+        <td>86</td>
+        <td>
+          <div style="font-weight:600;">8267</div>
+          <div style="color: var(--ink-3); font-size: 10px;">イオン</div>
+        </td>
+        <td><span class="stance-要検討">要検討</span></td>
+        <td>cancelled</td>
+        <td>
+          
+          <span style="color: var(--ink-3); font-size: 11px;">なし</span>
+        </td>
+      </tr>
+      
+      <tr>
+        <td>87</td>
+        <td>
+          <div style="font-weight:600;">4194</div>
+          <div style="color: var(--ink-3); font-size: 10px;">ビジョナル</div>
+        </td>
+        <td><span class="stance-要検討">要検討</span></td>
+        <td>awaiting</td>
+        <td>
+          
+          <span style="color: var(--ink-3); font-size: 11px;">なし</span>
+        </td>
+      </tr>
+      
+      <tr>
+        <td>88</td>
+        <td>
+          <div style="font-weight:600;">3697</div>
+          <div style="color: var(--ink-3); font-size: 10px;">ＳＨＩＦＴ</div>
+        </td>
+        <td><span class="stance-静観">静観</span></td>
+        <td>awaiting</td>
+        <td>
+          
+          <span style="color: var(--ink-3); font-size: 11px;">なし</span>
+        </td>
+      </tr>
+      
+      <tr>
+        <td>89</td>
+        <td>
+          <div style="font-weight:600;">4733</div>
+          <div style="color: var(--ink-3); font-size: 10px;">オービックビジネスコンサルタント</div>
+        </td>
+        <td><span class="stance-要検討">要検討</span></td>
+        <td>awaiting</td>
+        <td>
+          
+          <span style="color: var(--ink-3); font-size: 11px;">なし</span>
+        </td>
+      </tr>
+      
+      <tr>
+        <td>90</td>
+        <td>
+          <div style="font-weight:600;">7476</div>
+          <div style="color: var(--ink-3); font-size: 10px;">アズワン</div>
+        </td>
+        <td><span class="stance-静観">静観</span></td>
+        <td>cancelled</td>
+        <td>
+          
+          <span style="color: var(--ink-3); font-size: 11px;">なし</span>
+        </td>
+      </tr>
+      
+      <tr>
+        <td>91</td>
+        <td>
+          <div style="font-weight:600;">3994</div>
+          <div style="color: var(--ink-3); font-size: 10px;">マネーフォワード</div>
+        </td>
+        <td><span class="stance-静観">静観</span></td>
+        <td>awaiting</td>
+        <td>
+          
+          <span style="color: var(--ink-3); font-size: 11px;">なし</span>
+        </td>
+      </tr>
+      
+      <tr>
+        <td>92</td>
+        <td>
+          <div style="font-weight:600;">4516</div>
+          <div style="color: var(--ink-3); font-size: 10px;">日本新薬</div>
+        </td>
+        <td><span class="stance-要検討">要検討</span></td>
+        <td>awaiting</td>
+        <td>
+          
+          <span style="color: var(--ink-3); font-size: 11px;">なし</span>
+        </td>
+      </tr>
+      
+      <tr>
+        <td>93</td>
+        <td>
+          <div style="font-weight:600;">4151</div>
+          <div style="color: var(--ink-3); font-size: 10px;">協和キリン</div>
+        </td>
+        <td><span class="stance-要検討">要検討</span></td>
+        <td>awaiting</td>
+        <td>
+          
+          <span style="color: var(--ink-3); font-size: 11px;">なし</span>
+        </td>
+      </tr>
+      
+      <tr>
+        <td>94</td>
+        <td>
+          <div style="font-weight:600;">9627</div>
+          <div style="color: var(--ink-3); font-size: 10px;">アインホールディングス</div>
+        </td>
+        <td><span class="stance-静観">静観</span></td>
+        <td>awaiting</td>
+        <td>
+          
+          <span style="color: var(--ink-3); font-size: 11px;">なし</span>
+        </td>
+      </tr>
+      
+      <tr>
+        <td>95</td>
+        <td>
+          <div style="font-weight:600;">4587</div>
+          <div style="color: var(--ink-3); font-size: 10px;">ペプチドリーム</div>
+        </td>
+        <td><span class="stance-静観">静観</span></td>
+        <td>awaiting</td>
+        <td>
+          
+          <span style="color: var(--ink-3); font-size: 11px;">なし</span>
+        </td>
+      </tr>
+      
+      <tr>
+        <td>96</td>
+        <td>
+          <div style="font-weight:600;">9861</div>
+          <div style="color: var(--ink-3); font-size: 10px;">吉野家ホールディングス</div>
+        </td>
+        <td><span class="stance-静観">静観</span></td>
+        <td>awaiting</td>
+        <td>
+          
+          <span style="color: var(--ink-3); font-size: 11px;">なし</span>
+        </td>
+      </tr>
+      
+      <tr>
+        <td>97</td>
+        <td>
+          <div style="font-weight:600;">5032</div>
+          <div style="color: var(--ink-3); font-size: 10px;">ANYCOLOR Inc.</div>
+        </td>
+        <td><span class="stance-要検討">要検討</span></td>
+        <td>awaiting</td>
+        <td>
+          
+          <span style="color: var(--ink-3); font-size: 11px;">なし</span>
+        </td>
+      </tr>
+      
+      <tr>
+        <td>98</td>
+        <td>
+          <div style="font-weight:600;">1515</div>
+          <div style="color: var(--ink-3); font-size: 10px;">Nittetsu Mining Co., Ltd.</div>
+        </td>
+        <td><span class="stance-静観">静観</span></td>
+        <td>awaiting</td>
+        <td>
+          
+          <span style="color: var(--ink-3); font-size: 11px;">なし</span>
+        </td>
+      </tr>
+      
+      <tr>
+        <td>99</td>
+        <td>
+          <div style="font-weight:600;">7456</div>
+          <div style="color: var(--ink-3); font-size: 10px;">MATSUDA SANGYO Co., Ltd.</div>
+        </td>
+        <td><span class="stance-要検討">要検討</span></td>
+        <td>awaiting</td>
+        <td>
+          
+          <span style="color: var(--ink-3); font-size: 11px;">なし</span>
+        </td>
+      </tr>
+      
+      <tr>
+        <td>100</td>
+        <td>
+          <div style="font-weight:600;">4483</div>
+          <div style="color: var(--ink-3); font-size: 10px;">JMDC Inc.</div>
+        </td>
+        <td><span class="stance-要検討">要検討</span></td>
+        <td>awaiting</td>
+        <td>
+          
+          <span style="color: var(--ink-3); font-size: 11px;">なし</span>
+        </td>
+      </tr>
+      
+    </table>
+    
+  </div>
+
+  <div class="footer">
+    tradesupport · ダミーシステム自動運用レポート · 朝バッチ 07:00 → DS 自動操縦 07:15 → 評価 07:30 → 本レポート 18:00
+  </div>
+
+</div>
+</body>
+</html>

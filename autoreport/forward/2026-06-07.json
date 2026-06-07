@@ -1,0 +1,199 @@
+{
+  "as_of": "2026-06-07",
+  "overall": {
+    "5": {
+      "n": 0,
+      "hit_rate": null,
+      "avg_excess": null
+    },
+    "20": {
+      "n": 0,
+      "hit_rate": null,
+      "avg_excess": null
+    },
+    "40": {
+      "n": 0,
+      "hit_rate": null,
+      "avg_excess": null
+    },
+    "60": {
+      "n": 0,
+      "hit_rate": null,
+      "avg_excess": null
+    }
+  },
+  "by_tag": {},
+  "by_exposure": {},
+  "current_mtm": {
+    "n": 0,
+    "hit_rate": null,
+    "avg_excess": null,
+    "avg_bars_held": null
+  },
+  "tag_vs_control": {
+    "sector_rs": {
+      "5": {
+        "with_n": 0,
+        "without_n": 0,
+        "with_avg_excess": null,
+        "without_avg_excess": null,
+        "net_avg_excess": null
+      },
+      "20": {
+        "with_n": 0,
+        "without_n": 0,
+        "with_avg_excess": null,
+        "without_avg_excess": null,
+        "net_avg_excess": null
+      },
+      "40": {
+        "with_n": 0,
+        "without_n": 0,
+        "with_avg_excess": null,
+        "without_avg_excess": null,
+        "net_avg_excess": null
+      },
+      "60": {
+        "with_n": 0,
+        "without_n": 0,
+        "with_avg_excess": null,
+        "without_avg_excess": null,
+        "net_avg_excess": null
+      }
+    }
+  },
+  "by_score_bucket": {
+    "low": {
+      "horizons": {
+        "5": {
+          "n": 0,
+          "hit_rate": null,
+          "avg_excess": null
+        },
+        "20": {
+          "n": 0,
+          "hit_rate": null,
+          "avg_excess": null
+        },
+        "40": {
+          "n": 0,
+          "hit_rate": null,
+          "avg_excess": null
+        },
+        "60": {
+          "n": 0,
+          "hit_rate": null,
+          "avg_excess": null
+        }
+      },
+      "current_mtm": {
+        "n": 0,
+        "hit_rate": null,
+        "avg_excess": null,
+        "avg_bars_held": null
+      }
+    },
+    "mid": {
+      "horizons": {
+        "5": {
+          "n": 0,
+          "hit_rate": null,
+          "avg_excess": null
+        },
+        "20": {
+          "n": 0,
+          "hit_rate": null,
+          "avg_excess": null
+        },
+        "40": {
+          "n": 0,
+          "hit_rate": null,
+          "avg_excess": null
+        },
+        "60": {
+          "n": 0,
+          "hit_rate": null,
+          "avg_excess": null
+        }
+      },
+      "current_mtm": {
+        "n": 0,
+        "hit_rate": null,
+        "avg_excess": null,
+        "avg_bars_held": null
+      }
+    },
+    "high": {
+      "horizons": {
+        "5": {
+          "n": 0,
+          "hit_rate": null,
+          "avg_excess": null
+        },
+        "20": {
+          "n": 0,
+          "hit_rate": null,
+          "avg_excess": null
+        },
+        "40": {
+          "n": 0,
+          "hit_rate": null,
+          "avg_excess": null
+        },
+        "60": {
+          "n": 0,
+          "hit_rate": null,
+          "avg_excess": null
+        }
+      },
+      "current_mtm": {
+        "n": 0,
+        "hit_rate": null,
+        "avg_excess": null,
+        "avg_bars_held": null
+      }
+    },
+    "unscored": {
+      "horizons": {
+        "5": {
+          "n": 0,
+          "hit_rate": null,
+          "avg_excess": null
+        },
+        "20": {
+          "n": 0,
+          "hit_rate": null,
+          "avg_excess": null
+        },
+        "40": {
+          "n": 0,
+          "hit_rate": null,
+          "avg_excess": null
+        },
+        "60": {
+          "n": 0,
+          "hit_rate": null,
+          "avg_excess": null
+        }
+      },
+      "current_mtm": {
+        "n": 0,
+        "hit_rate": null,
+        "avg_excess": null,
+        "avg_bars_held": null
+      }
+    }
+  },
+  "score_bucket_meta": {
+    "version_dist": {
+      "event_score_v1": 28
+    },
+    "cutpoint_versions": [
+      "cutpoint_v1"
+    ],
+    "bucketer": "event_score_v1"
+  },
+  "decisions_n": 28,
+  "benchmark_base": "stock=entry_price / benchmark=entry_date_close（基準時点が厳密一致でない）",
+  "note": "gate(60日実績)とは別枠の早期診断。固定 horizon 未到達はスキップ（推測しない）。current_mtm は日数不揃いの暫定値。前倒しで gate を通すためでなく待機期間の仮説棄却用。n が薄い間は参考値・tag は with/without control も併記。"
+}

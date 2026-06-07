@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>ダミーシステム 検証履歴インデックス</title>
+<style>
+  body { background: #1a1a1f; color: #ece9de; font-family: -apple-system, "Hiragino Sans", sans-serif; padding: 32px 24px; }
+  .wrap { max-width: min(96vw, 1400px); margin: 0 auto; }
+  h1 { font-size: 22px; margin-bottom: 4px; }
+  .subtitle { color: #888; font-size: 12px; margin-bottom: 24px; }
+  .card { background: #252530; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 18px 20px; margin-bottom: 16px; }
+  h2 { font-size: 14px; letter-spacing: 1px; color: #a8a89e; margin: 0 0 12px; font-weight: 600; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.08); }
+  th { color: #a8a89e; font-weight: 600; letter-spacing: 0.5px; font-size: 10px; }
+  td a { color: #ff8c42; text-decoration: none; }
+  td a:hover { text-decoration: underline; }
+  .up { color: #4ade80; font-weight: 600; }
+  .down { color: #f87171; font-weight: 600; }
+  canvas { width: 100% !important; height: 320px !important; max-height: 320px; }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<div class="wrap">
+
+<h1>🤖 ダミーシステム — 検証履歴インデックス</h1>
+<div class="subtitle">
+  生成 2026-06-06 18:02 ・ 計 10 日のレポート蓄積
+</div>
+
+<div class="card">
+  <h2>📈 性格別 累積 PnL 推移（%）</h2>
+  <canvas id="pnlChart"></canvas>
+</div>
+
+
+<div class="card">
+  <h2>📊 累積フィードバック（評価期日到来分・MAGI 学習データ）</h2>
+  <div style="font-size:12px;color:#888;margin-bottom:10px;">
+    累計 1 件の評価データ。30 件達成で増額ゲート判定へ。
+  </div>
+  <table>
+    <tr><th>機体</th><th>評価件数</th><th>命中率</th><th>平均 R</th></tr>
+    <tr><td>DS/ASUKA</td><td>1</td><td>0%</td><td>-1.30</td></tr>
+  </table>
+</div>
+
+
+<div class="card">
+  <h2>📅 日次レポート一覧</h2>
+  <table>
+    <tr><th>日付</th><th>DS/REI</th><th>DS/ASUKA</th><th>DS/SHINJI</th><th>DS/KAWORU</th></tr>
+    <tr><td><a href="daily/2026-06-06.html">2026-06-06</a></td><td class="up">+0.09%</td><td class="up">+0.09%</td><td class="up">+0.09%</td><td class="up">+0.09%</td></tr>
+<tr><td><a href="daily/2026-06-05.html">2026-06-05</a></td><td class="up">+0.09%</td><td class="up">+0.09%</td><td class="up">+0.09%</td><td class="up">+0.09%</td></tr>
+<tr><td><a href="daily/2026-06-04.html">2026-06-04</a></td><td class="up">+0.09%</td><td class="up">+0.09%</td><td class="up">+0.09%</td><td class="up">+0.09%</td></tr>
+<tr><td><a href="daily/2026-06-03.html">2026-06-03</a></td><td class="up">+0.09%</td><td class="up">+0.09%</td><td class="up">+0.09%</td><td class="up">+0.09%</td></tr>
+<tr><td><a href="daily/2026-06-02.html">2026-06-02</a></td><td class="up">+0.09%</td><td class="up">+0.09%</td><td class="up">+0.09%</td><td class="up">+0.09%</td></tr>
+<tr><td><a href="daily/2026-06-01.html">2026-06-01</a></td><td class="up">+0.09%</td><td class="up">+0.09%</td><td class="up">+0.09%</td><td class="up">+0.09%</td></tr>
+<tr><td><a href="daily/2026-05-31.html">2026-05-31</a></td><td class="up">+0.09%</td><td class="up">+0.09%</td><td class="up">+0.09%</td><td class="up">+0.09%</td></tr>
+<tr><td><a href="daily/2026-05-30.html">2026-05-30</a></td><td class="up">+0.09%</td><td class="up">+0.09%</td><td class="up">+0.09%</td><td class="up">+0.09%</td></tr>
+<tr><td><a href="daily/2026-05-29.html">2026-05-29</a></td><td class="up">+0.09%</td><td class="up">+0.09%</td><td class="up">+0.09%</td><td class="up">+0.09%</td></tr>
+<tr><td><a href="daily/2026-05-28.html">2026-05-28</a></td><td class="up">+0.09%</td><td class="up">+0.09%</td><td class="up">+0.09%</td><td class="up">+0.09%</td></tr>
+  </table>
+</div>
+
+<script>
+const ctx = document.getElementById('pnlChart').getContext('2d');
+const data = {"datasets": [{"label": "DS/REI", "data": [{"x": "2026-05-28", "y": 0.088}, {"x": "2026-05-29", "y": 0.088}, {"x": "2026-05-30", "y": 0.088}, {"x": "2026-05-31", "y": 0.088}, {"x": "2026-06-01", "y": 0.088}, {"x": "2026-06-02", "y": 0.088}, {"x": "2026-06-03", "y": 0.088}, {"x": "2026-06-04", "y": 0.088}, {"x": "2026-06-05", "y": 0.088}, {"x": "2026-06-06", "y": 0.088}], "borderColor": "#4a90e2", "backgroundColor": "transparent", "tension": 0.2}, {"label": "DS/ASUKA", "data": [{"x": "2026-05-28", "y": 0.088}, {"x": "2026-05-29", "y": 0.088}, {"x": "2026-05-30", "y": 0.088}, {"x": "2026-05-31", "y": 0.088}, {"x": "2026-06-01", "y": 0.088}, {"x": "2026-06-02", "y": 0.088}, {"x": "2026-06-03", "y": 0.088}, {"x": "2026-06-04", "y": 0.088}, {"x": "2026-06-05", "y": 0.088}, {"x": "2026-06-06", "y": 0.088}], "borderColor": "#e74c3c", "backgroundColor": "transparent", "tension": 0.2}, {"label": "DS/SHINJI", "data": [{"x": "2026-05-28", "y": 0.088}, {"x": "2026-05-29", "y": 0.088}, {"x": "2026-05-30", "y": 0.088}, {"x": "2026-05-31", "y": 0.088}, {"x": "2026-06-01", "y": 0.088}, {"x": "2026-06-02", "y": 0.088}, {"x": "2026-06-03", "y": 0.088}, {"x": "2026-06-04", "y": 0.088}, {"x": "2026-06-05", "y": 0.088}, {"x": "2026-06-06", "y": 0.088}], "borderColor": "#9b59b6", "backgroundColor": "transparent", "tension": 0.2}, {"label": "DS/KAWORU", "data": [{"x": "2026-05-28", "y": 0.088}, {"x": "2026-05-29", "y": 0.088}, {"x": "2026-05-30", "y": 0.088}, {"x": "2026-05-31", "y": 0.088}, {"x": "2026-06-01", "y": 0.088}, {"x": "2026-06-02", "y": 0.088}, {"x": "2026-06-03", "y": 0.088}, {"x": "2026-06-04", "y": 0.088}, {"x": "2026-06-05", "y": 0.088}, {"x": "2026-06-06", "y": 0.088}], "borderColor": "#5d3fd3", "backgroundColor": "transparent", "tension": 0.2}]};
+new Chart(ctx, {
+  type: 'line',
+  data: data,
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    scales: {
+      x: { ticks: { color: '#a8a89e' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+      y: { ticks: { color: '#a8a89e', callback: v => v + '%' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+    },
+    plugins: {
+      legend: { labels: { color: '#ece9de' } },
+    },
+  },
+});
+</script>
+
+</div>
+</body>
+</html>

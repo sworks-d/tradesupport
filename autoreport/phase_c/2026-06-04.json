@@ -1,0 +1,673 @@
+{
+  "intent": {
+    "treasury": {
+      "paper": {
+        "broker_mode": "paper",
+        "seed_jpy": 1000000,
+        "allocated_jpy": 42564,
+        "available_jpy": 957436,
+        "allocations": {
+          "REI": 0,
+          "ASUKA": 34434,
+          "SHINJI": 8130,
+          "KAWORU": 0
+        },
+        "deposit_count": 0,
+        "last_deposit_at": null,
+        "account_capital_jpy": 1000000,
+        "current_risk_budget_jpy": 100000,
+        "active_exposure_jpy": 28703,
+        "deployable_jpy": 71297,
+        "target_ceiling_jpy": 1000000,
+        "ceiling_progress_pct": 10.0,
+        "updated_at": "2026-06-03 16:21"
+      },
+      "live": {
+        "broker_mode": "live",
+        "seed_jpy": 0,
+        "allocated_jpy": 0,
+        "available_jpy": 0,
+        "allocations": {
+          "REI": 0,
+          "ASUKA": 0,
+          "SHINJI": 0,
+          "KAWORU": 0
+        },
+        "deposit_count": 0,
+        "last_deposit_at": null,
+        "account_capital_jpy": 0,
+        "current_risk_budget_jpy": 0,
+        "active_exposure_jpy": 0,
+        "deployable_jpy": null,
+        "target_ceiling_jpy": 0,
+        "ceiling_progress_pct": null,
+        "updated_at": "2026-05-31 11:19"
+      }
+    },
+    "auto_trade": {
+      "master_on": true,
+      "pilots_on": [
+        "REI",
+        "ASUKA",
+        "SHINJI",
+        "KAWORU"
+      ]
+    },
+    "halt": {
+      "on": false,
+      "reason": ""
+    }
+  },
+  "pnl_realized": {
+    "paper": {
+      "n": 0,
+      "pnl_jpy": 0.0,
+      "wins": 0,
+      "official": {
+        "n": 0,
+        "pnl_jpy": 0.0,
+        "wins": 0
+      },
+      "legacy_reference": {
+        "n": 174,
+        "pnl_jpy": 0.0
+      }
+    }
+  },
+  "gates": {
+    "paper": {
+      "broker_mode": "paper",
+      "passed": false,
+      "actionable": true,
+      "n": 0,
+      "criteria": [
+        {
+          "name": "評価件数",
+          "value": "0",
+          "threshold": "≥ 30",
+          "passed": false
+        },
+        {
+          "name": "命中率",
+          "value": "—",
+          "threshold": "≥ 50%",
+          "passed": false
+        },
+        {
+          "name": "平均R",
+          "value": "+0.00",
+          "threshold": "≥ +0.50",
+          "passed": false
+        },
+        {
+          "name": "最大DD(評価列proxy)",
+          "value": "0.0%",
+          "threshold": "≤ 15%",
+          "passed": true
+        },
+        {
+          "name": "コスト後α",
+          "value": "—（benchmark 0/0）",
+          "threshold": "> 0 かつ全件 benchmark 有",
+          "passed": false
+        },
+        {
+          "name": "両局面通過",
+          "value": "なし",
+          "threshold": "順境+逆境 両方",
+          "passed": false
+        }
+      ],
+      "notes": [
+        "最大DD は評価列の擬似 equity proxy（実口座 DD ではない・正式判定前に置換予定）"
+      ]
+    },
+    "live": {
+      "broker_mode": "live",
+      "passed": false,
+      "actionable": true,
+      "n": 0,
+      "criteria": [
+        {
+          "name": "評価件数",
+          "value": "0",
+          "threshold": "≥ 30",
+          "passed": false
+        },
+        {
+          "name": "命中率",
+          "value": "—",
+          "threshold": "≥ 50%",
+          "passed": false
+        },
+        {
+          "name": "平均R",
+          "value": "+0.00",
+          "threshold": "≥ +0.50",
+          "passed": false
+        },
+        {
+          "name": "最大DD(評価列proxy)",
+          "value": "0.0%",
+          "threshold": "≤ 15%",
+          "passed": true
+        },
+        {
+          "name": "コスト後α",
+          "value": "—（benchmark 0/0）",
+          "threshold": "> 0 かつ全件 benchmark 有",
+          "passed": false
+        },
+        {
+          "name": "両局面通過",
+          "value": "なし",
+          "threshold": "順境+逆境 両方",
+          "passed": false
+        }
+      ],
+      "notes": [
+        "最大DD は評価列の擬似 equity proxy（実口座 DD ではない・正式判定前に置換予定）"
+      ]
+    },
+    "combined_reference": {
+      "broker_mode": "combined",
+      "passed": false,
+      "actionable": false,
+      "n": 0,
+      "criteria": [
+        {
+          "name": "評価件数",
+          "value": "0",
+          "threshold": "≥ 30",
+          "passed": false
+        },
+        {
+          "name": "命中率",
+          "value": "—",
+          "threshold": "≥ 50%",
+          "passed": false
+        },
+        {
+          "name": "平均R",
+          "value": "+0.00",
+          "threshold": "≥ +0.50",
+          "passed": false
+        },
+        {
+          "name": "最大DD(評価列proxy)",
+          "value": "0.0%",
+          "threshold": "≤ 15%",
+          "passed": true
+        },
+        {
+          "name": "コスト後α",
+          "value": "—（benchmark 0/0）",
+          "threshold": "> 0 かつ全件 benchmark 有",
+          "passed": false
+        },
+        {
+          "name": "両局面通過",
+          "value": "なし",
+          "threshold": "順境+逆境 両方",
+          "passed": false
+        }
+      ],
+      "notes": [
+        "最大DD は評価列の擬似 equity proxy（実口座 DD ではない・正式判定前に置換予定）"
+      ]
+    }
+  },
+  "pilot_performance_paper": {},
+  "fix_direction_paper": {
+    "failing_criteria": [
+      {
+        "name": "評価件数",
+        "value": "0",
+        "threshold": "≥ 30"
+      },
+      {
+        "name": "命中率",
+        "value": "—",
+        "threshold": "≥ 50%"
+      },
+      {
+        "name": "平均R",
+        "value": "+0.00",
+        "threshold": "≥ +0.50"
+      },
+      {
+        "name": "コスト後α",
+        "value": "—（benchmark 0/0）",
+        "threshold": "> 0 かつ全件 benchmark 有"
+      },
+      {
+        "name": "両局面通過",
+        "value": "なし",
+        "threshold": "順境+逆境 両方"
+      }
+    ],
+    "promotions": []
+  },
+  "data_breakdown": {
+    "total": 145,
+    "by_status": {
+      "cancelled": 100,
+      "filled": 12,
+      "ordered": 15,
+      "approved": 10,
+      "awaiting": 8
+    },
+    "by_filled_via": {
+      "legacy(None)": 130,
+      "ds_dispatch": 15
+    },
+    "by_broker_mode": {
+      "legacy(None)": 130,
+      "paper": 15
+    },
+    "evaluated": 0
+  },
+  "official_decision_n": 0,
+  "official_fill_record_n": 0,
+  "decisions_detail_paper": [],
+  "open_positions_paper": [
+    {
+      "portfolio_id": 176,
+      "decision_id": 113,
+      "broker_mode": "paper",
+      "status": "active",
+      "ticker": "7269",
+      "qty": 2.0,
+      "buy_price": 1896.1714999999997,
+      "cost_jpy": 3792,
+      "buy_date": "2026-06-04",
+      "target_date": "2026-08-03",
+      "stop_loss_pct": 0.06,
+      "target_pct": 0.0,
+      "strategy_category": "中期",
+      "personality": "ASUKA",
+      "planned_total_qty": 4,
+      "filled_via": "ds_dispatch",
+      "entry_broker_mode": "paper",
+      "entry_market_regime": "bear",
+      "evaluation_date": "2026-08-03",
+      "target_period_days": 60,
+      "gendo_stance": "推し",
+      "thesis": "v2.8 補完銘柄（source=magi, preset=alpha）"
+    },
+    {
+      "portfolio_id": 177,
+      "decision_id": 115,
+      "broker_mode": "paper",
+      "status": "active",
+      "ticker": "3382",
+      "qty": 1.0,
+      "buy_price": 1893.1625,
+      "cost_jpy": 1893,
+      "buy_date": "2026-06-04",
+      "target_date": "2026-08-03",
+      "stop_loss_pct": 0.06,
+      "target_pct": 0.0,
+      "strategy_category": "中期",
+      "personality": "ASUKA",
+      "planned_total_qty": 3,
+      "filled_via": "ds_dispatch",
+      "entry_broker_mode": "paper",
+      "entry_market_regime": "bear",
+      "evaluation_date": "2026-08-03",
+      "target_period_days": 60,
+      "gendo_stance": "推し",
+      "thesis": "v2.8 補完銘柄（source=magi, preset=alpha）"
+    },
+    {
+      "portfolio_id": 178,
+      "decision_id": 116,
+      "broker_mode": "paper",
+      "status": "active",
+      "ticker": "9503",
+      "qty": 1.0,
+      "buy_price": 2364.5724999999998,
+      "cost_jpy": 2365,
+      "buy_date": "2026-06-04",
+      "target_date": "2026-08-03",
+      "stop_loss_pct": 0.06,
+      "target_pct": 0.0,
+      "strategy_category": "中期",
+      "personality": "ASUKA",
+      "planned_total_qty": 2,
+      "filled_via": "ds_dispatch",
+      "entry_broker_mode": "paper",
+      "entry_market_regime": "bear",
+      "evaluation_date": "2026-08-03",
+      "target_period_days": 60,
+      "gendo_stance": "推し",
+      "thesis": "v2.8 補完銘柄（source=magi, preset=alpha）"
+    },
+    {
+      "portfolio_id": 179,
+      "decision_id": 117,
+      "broker_mode": "paper",
+      "status": "active",
+      "ticker": "4689",
+      "qty": 6.0,
+      "buy_price": 410.62819387817376,
+      "cost_jpy": 2464,
+      "buy_date": "2026-06-04",
+      "target_date": "2026-08-03",
+      "stop_loss_pct": 0.06,
+      "target_pct": 0.0,
+      "strategy_category": "中期",
+      "personality": "ASUKA",
+      "planned_total_qty": 13,
+      "filled_via": "ds_dispatch",
+      "entry_broker_mode": "paper",
+      "entry_market_regime": "bear",
+      "evaluation_date": "2026-08-03",
+      "target_period_days": 60,
+      "gendo_stance": "推し",
+      "thesis": "v2.8 補完銘柄（source=magi, preset=alpha）"
+    },
+    {
+      "portfolio_id": 180,
+      "decision_id": 118,
+      "broker_mode": "paper",
+      "status": "active",
+      "ticker": "4612",
+      "qty": 2.0,
+      "buy_price": 1001.1946122436523,
+      "cost_jpy": 2002,
+      "buy_date": "2026-06-04",
+      "target_date": "2026-08-03",
+      "stop_loss_pct": 0.06,
+      "target_pct": 0.0,
+      "strategy_category": "中期",
+      "personality": "ASUKA",
+      "planned_total_qty": 5,
+      "filled_via": "ds_dispatch",
+      "entry_broker_mode": "paper",
+      "entry_market_regime": "bear",
+      "evaluation_date": "2026-08-03",
+      "target_period_days": 60,
+      "gendo_stance": "推し",
+      "thesis": "v2.8 補完銘柄（source=magi, preset=alpha）"
+    },
+    {
+      "portfolio_id": 181,
+      "decision_id": 119,
+      "broker_mode": "paper",
+      "status": "active",
+      "ticker": "9434",
+      "qty": 10.0,
+      "buy_price": 219.35609693908688,
+      "cost_jpy": 2194,
+      "buy_date": "2026-06-04",
+      "target_date": "2026-08-03",
+      "stop_loss_pct": 0.06,
+      "target_pct": 0.0,
+      "strategy_category": "中期",
+      "personality": "ASUKA",
+      "planned_total_qty": 20,
+      "filled_via": "ds_dispatch",
+      "entry_broker_mode": "paper",
+      "entry_market_regime": "bear",
+      "evaluation_date": "2026-08-03",
+      "target_period_days": 60,
+      "gendo_stance": "推し",
+      "thesis": "v2.8 補完銘柄（source=magi, preset=alpha）"
+    },
+    {
+      "portfolio_id": 182,
+      "decision_id": 120,
+      "broker_mode": "paper",
+      "status": "active",
+      "ticker": "3407",
+      "qty": 1.0,
+      "buy_price": 1762.7724999999998,
+      "cost_jpy": 1763,
+      "buy_date": "2026-06-04",
+      "target_date": "2026-08-03",
+      "stop_loss_pct": 0.06,
+      "target_pct": 0.0,
+      "strategy_category": "中期",
+      "personality": "ASUKA",
+      "planned_total_qty": 2,
+      "filled_via": "ds_dispatch",
+      "entry_broker_mode": "paper",
+      "entry_market_regime": "bear",
+      "evaluation_date": "2026-08-03",
+      "target_period_days": 60,
+      "gendo_stance": "ZEELE",
+      "thesis": "v2.8 補完銘柄（source=zeele, preset=momentum）"
+    },
+    {
+      "portfolio_id": 183,
+      "decision_id": 121,
+      "broker_mode": "paper",
+      "status": "active",
+      "ticker": "4188",
+      "qty": 1.0,
+      "buy_price": 1102.2969999999998,
+      "cost_jpy": 1102,
+      "buy_date": "2026-06-04",
+      "target_date": "2026-08-03",
+      "stop_loss_pct": 0.06,
+      "target_pct": 0.0,
+      "strategy_category": "中期",
+      "personality": "ASUKA",
+      "planned_total_qty": 3,
+      "filled_via": "ds_dispatch",
+      "entry_broker_mode": "paper",
+      "entry_market_regime": "bear",
+      "evaluation_date": "2026-08-03",
+      "target_period_days": 60,
+      "gendo_stance": "ZEELE",
+      "thesis": "v2.8 補完銘柄（source=zeele, preset=momentum）"
+    },
+    {
+      "portfolio_id": 184,
+      "decision_id": 122,
+      "broker_mode": "paper",
+      "status": "active",
+      "ticker": "6902",
+      "qty": 1.0,
+      "buy_price": 1931.7779999999998,
+      "cost_jpy": 1932,
+      "buy_date": "2026-06-04",
+      "target_date": "2026-08-03",
+      "stop_loss_pct": 0.06,
+      "target_pct": 0.0,
+      "strategy_category": "中期",
+      "personality": "ASUKA",
+      "planned_total_qty": 1,
+      "filled_via": "ds_dispatch",
+      "entry_broker_mode": "paper",
+      "entry_market_regime": "bear",
+      "evaluation_date": "2026-08-03",
+      "target_period_days": 60,
+      "gendo_stance": "推し",
+      "thesis": "v2.8 補完銘柄（source=magi, preset=alpha）"
+    },
+    {
+      "portfolio_id": 185,
+      "decision_id": 123,
+      "broker_mode": "paper",
+      "status": "active",
+      "ticker": "5020",
+      "qty": 1.0,
+      "buy_price": 1331.4824999999998,
+      "cost_jpy": 1331,
+      "buy_date": "2026-06-04",
+      "target_date": "2026-08-03",
+      "stop_loss_pct": 0.06,
+      "target_pct": 0.0,
+      "strategy_category": "中期",
+      "personality": "ASUKA",
+      "planned_total_qty": 2,
+      "filled_via": "ds_dispatch",
+      "entry_broker_mode": "paper",
+      "entry_market_regime": "bear",
+      "evaluation_date": "2026-08-03",
+      "target_period_days": 60,
+      "gendo_stance": "推し",
+      "thesis": "v2.8 補完銘柄（source=magi, preset=alpha）"
+    },
+    {
+      "portfolio_id": 186,
+      "decision_id": 124,
+      "broker_mode": "paper",
+      "status": "active",
+      "ticker": "9432",
+      "qty": 9.0,
+      "buy_price": 148.24340306091307,
+      "cost_jpy": 1334,
+      "buy_date": "2026-06-04",
+      "target_date": "2026-08-03",
+      "stop_loss_pct": 0.06,
+      "target_pct": 0.0,
+      "strategy_category": "中期",
+      "personality": "ASUKA",
+      "planned_total_qty": 18,
+      "filled_via": "ds_dispatch",
+      "entry_broker_mode": "paper",
+      "entry_market_regime": "bear",
+      "evaluation_date": "2026-08-03",
+      "target_period_days": 60,
+      "gendo_stance": "推し",
+      "thesis": "v2.8 補完銘柄（source=magi, preset=alpha）"
+    },
+    {
+      "portfolio_id": 187,
+      "decision_id": 125,
+      "broker_mode": "paper",
+      "status": "active",
+      "ticker": "6178",
+      "qty": 1.0,
+      "buy_price": 2131.3749999999995,
+      "cost_jpy": 2131,
+      "buy_date": "2026-06-04",
+      "target_date": "2026-08-03",
+      "stop_loss_pct": 0.06,
+      "target_pct": 0.0,
+      "strategy_category": "中期",
+      "personality": "ASUKA",
+      "planned_total_qty": 1,
+      "filled_via": "ds_dispatch",
+      "entry_broker_mode": "paper",
+      "entry_market_regime": "bear",
+      "evaluation_date": "2026-08-03",
+      "target_period_days": 60,
+      "gendo_stance": "推し",
+      "thesis": "v2.8 補完銘柄（source=magi, preset=alpha）"
+    },
+    {
+      "portfolio_id": 188,
+      "decision_id": 126,
+      "broker_mode": "paper",
+      "status": "active",
+      "ticker": "4503",
+      "qty": 1.0,
+      "buy_price": 2166.4799999999996,
+      "cost_jpy": 2166,
+      "buy_date": "2026-06-04",
+      "target_date": "2026-08-03",
+      "stop_loss_pct": 0.06,
+      "target_pct": 0.0,
+      "strategy_category": "中期",
+      "personality": "ASUKA",
+      "planned_total_qty": 1,
+      "filled_via": "ds_dispatch",
+      "entry_broker_mode": "paper",
+      "entry_market_regime": "bear",
+      "evaluation_date": "2026-08-03",
+      "target_period_days": 60,
+      "gendo_stance": "推し",
+      "thesis": "v2.8 補完銘柄（source=magi, preset=alpha）"
+    },
+    {
+      "portfolio_id": 189,
+      "decision_id": 130,
+      "broker_mode": "paper",
+      "status": "active",
+      "ticker": "7267",
+      "qty": 1.0,
+      "buy_price": 1500.9895,
+      "cost_jpy": 1501,
+      "buy_date": "2026-06-04",
+      "target_date": "2026-08-03",
+      "stop_loss_pct": 0.06,
+      "target_pct": 0.0,
+      "strategy_category": "中期",
+      "personality": "ASUKA",
+      "planned_total_qty": 1,
+      "filled_via": "ds_dispatch",
+      "entry_broker_mode": "paper",
+      "entry_market_regime": "bear",
+      "evaluation_date": "2026-08-03",
+      "target_period_days": 60,
+      "gendo_stance": "推し",
+      "thesis": "v2.8 補完銘柄（source=magi, preset=alpha）"
+    },
+    {
+      "portfolio_id": 190,
+      "decision_id": 131,
+      "broker_mode": "paper",
+      "status": "active",
+      "ticker": "4005",
+      "qty": 1.0,
+      "buy_price": 588.5603877563476,
+      "cost_jpy": 589,
+      "buy_date": "2026-06-04",
+      "target_date": "2026-08-03",
+      "stop_loss_pct": 0.06,
+      "target_pct": 0.0,
+      "strategy_category": "中期",
+      "personality": "ASUKA",
+      "planned_total_qty": 2,
+      "filled_via": "ds_dispatch",
+      "entry_broker_mode": "paper",
+      "entry_market_regime": "bear",
+      "evaluation_date": "2026-08-03",
+      "target_period_days": 60,
+      "gendo_stance": "ZEELE",
+      "thesis": "v2.8 補完銘柄（source=zeele, preset=momentum）"
+    }
+  ],
+  "breakdowns_paper": {
+    "by_exit_reason": {},
+    "by_stance": {},
+    "by_regime": {}
+  },
+  "feedback_transparency": {
+    "status": "insufficient_data",
+    "lookback_days": 30,
+    "pilot_details": {
+      "REI": {
+        "multiplier": 1.0,
+        "accuracy_pct": null,
+        "evaluated": 0,
+        "reason": "データ不足（中立）"
+      },
+      "ASUKA": {
+        "multiplier": 1.0,
+        "accuracy_pct": null,
+        "evaluated": 0,
+        "reason": "データ不足（中立）"
+      },
+      "SHINJI": {
+        "multiplier": 1.0,
+        "accuracy_pct": null,
+        "evaluated": 0,
+        "reason": "データ不足（中立）"
+      },
+      "KAWORU": {
+        "multiplier": 1.0,
+        "accuracy_pct": null,
+        "evaluated": 0,
+        "reason": "データ不足（中立）"
+      }
+    },
+    "note": "データ不足時は全機 multiplier=1.0（中立）。broker_mode=paper の実績のみ。"
+  },
+  "notes": "BT 結果は退行/事故検出用で自動配分には還元しない。含み損益はダッシュボード（build_snapshot）で。",
+  "archived_for_date": "2026-06-04"
+}
